@@ -149,10 +149,6 @@ Contributions are welcome! Please:
 4. Push to the branch
 5. Open a Pull Request
 
-## 📄 License
-
-This project is under ISC license.
-
 ---
 
 # Português (Brasil)
@@ -299,7 +295,3 @@ Contribuições são bem-vindas! Por favor:
 3. Commit suas mudanças
 4. Push para a branch
 5. Abra um Pull Request
-
-## 📄 Licença
-
-Este projeto está sob licença ISC.
