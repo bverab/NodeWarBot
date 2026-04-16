@@ -272,8 +272,59 @@ async function handleScheduleWarDays(interaction) {
   if (!global.warScheduleTemp) global.warScheduleTemp = {};
   global.warScheduleTemp[interaction.user.id] = { days: selectedDays };
 
-  await interaction.deferUpdate();
-  await showScheduleMentionsSelector(interaction, warData, selectedDays);
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const daysText = selectedDays.map(d => dayNames[d]).join(', ');
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📢 Configurar menciones: ${warData.name}`)
+    .setDescription('**Paso 2: Selecciona roles para @mencionar (opcional)**')
+    .setColor(0x5865f2)
+    .addFields({
+      name: 'Programado para',
+      value: `${daysText} a las ${warData.time}`
+    });
+
+  try {
+    const roles = await interaction.guild.roles.fetch();
+    const selectableRoles = roles
+      .filter(r => !r.managed && r.id !== interaction.guildId)
+      .slice(0, 25);
+
+    if (selectableRoles.size === 0) {
+      await confirmAndPublish(interaction, warData, selectedDays, []);
+      return;
+    }
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId('schedule_war_mentions')
+      .setPlaceholder('Roles a @mencionar (puedes elegir múltiples o dejar vacío)')
+      .setMinValues(0)
+      .setMaxValues(selectableRoles.size)
+      .addOptions(
+        selectableRoles.map(role => ({
+          label: role.name,
+          value: role.id
+        }))
+      );
+
+    const skipButton = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('skip_mentions_publish')
+        .setLabel('Sin menciones → Publicar')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await interaction.update({
+      embeds: [embed],
+      components: [
+        new ActionRowBuilder().addComponents(menu),
+        skipButton
+      ]
+    });
+  } catch (error) {
+    console.error('Error en handleScheduleWarDays:', error);
+    await interaction.reply({ content: '❌ Error al procesar selección', flags: 64 });
+  }
 }
 
 /**
