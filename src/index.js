@@ -4,6 +4,7 @@ const commandHandler = require('./handlers/commandHandler');
 const buttonHandler = require('./handlers/buttonHandler');
 const modalHandler = require('./handlers/modalHandler');
 const interactionHandler = require('./handlers/interactionHandler');
+const { initScheduler } = require('./services/schedulerService');
 
 const client = new Client({
   intents: [
@@ -19,6 +20,9 @@ commandHandler(client);
 client.once(Events.ClientReady, () => {
   console.log(`Bot listo como ${client.user.tag}`);
   console.log(`Comandos cargados: ${client.commands.size}`);
+  
+  // Iniciar scheduler de eventos automáticos
+  initScheduler(client);
 });
 
 client.on(Events.InteractionCreate, async interaction => {

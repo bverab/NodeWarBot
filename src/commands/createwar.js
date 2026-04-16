@@ -3,23 +3,25 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  ActionRowBuilder
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('createwar')
-    .setDescription('Crea un nuevo evento de Node War'),
+    .setDescription('Crea eventos de Node War para uno o múltiples días de la semana'),
 
   async execute(interaction) {
     try {
       const modal = new ModalBuilder()
         .setCustomId('create_war_initial')
-        .setTitle('Crear Evento');
+        .setTitle('Crear Evento de Node War');
 
       const nameInput = new TextInputBuilder()
         .setCustomId('war_name_input')
-        .setLabel('Nombre')
+        .setLabel('Nombre del evento')
         .setPlaceholder('ej: Node War T2')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
@@ -27,22 +29,23 @@ module.exports = {
 
       const typeInput = new TextInputBuilder()
         .setCustomId('war_type_input')
-        .setLabel('Horario o descripcion')
-        .setPlaceholder('ej: Viernes 23:00 - 00:10')
+        .setLabel('Descripción/Horario')
+        .setPlaceholder('ej: Guerras de semana')
         .setStyle(TextInputStyle.Short)
         .setRequired(false)
         .setMaxLength(80);
 
-      const rolesInput = new TextInputBuilder()
-        .setCustomId('initial_roles_input')
-        .setLabel('Roles (opcional)')
-        .setPlaceholder('⚡ Dosa: 1 \nCaller: 2')
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(false);
+      const timezoneInput = new TextInputBuilder()
+        .setCustomId('war_timezone_input')
+        .setLabel('Zona horaria (ej: America/Bogota)')
+        .setPlaceholder('America/Bogota')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false)
+        .setMaxLength(50);
 
       const row1 = new ActionRowBuilder().addComponents(nameInput);
       const row2 = new ActionRowBuilder().addComponents(typeInput);
-      const row3 = new ActionRowBuilder().addComponents(rolesInput);
+      const row3 = new ActionRowBuilder().addComponents(timezoneInput);
 
       modal.addComponents(row1, row2, row3);
       await interaction.showModal(modal);
@@ -62,7 +65,6 @@ async function safeReply(interaction, content) {
       console.warn(`No se pudo responder createwar (${error.code})`);
       return;
     }
-
     throw error;
   }
 }

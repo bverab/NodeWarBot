@@ -81,6 +81,75 @@ function deleteWarByMessageId(messageId) {
   return true;
 }
 
+/**
+ * Obtiene todos los eventos de un grupo (para edición)
+ * @param {string} groupId
+ * @returns {array}
+ */
+function getWarsByGroupId(groupId) {
+  const wars = loadWars();
+  return wars.filter(war => war.groupId === groupId);
+}
+
+/**
+ * Obtiene un evento específico por groupId + dayOfWeek
+ * (Útil para autocomplete en editrole)
+ * @param {string} groupId
+ * @param {number} dayOfWeek
+ * @returns {object|null}
+ */
+function getWarByGroupAndDay(groupId, dayOfWeek) {
+  const wars = loadWars();
+  return wars.find(war => war.groupId === groupId && war.dayOfWeek === dayOfWeek) || null;
+}
+
+/**
+ * Busca eventos por nombre de grupo (para autocomplete)
+ * @param {string} searchTerm
+ * @returns {array}
+ */
+function searchWarsByName(searchTerm) {
+  const wars = loadWars();
+  const term = searchTerm.toLowerCase();
+  
+  // Agrupar por groupId y retornar uno de cada grupo
+  const seen = new Set();
+  return wars.filter(war => {
+    if (seen.has(war.groupId)) return false;
+    if (!war.name?.toLowerCase().includes(term) && !war.groupId?.toLowerCase().includes(term)) {
+      return false;
+    }
+    seen.add(war.groupId);
+    return true;
+  });
+}
+
+/**
+ * Obtiene todas las opciones para autocomplete de /editrole
+ * @returns {array} - Array de {groupId, dayOfWeek, name, displayName}
+ */
+function getEditableWarsForAutocomplete() {
+  const wars = loadWars();
+  return wars
+    .filter(war => war.name && war.dayOfWeek !== undefined)
+    .map(war => ({
+      groupId: war.groupId,
+      id: war.id,
+      dayOfWeek: war.dayOfWeek,
+      name: war.name,
+      displayName: `${war.name} - ${getDayName(war.dayOfWeek)}`,
+      time: war.time
+    }));
+}
+
+/**
+ * Obtiene nombre del día
+ */
+function getDayName(dayOfWeek) {
+  const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  return days[dayOfWeek] || 'Desconocido';
+}
+
 module.exports = {
   loadWars,
   saveWars,
@@ -89,5 +158,9 @@ module.exports = {
   getLatestWarByChannelId,
   updateWar,
   updateWarByMessageId,
-  deleteWarByMessageId
+  deleteWarByMessageId,
+  getWarsByGroupId,
+  getWarByGroupAndDay,
+  searchWarsByName,
+  getEditableWarsForAutocomplete
 };

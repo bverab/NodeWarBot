@@ -75,17 +75,46 @@ function normalizeWar(war = {}) {
   const closesAt = Number.isFinite(war.closesAt) ? war.closesAt : createdAt + 48 * 60 * 60 * 1000;
 
   return {
+    // Identificación básica
     id: String(war.id || Date.now()),
+    groupId: war.groupId || null,                    // NUEVO: grupo de eventos relacionados
     name: war.name || 'Node War',
     type: war.type || 'Sin descripcion',
+    
+    // Contenido
     roles: Array.isArray(war.roles) ? war.roles.map(normalizeRole) : [],
     waitlist: Array.isArray(war.waitlist) ? war.waitlist.map(normalizeWaitlistEntry).filter(Boolean) : [],
+    
+    // Discord
     creatorId: war.creatorId || null,
     channelId: war.channelId || null,
     messageId: war.messageId || null,
+    
+    // Scheduling (NUEVO)
+    dayOfWeek: war.dayOfWeek !== undefined ? Number(war.dayOfWeek) : null,  // 0-6
+    time: war.time || null,                         // "HH:mm"
+    timezone: war.timezone || 'America/Bogota',
+    duration: war.duration || 70,                   // minutos
+    notifyRoles: Array.isArray(war.notifyRoles) ? war.notifyRoles : [],  // Array de role IDs o user IDs
+    
+    // Control de automatización (NUEVO)
+    schedule: normalizeSchedule(war.schedule),
+    
+    // Timestamps
     createdAt,
     closesAt,
     isClosed: Boolean(war.isClosed)
+  };
+}
+
+/**
+ * Normaliza configuración de schedule
+ */
+function normalizeSchedule(schedule = {}) {
+  return {
+    enabled: Boolean(schedule.enabled),
+    lastCreatedAt: schedule.lastCreatedAt || null,
+    lastMessageIdDeleted: schedule.lastMessageIdDeleted || null
   };
 }
 
