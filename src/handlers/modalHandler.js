@@ -244,10 +244,21 @@ async function showScheduleDaysSelector(interaction, warData) {
       value: `Hora: **${warData.time}**\nDuración: **${warData.duration} min**\nZona: **${warData.timezone}**`
     });
 
-  await interaction.update({
-    embeds: [embed],
-    components: [new ActionRowBuilder().addComponents(menu)]
-  });
+  try {
+    await interaction.update({
+      embeds: [embed],
+      components: [new ActionRowBuilder().addComponents(menu)]
+    });
+  } catch (error) {
+    if (error?.code === 40060) {
+      await interaction.editReply({
+        embeds: [embed],
+        components: [new ActionRowBuilder().addComponents(menu)]
+      });
+    } else {
+      throw error;
+    }
+  }
 }
 
 module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
