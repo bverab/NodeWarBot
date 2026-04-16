@@ -179,6 +179,7 @@ async function handleRemoveFakeUser(interaction) {
       return { type: 'not_found' };
     }
 
+    const promotedUsers = [];
     state.roles.forEach(role => {
       if (role.users.length >= role.max) return;
 
@@ -190,9 +191,16 @@ async function handleRemoveFakeUser(interaction) {
         displayName: next.userName,
         isFake: next.isFake
       });
+
+      promotedUsers.push({
+        userId: next.userId,
+        displayName: next.userName,
+        isFake: next.isFake,
+        roleName: role.name
+      });
     });
 
-    return { type: 'removed' };
+    return { type: 'removed', promotedUsers };
   });
 
   if (!updatedWar || !result) {
@@ -206,6 +214,10 @@ async function handleRemoveFakeUser(interaction) {
 
   if (result.type === 'not_found') {
     return await interaction.editReply({ content: `**${fakeName}** no estaba en roles ni waitlist` });
+  }
+
+  for (const promotedUser of result.promotedUsers || []) {
+    await notifyPromotion(interaction, updatedWar, promotedUser);
   }
 
   await interaction.editReply({ content: `**${fakeName}** removido del evento` });
@@ -243,4 +255,27 @@ async function resolveActiveWar(interaction) {
   }
 
   return fallback;
+}
+
+async function notifyPromotion(interaction, war, promotedUser) {
+  if (!promotedUser || promotedUser.isFake) return;
+
+  const text = `avanzaste en la waitlist, ahora tienes cupo para **${promotedUser.roleName}**`;
+
+  try {
+    const user = await interaction.client.users.fetch(promotedUser.userId);
+    await user.send(`**${war.name}**: ${text}`);
+    return;
+  } catch (error) {
+    console.log(`DM no disponible para ${promotedUser.userId}, usando fallback en canal`);
+  }
+
+  try {
+    await interaction.channel.send({
+      content: `<@${promotedUser.userId}> ${text}`,
+      allowedMentions: { parse: ['users'] }
+    });
+  } catch (error) {
+    console.log(`No se pudo enviar fallback en canal para ${promotedUser.userId}`);
+  }
 }

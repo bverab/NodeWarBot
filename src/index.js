@@ -27,13 +27,15 @@ client.once(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async interaction => {
   try {
+    const scheduleCustomIds = new Set(['schedule_war_days', 'schedule_war_mentions']);
+
     if (interaction.isAutocomplete()) {
       const command = client.commands.get(interaction.commandName);
       if (command) await command.execute(interaction);
       return;
     }
 
-    if (interaction.isModalSubmit()) {
+    if (interaction.isModalSubmit() || (interaction.isStringSelectMenu() && scheduleCustomIds.has(interaction.customId))) {
       return modalHandler(interaction);
     }
 
@@ -43,6 +45,7 @@ client.on(Events.InteractionCreate, async interaction => {
           'add_roles_bulk',
           'publish_war',
           'cancel_war',
+          'skip_mentions_publish',
           'open_role_panel',
           'panel_select_role',
           'panel_edit_name',

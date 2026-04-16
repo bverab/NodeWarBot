@@ -5,9 +5,6 @@ const {
   ButtonBuilder,
   ButtonStyle
 } = require('discord.js');
-const warService = require('../services/warService');
-const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
-const { normalizeWar } = require('../utils/warState');
 
 module.exports = async interaction => {
   const { customId } = interaction;
@@ -109,51 +106,7 @@ async function handleSkipMentionsPublish(interaction) {
   }
 
   await interaction.deferUpdate();
-  
-  // Importar directamente la función de confirmación
-  const warService = require('../services/warService');
-  const { normalizeWar } = require('../utils/warState');
-  const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-
-  if (warData.roles.length === 0) {
-    return await interaction.editReply({ content: '❌ Agrega al menos 1 rol antes de publicar', components: [] });
-  }
-
-  const createdWars = [];
-  for (const dayOfWeek of scheduleTemp.days) {
-    const warToCreate = {
-      ...warData,
-      dayOfWeek,
-      notifyRoles: [],
-      id: `${warData.groupId}_day${dayOfWeek}`,
-      messageId: null
-    };
-
-    const normalized = normalizeWar(warToCreate);
-    
-    try {
-      const message = await interaction.channel.send({
-        ...buildWarMessagePayload(normalized)
-      });
-
-      normalized.messageId = message.id;
-      warService.createWar(normalized);
-      createdWars.push({ dayOfWeek, messageId: message.id });
-    } catch (error) {
-      console.error(`Error publicando evento para día ${dayOfWeek}:`, error);
-    }
-  }
-
-  delete global.warEdits[interaction.user.id];
-  delete global.warScheduleTemp[interaction.user.id];
-
-  const daysText = scheduleTemp.days.map(d => dayNames[d]).join(', ');
-
-  await interaction.editReply({
-    content: `✅ **${warData.name}** publicado\n📅 Días: ${daysText}\n⏰ Hora: ${warData.time}\n📢 Sin menciones`,
-    components: []
-  });
+  await confirmAndPublish(interaction, warData, scheduleTemp.days, []);
 }
 
 async function handleOpenRolePanel(interaction) {

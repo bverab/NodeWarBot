@@ -60,12 +60,18 @@ async function checkAndExecuteEvents() {
 
   try {
     const wars = warService.loadWars();
-    const now = new Date();
+    const nowMs = Date.now();
+    const now = new Date(nowMs);
 
     for (const war of wars) {
+      if (isWarExpired(war, nowMs)) {
+        await expireWarMessage(war);
+        continue;
+      }
+
       // Saltarse si no es un evento con schedule
       if (!war.schedule || !war.schedule.enabled) continue;
-      if (!war.dayOfWeek || !war.time) continue;
+      if ((war.dayOfWeek === null || war.dayOfWeek === undefined) || !war.time) continue;
 
       // Verificar si debe ejecutarse
       if (!shouldExecute(war.dayOfWeek, war.time, now)) continue;
@@ -104,7 +110,7 @@ async function executeWarPublication(war) {
   const { client } = schedulerInstance;
 
   try {
-    const channel = client.channels.cache.get(war.channelId);
+    const channel = await client.channels.fetch(war.channelId).catch(() => null);
     if (!channel) {
       console.warn(`⚠️ No se encontró canal ${war.channelId} para evento ${war.id}`);
       return;
@@ -121,29 +127,80 @@ async function executeWarPublication(war) {
       }
     }
 
-    // Publicar nuevo mensaje
+    const publicationTimestamp = Date.now();
+    const durationMinutes = Number.isFinite(war.duration) && war.duration > 0 ? war.duration : 70;
+    const notifyRoles = Array.isArray(war.notifyRoles) ? war.notifyRoles.map(String).filter(Boolean) : [];
+    const publishContent = notifyRoles.length > 0
+      ? notifyRoles.map(roleId => `<@&${roleId}>`).join(' ')
+      : 'Evento creado automaticamente';
+
+    // Publicar nuevo mensaje (incluye menciones configuradas)
+    const warForPublication = {
+      ...war,
+      createdAt: publicationTimestamp,
+      closesAt: publicationTimestamp + durationMinutes * 60 * 1000,
+      isClosed: false,
+      waitlist: [],
+      roles: Array.isArray(war.roles)
+        ? war.roles.map(role => ({
+            ...role,
+            users: []
+          }))
+        : []
+    };
+
     const message = await channel.send({
-      content: 'Evento creado automáticamente',
-      ...buildWarMessagePayload(war)
+      content: publishContent,
+      allowedMentions: notifyRoles.length > 0 ? { parse: [], roles: notifyRoles } : { parse: [] },
+      ...buildWarMessagePayload(warForPublication)
     });
 
-    // Hacer mentions si están configurados
-    if (war.notifyRoles && war.notifyRoles.length > 0) {
-      const mentions = war.notifyRoles.join(' ');
-      await channel.send({
-        content: `${mentions} - Evento **${war.name}** abierto para inscripciones`,
-        allowedMentions: { parse: ['roles', 'users'] }
-      });
-    }
-
     // Actualizar registro del evento
-    war.messageId = message.id;
-    war.schedule.lastCreatedAt = Date.now();
-    warService.updateWar(war);
+    warForPublication.messageId = message.id;
+    warForPublication.schedule.lastCreatedAt = publicationTimestamp;
+    warService.updateWar(warForPublication);
 
     console.log(`✅ Evento auto-publicado: ${war.id} en canal ${war.channelId}`);
   } catch (error) {
     console.error(`❌ Error publicando evento ${war.id}:`, error);
+  }
+}
+
+function isWarExpired(war, nowMs) {
+  if (!war.messageId) return false;
+  if (!Number.isFinite(war.closesAt) || war.closesAt <= 0) return false;
+  return nowMs >= war.closesAt;
+}
+
+async function expireWarMessage(war) {
+  const { client } = schedulerInstance;
+
+  try {
+    const channel = await client.channels.fetch(war.channelId).catch(() => null);
+    if (!channel) {
+      war.messageId = null;
+      war.isClosed = true;
+      war.schedule.lastMessageIdDeleted = Date.now();
+      warService.updateWar(war);
+      return;
+    }
+
+    try {
+      const message = await channel.messages.fetch(war.messageId);
+      await message.delete();
+    } catch (error) {
+      if (error?.code !== 10008) {
+        console.warn(`No se pudo eliminar evento expirado ${war.id}:`, error?.message || error);
+      }
+    }
+
+    war.messageId = null;
+    war.isClosed = true;
+    war.schedule.lastMessageIdDeleted = Date.now();
+    warService.updateWar(war);
+    console.log(`Evento expirado y eliminado: ${war.id}`);
+  } catch (error) {
+    console.error(`Error al expirar evento ${war.id}:`, error);
   }
 }
 

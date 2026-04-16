@@ -72,7 +72,8 @@ function normalizeWaitlistEntry(entry = {}) {
 
 function normalizeWar(war = {}) {
   const createdAt = Number.isFinite(war.createdAt) ? war.createdAt : deriveCreatedAt(war.id);
-  const closesAt = Number.isFinite(war.closesAt) ? war.closesAt : createdAt + 48 * 60 * 60 * 1000;
+  const duration = Number.isFinite(war.duration) && war.duration > 0 ? war.duration : 70;
+  const closesAt = Number.isFinite(war.closesAt) ? war.closesAt : createdAt + duration * 60 * 1000;
 
   return {
     // Identificación básica
@@ -94,7 +95,7 @@ function normalizeWar(war = {}) {
     dayOfWeek: war.dayOfWeek !== undefined ? Number(war.dayOfWeek) : null,  // 0-6
     time: war.time || null,                         // "HH:mm"
     timezone: war.timezone || 'America/Bogota',
-    duration: war.duration || 70,                   // minutos
+    duration,                                       // minutos
     notifyRoles: Array.isArray(war.notifyRoles) ? war.notifyRoles : [],  // Array de role IDs o user IDs
     
     // Control de automatización (NUEVO)
@@ -179,8 +180,9 @@ function pickWaitlistForRole(war, roleName) {
   if (!war.waitlist.length) return null;
 
   const targetedIndex = war.waitlist.findIndex(entry => entry.roleName === roleName);
-  const index = targetedIndex >= 0 ? targetedIndex : 0;
-  const [entry] = war.waitlist.splice(index, 1);
+  if (targetedIndex < 0) return null;
+
+  const [entry] = war.waitlist.splice(targetedIndex, 1);
   return entry || null;
 }
 

@@ -152,24 +152,12 @@ async function handleJoinRole(interaction) {
 
     if (isAlreadyInSelectedRole) {
       selectedRole.users = selectedRole.users.filter(user => user.userId !== participant.userId);
-
-      let promoted = null;
-      if (selectedRole.users.length < selectedRole.max) {
-        const nextInWaitlist = pickWaitlistForRole(state, selectedRole.name);
-        if (nextInWaitlist) {
-          promoted = {
-            userId: nextInWaitlist.userId,
-            displayName: nextInWaitlist.userName,
-            isFake: nextInWaitlist.isFake
-          };
-          addParticipantToRole(selectedRole, promoted);
-        }
-      }
+      const promoted = promoteFromWaitlist(state, selectedRole.name);
 
       return {
         type: 'left_role',
         roleName: selectedRole.name,
-        promoted
+        promotedUsers: promoted ? [promoted] : []
       };
     }
 
@@ -180,6 +168,19 @@ async function handleJoinRole(interaction) {
     const currentRole = findParticipantRole(state, participant.userId);
 
     if (selectedRole.users.length >= selectedRole.max) {
+      const promotedUsers = [];
+
+      if (currentRole && currentRole.name !== selectedRole.name) {
+        const previousRoleName = currentRole.name;
+        removeParticipantFromAllRoles(state, participant.userId);
+
+        const promoted = promoteFromWaitlist(state, previousRoleName);
+        if (promoted) promotedUsers.push(promoted);
+      }
+
+      // Garantiza que el usuario tenga solo una entrada en waitlist (actualiza al nuevo rol objetivo).
+      removeFromWaitlist(state, participant.userId);
+
       const added = upsertWaitlistEntry(state, {
         userId: participant.userId,
         userName: participant.displayName,
@@ -191,12 +192,20 @@ async function handleJoinRole(interaction) {
       return {
         type: added ? 'waitlist_added' : 'waitlist_exists',
         roleName: selectedRole.name,
-        queueSize: state.waitlist.length
+        queueSize: state.waitlist.length,
+        promotedUsers
       };
     }
 
+    let promotedUsers = [];
     if (currentRole) {
+      const previousRoleName = currentRole.name;
       removeParticipantFromAllRoles(state, participant.userId);
+
+      if (previousRoleName !== selectedRole.name) {
+        const promoted = promoteFromWaitlist(state, previousRoleName);
+        if (promoted) promotedUsers.push(promoted);
+      }
     }
 
     addParticipantToRole(selectedRole, participant);
@@ -204,7 +213,8 @@ async function handleJoinRole(interaction) {
 
     return {
       type: currentRole ? 'switched_role' : 'joined_role',
-      roleName: selectedRole.name
+      roleName: selectedRole.name,
+      promotedUsers
     };
   });
 
@@ -229,12 +239,50 @@ async function handleJoinRole(interaction) {
     flags: 64
   });
 
-  if (result.promoted && !result.promoted.isFake) {
-    try {
-      const user = await interaction.client.users.fetch(result.promoted.userId);
-      await user.send(`Se libero un cupo y ahora estas inscrito en **${result.roleName}**`);
-    } catch (error) {
-      console.log('No se pudo notificar al usuario promovido');
-    }
+  for (const promotedUser of result.promotedUsers || []) {
+    await notifyPromotion(interaction, war, promotedUser);
+  }
+}
+
+function promoteFromWaitlist(state, roleName) {
+  const role = getRoleByName(state, roleName);
+  if (!role || role.users.length >= role.max) return null;
+
+  const nextInWaitlist = pickWaitlistForRole(state, role.name);
+  if (!nextInWaitlist) return null;
+
+  const promoted = {
+    userId: nextInWaitlist.userId,
+    displayName: nextInWaitlist.userName,
+    isFake: nextInWaitlist.isFake
+  };
+
+  addParticipantToRole(role, promoted);
+  return {
+    ...promoted,
+    roleName: role.name
+  };
+}
+
+async function notifyPromotion(interaction, war, promotedUser) {
+  if (!promotedUser || promotedUser.isFake) return;
+
+  const text = `avanzaste en la waitlist, ahora tienes cupo para **${promotedUser.roleName}**`;
+
+  try {
+    const user = await interaction.client.users.fetch(promotedUser.userId);
+    await user.send(`**${war.name}**: ${text}`);
+    return;
+  } catch (error) {
+    console.log(`DM no disponible para ${promotedUser.userId}, usando fallback en canal`);
+  }
+
+  try {
+    await interaction.channel.send({
+      content: `<@${promotedUser.userId}> ${text}`,
+      allowedMentions: { parse: ['users'] }
+    });
+  } catch (error) {
+    console.log(`No se pudo enviar fallback en canal para ${promotedUser.userId}`);
   }
 }

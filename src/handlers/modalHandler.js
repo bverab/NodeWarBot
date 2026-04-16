@@ -288,9 +288,10 @@ async function handleScheduleWarDays(interaction) {
     const roles = await interaction.guild.roles.fetch();
     const selectableRoles = roles
       .filter(r => !r.managed && r.id !== interaction.guildId)
+      .map(role => role)
       .slice(0, 25);
 
-    if (selectableRoles.size === 0) {
+    if (selectableRoles.length === 0) {
       await confirmAndPublish(interaction, warData, selectedDays, []);
       return;
     }
@@ -299,7 +300,7 @@ async function handleScheduleWarDays(interaction) {
       .setCustomId('schedule_war_mentions')
       .setPlaceholder('Roles a @mencionar (puedes elegir múltiples o dejar vacío)')
       .setMinValues(0)
-      .setMaxValues(selectableRoles.size)
+      .setMaxValues(selectableRoles.length)
       .addOptions(
         selectableRoles.map(role => ({
           label: role.name,
@@ -347,9 +348,10 @@ async function showScheduleMentionsSelector(interaction, warData, selectedDays) 
     const roles = await interaction.guild.roles.fetch();
     const selectableRoles = roles
       .filter(r => !r.managed && r.id !== interaction.guildId)
+      .map(role => role)
       .slice(0, 25);
 
-    if (selectableRoles.size === 0) {
+    if (selectableRoles.length === 0) {
       await confirmAndPublish(interaction, warData, selectedDays, []);
       return;
     }
@@ -358,7 +360,7 @@ async function showScheduleMentionsSelector(interaction, warData, selectedDays) 
       .setCustomId('schedule_war_mentions')
       .setPlaceholder('Roles a @mencionar (puedes elegir múltiples o dejar vacío)')
       .setMinValues(0)
-      .setMaxValues(selectableRoles.size)
+      .setMaxValues(selectableRoles.length)
       .addOptions(
         selectableRoles.map(role => ({
           label: role.name,
@@ -409,14 +411,15 @@ async function handleScheduleWarMentions(interaction) {
 async function confirmAndPublish(interaction, warData, selectedDays, mentionRoleIds) {
   const warService = require('../services/warService');
   const { normalizeWar } = require('../utils/warState');
-  const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
 
   if (warData.roles.length === 0) {
-    return await interaction.editReply({ content: '❌ Agrega al menos 1 rol antes de publicar', components: [] });
+    return await finalizeScheduleInteraction(interaction, {
+      content: '❌ Agrega al menos 1 rol antes de publicar',
+      components: []
+    });
   }
 
-  // Crear evento para cada día seleccionado
-  const createdWars = [];
+  // Guardar programación. La publicación real se hace en el scheduler.
   for (const dayOfWeek of selectedDays) {
     const warToCreate = {
       ...warData,
@@ -427,18 +430,7 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
     };
 
     const normalized = normalizeWar(warToCreate);
-    
-    try {
-      const message = await interaction.channel.send({
-        ...buildWarMessagePayload(normalized)
-      });
-
-      normalized.messageId = message.id;
-      warService.createWar(normalized);
-      createdWars.push({ dayOfWeek, messageId: message.id });
-    } catch (error) {
-      console.error(`Error publicando evento para día ${dayOfWeek}:`, error);
-    }
+    warService.createWar(normalized);
   }
 
   delete global.warEdits[interaction.user.id];
@@ -450,13 +442,28 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
     ? mentionRoleIds.map(id => `<@&${id}>`).join(' ')
     : '(sin menciones)';
 
-  await interaction.editReply({
-    content: `✅ **${warData.name}** publicado\n📅 Días: ${daysText}\n⏰ Hora: ${warData.time}\n📢 Menciones: ${mentionText}`,
+  await finalizeScheduleInteraction(interaction, {
+    content: `✅ **${warData.name}** programado\n📅 Días: ${daysText}\n⏰ Hora: ${warData.time}\n📢 Menciones al publicar: ${mentionText}`,
     components: []
   });
 }
 
 module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
+module.exports.confirmAndPublish = confirmAndPublish;
+
+async function finalizeScheduleInteraction(interaction, payload) {
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+    return;
+  }
+
+  if (interaction.isStringSelectMenu() || interaction.isButton()) {
+    await interaction.update(payload);
+    return;
+  }
+
+  await interaction.reply({ ...payload, flags: 64 });
+}
 
 async function safeDefer(interaction) {
   if (interaction.deferred || interaction.replied) return true;
