@@ -1,10 +1,28 @@
 const fs = require('fs');
 const path = require('path');
+const { normalizeWar } = require('../utils/warState');
 
 const filePath = path.join(__dirname, '../../data/wars.json');
 
+function readWarsFile() {
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, '[]');
+  }
+
+  const raw = fs.readFileSync(filePath, 'utf8').trim();
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('JSON invalido en wars.json:', error);
+    return [];
+  }
+}
+
 function loadWars() {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  return readWarsFile().map(normalizeWar);
 }
 
 function saveWars(wars) {
@@ -13,94 +31,63 @@ function saveWars(wars) {
 
 function createWar(data) {
   const wars = loadWars();
-  // Asegurar que tiene waitlist
-  if (!data.waitlist) {
-    data.waitlist = [];
-  }
-  wars.push(data);
+  const war = normalizeWar(data);
+  wars.push(war);
   saveWars(wars);
-  return data;
+  return war;
 }
 
 function getWarByMessageId(messageId) {
   const wars = loadWars();
-  return wars.find(w => w.messageId === messageId);
+  return wars.find(war => war.messageId === messageId) || null;
+}
+
+function getLatestWarByChannelId(channelId) {
+  const wars = loadWars().filter(war => war.channelId === channelId);
+  if (!wars.length) return null;
+
+  wars.sort((a, b) => b.createdAt - a.createdAt);
+  return wars[0];
 }
 
 function updateWar(updatedWar) {
-  const wars = loadWars().map(w =>
-    w.id === updatedWar.id ? updatedWar : w
-  );
+  const normalized = normalizeWar(updatedWar);
+  const wars = loadWars().map(war => (war.id === normalized.id ? normalized : war));
   saveWars(wars);
+  return normalized;
 }
 
-// Agregar usuario a waitlist
-function addToWaitlist(messageId, userId, userName, roleName = null) {
+function updateWarByMessageId(messageId, updater) {
   const wars = loadWars();
-  const war = wars.find(w => w.messageId === messageId);
-  
-  if (!war) return false;
-  
-  // Evitar duplicados
-  if (war.waitlist.some(w => w.userId === userId)) {
-    return false;
+  const index = wars.findIndex(war => war.messageId === messageId);
+  if (index < 0) {
+    return { war: null, result: null };
   }
-  
-  war.waitlist.push({
-    userId,
-    userName,
-    roleName,
-    joinedAt: Date.now()
-  });
-  
+
+  const war = normalizeWar(wars[index]);
+  const result = updater(war);
+  wars[index] = war;
   saveWars(wars);
-  return true;
+
+  return { war, result };
 }
 
-// Remover de waitlist
-function removeFromWaitlist(messageId, userId) {
+function deleteWarByMessageId(messageId) {
   const wars = loadWars();
-  const war = wars.find(w => w.messageId === messageId);
-  
-  if (!war) return false;
-  
-  war.waitlist = war.waitlist.filter(w => w.userId !== userId);
-  saveWars(wars);
-  return true;
-}
+  const filtered = wars.filter(war => war.messageId !== messageId);
+  if (filtered.length === wars.length) return false;
 
-// Obtener siguiente en waitlist (FIFO)
-function getNextInWaitlist(messageId) {
-  const wars = loadWars();
-  const war = wars.find(w => w.messageId === messageId);
-  
-  if (!war || war.waitlist.length === 0) return null;
-  
-  return war.waitlist[0]; // El primero en entrar es el primero en salir
-}
-
-// Remover usuario de todos los roles (para unirse a otro)
-function removeUserFromAllRoles(messageId, userId) {
-  const wars = loadWars();
-  const war = wars.find(w => w.messageId === messageId);
-  
-  if (!war) return false;
-  
-  war.roles.forEach(role => {
-    role.users = role.users.filter(u => !u.endsWith(`|${userId}`));
-  });
-  
-  saveWars(wars);
+  saveWars(filtered);
   return true;
 }
 
 module.exports = {
+  loadWars,
+  saveWars,
   createWar,
   getWarByMessageId,
+  getLatestWarByChannelId,
   updateWar,
-  addToWaitlist,
-  removeFromWaitlist,
-  getNextInWaitlist,
-  removeUserFromAllRoles,
-  loadWars
+  updateWarByMessageId,
+  deleteWarByMessageId
 };

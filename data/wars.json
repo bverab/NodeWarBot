@@ -1,57 +1,97 @@
 [
   {
     "id": "1776301078461",
-    "messageId": "1494139759050620988",
-    "channelId": "1494137417865629747",
+    "name": "Node War",
+    "type": "Sin descripcion",
     "roles": [
       {
         "name": "Caller",
         "max": 2,
-        "users": []
+        "emoji": null,
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
       },
       {
         "name": "Shai",
         "max": 3,
-        "users": []
+        "emoji": null,
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
       },
       {
         "name": "Flex",
         "max": 5,
-        "users": []
+        "emoji": null,
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
       }
-    ]
+    ],
+    "waitlist": [],
+    "creatorId": null,
+    "channelId": "1494137417865629747",
+    "messageId": "1494139759050620988",
+    "createdAt": 1776314773452,
+    "closesAt": 1776487573452,
+    "isClosed": false
   },
   {
     "id": "1776301344510",
-    "messageId": "1494140874781626479",
-    "channelId": "1494137417865629747",
+    "name": "Node War",
+    "type": "Sin descripcion",
     "roles": [
       {
         "name": "Caller",
         "max": 2,
-        "users": []
+        "emoji": null,
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
       },
       {
         "name": "Shai",
         "max": 3,
-        "users": []
+        "emoji": null,
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
       },
       {
         "name": "Flex",
         "max": 5,
-        "users": []
+        "emoji": null,
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
       }
-    ]
+    ],
+    "waitlist": [],
+    "creatorId": null,
+    "channelId": "1494137417865629747",
+    "messageId": "1494140874781626479",
+    "createdAt": 1776314773452,
+    "closesAt": 1776487573452,
+    "isClosed": false
   },
   {
     "id": "1776301428746",
-    "messageId": "1494141227543560294",
-    "channelId": "1494137417865629747",
+    "name": "Node War",
+    "type": "Sin descripcion",
     "roles": [
       {
         "name": "Caller",
         "max": 2,
-        "users": [],
+        "emoji": null,
+        "users": [
+          {
+            "userId": "fake_asd",
+            "displayName": "asd",
+            "isFake": true
+          }
+        ],
+        "allowedRoleIds": [],
         "allowedRoles": [
           "Líder",
           "Admin"
@@ -60,26 +100,39 @@
       {
         "name": "Shai",
         "max": 3,
+        "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
         "name": "Flex",
         "max": 5,
+        "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
-    ]
+    ],
+    "waitlist": [],
+    "creatorId": null,
+    "channelId": "1494137417865629747",
+    "messageId": "1494141227543560294",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776301534190",
-    "messageId": "1494141670147489916",
-    "channelId": "1494137417865629747",
+    "name": "Node War",
+    "type": "Sin descripcion",
     "roles": [
       {
         "name": "Caller",
         "max": 2,
+        "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": [
           "Líder",
           "Admin"
@@ -88,26 +141,39 @@
       {
         "name": "Shai",
         "max": 3,
+        "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
         "name": "Flex",
         "max": 5,
+        "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
-    ]
+    ],
+    "waitlist": [],
+    "creatorId": null,
+    "channelId": "1494137417865629747",
+    "messageId": "1494141670147489916",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776301803176",
-    "messageId": "1494142798645952532",
-    "channelId": "1494137417865629747",
+    "name": "Node War",
+    "type": "Sin descripcion",
     "roles": [
       {
         "name": "Caller",
         "max": 2,
+        "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": [
           "Líder",
           "Admin"
@@ -116,16 +182,27 @@
       {
         "name": "Shai",
         "max": 3,
+        "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
         "name": "Flex",
         "max": 5,
+        "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
-    ]
+    ],
+    "waitlist": [],
+    "creatorId": null,
+    "channelId": "1494137417865629747",
+    "messageId": "1494142798645952532",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776304790284",
@@ -137,8 +214,13 @@
         "max": 2,
         "emoji": null,
         "users": [
-          "158622386613256192"
+          {
+            "userId": "158622386613256192",
+            "displayName": "Usuario",
+            "isFake": false
+          }
         ],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -146,8 +228,13 @@
         "max": 5,
         "emoji": null,
         "users": [
-          "158622386613256192"
+          {
+            "userId": "158622386613256192",
+            "displayName": "Usuario",
+            "isFake": false
+          }
         ],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -155,6 +242,7 @@
         "max": 10,
         "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -162,6 +250,7 @@
         "max": 2,
         "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
     ],
@@ -169,11 +258,17 @@
       {
         "userId": "158622386613256192",
         "userName": "bazocka",
-        "joinedAt": 1776304833811
+        "roleName": null,
+        "joinedAt": 1776304833811,
+        "isFake": false
       }
     ],
     "creatorId": "158622386613256192",
-    "messageId": "1494155460662792403"
+    "channelId": null,
+    "messageId": "1494155460662792403",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776305189775",
@@ -185,6 +280,7 @@
         "max": 5,
         "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -192,6 +288,7 @@
         "max": 10,
         "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -199,14 +296,23 @@
         "max": 1,
         "emoji": null,
         "users": [
-          "158622386613256192"
+          {
+            "userId": "158622386613256192",
+            "displayName": "Usuario",
+            "isFake": false
+          }
         ],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
     ],
     "waitlist": [],
     "creatorId": "158622386613256192",
-    "messageId": "1494157099519840397"
+    "channelId": null,
+    "messageId": "1494157099519840397",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776305261089",
@@ -218,8 +324,13 @@
         "max": 2,
         "emoji": null,
         "users": [
-          "158622386613256192"
+          {
+            "userId": "158622386613256192",
+            "displayName": "Usuario",
+            "isFake": false
+          }
         ],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -227,6 +338,7 @@
         "max": 5,
         "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -234,12 +346,17 @@
         "max": 2,
         "emoji": null,
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
     ],
     "waitlist": [],
     "creatorId": "158622386613256192",
-    "messageId": "1494157391284015194"
+    "channelId": null,
+    "messageId": "1494157391284015194",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776305582419",
@@ -251,6 +368,7 @@
         "max": 1,
         "emoji": "🎈",
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -258,6 +376,7 @@
         "max": 5,
         "emoji": "🎇",
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -265,12 +384,17 @@
         "max": 2,
         "emoji": "🧙",
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
     ],
     "waitlist": [],
     "creatorId": "158622386613256192",
-    "messageId": "1494158763429728378"
+    "channelId": null,
+    "messageId": "1494158763429728378",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776305974262",
@@ -282,6 +406,7 @@
         "max": 2,
         "emoji": "🧙",
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -289,12 +414,17 @@
         "max": 1,
         "emoji": "❤",
         "users": [],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
     ],
     "waitlist": [],
     "creatorId": "158622386613256192",
-    "messageId": "1494160329033252916"
+    "channelId": null,
+    "messageId": "1494160329033252916",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776306259911",
@@ -306,8 +436,13 @@
         "max": 1,
         "emoji": "❤",
         "users": [
-          "158622386613256192"
+          {
+            "userId": "158622386613256192",
+            "displayName": "Usuario",
+            "isFake": false
+          }
         ],
+        "allowedRoleIds": [],
         "allowedRoles": []
       },
       {
@@ -315,14 +450,23 @@
         "max": 2,
         "emoji": "🧙",
         "users": [
-          "158622386613256192"
+          {
+            "userId": "158622386613256192",
+            "displayName": "Usuario",
+            "isFake": false
+          }
         ],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
     ],
     "waitlist": [],
     "creatorId": "158622386613256192",
-    "messageId": "1494161513978794179"
+    "channelId": null,
+    "messageId": "1494161513978794179",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
   },
   {
     "id": "1776306630466",
@@ -334,13 +478,202 @@
         "max": 1,
         "emoji": "❤",
         "users": [
-          "Bverab (158622386613256192)"
+          {
+            "userId": "158622386613256192",
+            "displayName": "Bverab",
+            "isFake": true
+          }
         ],
+        "allowedRoleIds": [],
         "allowedRoles": []
       }
     ],
     "waitlist": [],
     "creatorId": "158622386613256192",
-    "messageId": "1494163063505424394"
+    "channelId": null,
+    "messageId": "1494163063505424394",
+    "createdAt": 1776314773453,
+    "closesAt": 1776487573453,
+    "isClosed": false
+  },
+  {
+    "id": "1776314767828",
+    "name": "asdasd",
+    "type": "asdasd",
+    "roles": [
+      {
+        "name": "Caller",
+        "max": 1,
+        "emoji": "❤",
+        "users": [
+          {
+            "userId": "158622386613256192",
+            "displayName": "Bverab",
+            "isFake": false
+          }
+        ],
+        "allowedRoleIds": [],
+        "allowedRoles": []
+      }
+    ],
+    "waitlist": [],
+    "creatorId": "158622386613256192",
+    "channelId": "1494137417865629747",
+    "messageId": "1494197200614461591",
+    "createdAt": 1776314767828,
+    "closesAt": 1776487567828,
+    "isClosed": false
+  },
+  {
+    "id": "1776315070705",
+    "name": "NodeWar T2",
+    "type": "asdasdad",
+    "roles": [
+      {
+        "name": "Callers",
+        "max": 1,
+        "emoji": "❤",
+        "users": [
+          {
+            "userId": "fake_asdad",
+            "displayName": "asdad",
+            "isFake": true
+          }
+        ],
+        "allowedRoleIds": [],
+        "allowedRoles": []
+      }
+    ],
+    "waitlist": [
+      {
+        "userId": "158622386613256192",
+        "userName": "Bverab",
+        "roleName": "Callers",
+        "joinedAt": 1776315102991,
+        "isFake": false
+      }
+    ],
+    "creatorId": "158622386613256192",
+    "channelId": "1494137417865629747",
+    "messageId": "1494198479290110093",
+    "createdAt": 1776315070705,
+    "closesAt": 1776487870705,
+    "isClosed": false
+  },
+  {
+    "id": "1776315683835",
+    "name": "Node War T2",
+    "type": "asdsad",
+    "roles": [
+      {
+        "name": "Callers",
+        "max": 1,
+        "emoji": null,
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
+      },
+      {
+        "name": "Dosa",
+        "max": 1,
+        "emoji": null,
+        "users": [
+          {
+            "userId": "fake_asdad",
+            "displayName": "asdad",
+            "isFake": true
+          }
+        ],
+        "allowedRoleIds": [
+          "1494200261248422000"
+        ],
+        "allowedRoles": [
+          "Dosa"
+        ]
+      }
+    ],
+    "waitlist": [],
+    "creatorId": "158622386613256192",
+    "channelId": "1494137417865629747",
+    "messageId": "1494201143675322439",
+    "createdAt": 1776315683835,
+    "closesAt": 1776488483835,
+    "isClosed": false
+  },
+  {
+    "id": "1776315966386",
+    "name": "Node War T2",
+    "type": "asdasd",
+    "roles": [
+      {
+        "name": "Callers",
+        "max": 1,
+        "emoji": "❤",
+        "users": [
+          {
+            "userId": "158622386613256192",
+            "displayName": "Bverab",
+            "isFake": false
+          }
+        ],
+        "allowedRoleIds": [],
+        "allowedRoles": []
+      },
+      {
+        "name": "Dosa",
+        "max": 1,
+        "emoji": "👀",
+        "users": [
+          {
+            "userId": "fake_asds",
+            "displayName": "asds",
+            "isFake": true
+          }
+        ],
+        "allowedRoleIds": [
+          "1494200261248422000"
+        ],
+        "allowedRoles": [
+          "Dosa"
+        ]
+      }
+    ],
+    "waitlist": [],
+    "creatorId": "158622386613256192",
+    "channelId": "1494137417865629747",
+    "messageId": "1494202292084412558",
+    "createdAt": 1776315966386,
+    "closesAt": 1776488766386,
+    "isClosed": false
+  },
+  {
+    "id": "1776317174458",
+    "name": "NodeWar T2",
+    "type": "asdad",
+    "roles": [
+      {
+        "name": "Callers",
+        "max": 1,
+        "emoji": "<:pikachu:1494205267959742506>",
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
+      },
+      {
+        "name": "Dosa",
+        "max": 1,
+        "emoji": "<:AngryMaegu:1376817010511450122>",
+        "users": [],
+        "allowedRoleIds": [],
+        "allowedRoles": []
+      }
+    ],
+    "waitlist": [],
+    "creatorId": "158622386613256192",
+    "channelId": "1494137417865629747",
+    "messageId": "1494207512226955365",
+    "createdAt": 1776317174458,
+    "closesAt": 1776489974458,
+    "isClosed": false
   }
 ]

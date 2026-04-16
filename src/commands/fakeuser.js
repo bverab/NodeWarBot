@@ -1,14 +1,28 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { loadWars, updateWar } = require('../services/warService');
+const {
+  loadWars,
+  getLatestWarByChannelId,
+  updateWarByMessageId
+} = require('../services/warService');
+const {
+  getRoleByName,
+  removeParticipantFromAllRoles,
+  addParticipantToRole,
+  upsertWaitlistEntry,
+  removeFromWaitlist,
+  pickWaitlistForRole,
+  getFakeUserIdFromName
+} = require('../utils/warState');
+const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('fakeuser')
-    .setDescription('👤 Agrega un usuario ficticio a un evento (solo para testing)')
+    .setDescription('Herramientas de testing para waitlist y roles')
     .addSubcommand(subcommand =>
       subcommand
         .setName('add')
-        .setDescription('Agrega un usuario ficticio a un rol')
+        .setDescription('Agrega un usuario ficticio a un rol (o waitlist si esta lleno)')
         .addStringOption(option =>
           option
             .setName('nombre')
@@ -18,9 +32,20 @@ module.exports = {
         .addStringOption(option =>
           option
             .setName('rol')
-            .setDescription('Rol al que agregar')
+            .setDescription('Rol de destino')
             .setRequired(true)
             .setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('remove')
+        .setDescription('Remueve un usuario ficticio de roles y waitlist')
+        .addStringOption(option =>
+          option
+            .setName('nombre')
+            .setDescription('Nombre del usuario ficticio')
+            .setRequired(true)
         )
     ),
 
@@ -34,213 +59,188 @@ module.exports = {
       if (subcommand === 'add') {
         return await handleAddFakeUser(interaction);
       }
+
+      if (subcommand === 'remove') {
+        return await handleRemoveFakeUser(interaction);
+      }
     } catch (error) {
-      console.error('❌ Error en fakeuser:', error);
+      console.error('Error en fakeuser:', error);
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: '❌ Error ejecutando comando',
-          flags: 64
-        });
+        await interaction.reply({ content: 'Error ejecutando comando', flags: 64 });
       }
     }
   }
 };
 
 async function handleAutocomplete(interaction) {
-  const focusedValue = interaction.options.getFocused();
+  const focusedValue = interaction.options.getFocused().toLowerCase();
+  const war = await resolveActiveWar(interaction);
 
-  try {
-    // Buscar evento en el canal
-    const messages = await interaction.channel.messages.fetch({ limit: 20 }).catch(() => null);
-    
-    if (!messages) {
-      return await interaction.respond([]);
-    }
-
-    const eventMessage = Array.from(messages.values())
-      .reverse()
-      .find(m => m.author.id === interaction.client.user.id && m.embeds && m.embeds[0]?.title?.includes('⚔️'));
-
-    if (!eventMessage) {
-      console.log('❌ No se encontró mensaje de evento');
-      return await interaction.respond([]);
-    }
-
-    const wars = loadWars();
-    const war = wars.find(w => w.messageId === eventMessage.id);
-
-    if (!war || !war.roles || war.roles.length === 0) {
-      console.log('❌ No se encontró war o no tiene roles');
-      return await interaction.respond([]);
-    }
-
-    // Filtrar roles que coincidan con el input
-    const choices = war.roles
-      .map(role => ({
-        name: `${role.emoji || '⚪'} ${role.name}`,
-        value: role.name
-      }))
-      .filter(choice => 
-        choice.value.toLowerCase().includes(focusedValue.toLowerCase()) ||
-        choice.name.toLowerCase().includes(focusedValue.toLowerCase())
-      )
-      .slice(0, 25);
-
-    await interaction.respond(choices);
-  } catch (error) {
-    console.error('❌ Error en autocompletado:', error);
-    await interaction.respond([]);
+  if (!war || !war.roles.length) {
+    return await interaction.respond([]);
   }
+
+  const choices = war.roles
+    .map(role => ({
+      name: `${role.emoji || 'o'} ${role.name}`,
+      value: role.name
+    }))
+    .filter(choice => choice.name.toLowerCase().includes(focusedValue) || choice.value.toLowerCase().includes(focusedValue))
+    .slice(0, 25);
+
+  await interaction.respond(choices);
 }
 
 async function handleAddFakeUser(interaction) {
   await interaction.deferReply({ flags: 64 });
 
-  const fakeUserName = interaction.options.getString('nombre');
-  const roleName = interaction.options.getString('rol');
-
-  // Buscar el último mensaje de evento en el canal
-  const messages = await interaction.channel.messages.fetch({ limit: 10 });
-  const eventMessage = messages
-    .reverse()
-    .find(m => m.author.id === interaction.client.user.id && m.embeds && m.embeds[0]?.title?.includes('⚔️'));
-
-  if (!eventMessage) {
-    return await interaction.editReply({
-      content: '❌ No se encontró ningún evento en este canal'
-    });
-  }
-
-  const wars = loadWars();
-  const war = wars.find(w => w.messageId === eventMessage.id);
+  const war = await resolveActiveWar(interaction);
   if (!war) {
-    return await interaction.editReply({
-      content: '❌ No se pudo cargar el evento. Intenta publicar el evento de nuevo.'
-    });
+    return await interaction.editReply({ content: 'No se encontro un evento publicado en este canal' });
   }
 
-  const role = war.roles.find(r => r.name.toLowerCase() === roleName.toLowerCase());
-  if (!role) {
-    return await interaction.editReply({
-      content: `❌ El rol "**${roleName}**" no existe.`
-    });
-  }
+  const fakeName = interaction.options.getString('nombre').trim();
+  const roleName = interaction.options.getString('rol').trim();
+  const fakeUserId = getFakeUserIdFromName(fakeName);
 
-  // Verificar si el usuario ficticio ya está en el rol
-  if (role.users.some(u => u.startsWith(fakeUserName + ' ('))) {
-    return await interaction.editReply({
-      content: `⚠️ **${fakeUserName}** ya está en **${role.name}**`
-    });
-  }
+  const { war: updatedWar, result } = updateWarByMessageId(war.messageId, state => {
+    const targetRole = getRoleByName(state, roleName);
+    if (!targetRole) return { type: 'missing_role' };
 
-  // Si el rol está lleno, agregar a waitlist
-  if (role.users.length >= role.max) {
-    const fakeId = `fake_${Date.now()}`;
-    if (war.waitlist.some(w => w.userId === fakeId || w.userName === fakeUserName)) {
-      return await interaction.editReply({
-        content: `⚠️ **${fakeUserName}** ya está en la lista de espera`
-      });
+    const participant = {
+      userId: fakeUserId,
+      displayName: fakeName,
+      isFake: true
+    };
+
+    if (targetRole.users.some(user => user.userId === fakeUserId)) {
+      return { type: 'already_in_role', roleName: targetRole.name };
     }
 
-    war.waitlist.push({
-      userId: fakeId,
-      userName: fakeUserName,
-      roleName: role.name,
-      joinedAt: Date.now()
-    });
+    removeParticipantFromAllRoles(state, fakeUserId);
+    removeFromWaitlist(state, fakeUserId);
 
-    updateWar(war);
-    await interaction.editReply({
-      content: `✅ **${fakeUserName}** agregado a la **lista de espera** de **${role.emoji || '⚪'} ${role.name}** (#${war.waitlist.length})`
-    });
-  } else {
-    // Agregar directamente al rol
-    const fakeId = `fake_${Date.now()}`;
-    const fakeUserEntry = `${fakeUserName} (${fakeId})`;
-    role.users.push(fakeUserEntry);
-    updateWar(war);
-    await interaction.editReply({
-      content: `✅ **${fakeUserName}** agregado a **${role.emoji || '⚪'} ${role.name}** (${role.users.length}/${role.max})`
-    });
+    if (targetRole.users.length >= targetRole.max) {
+      const added = upsertWaitlistEntry(state, {
+        userId: fakeUserId,
+        userName: fakeName,
+        roleName: targetRole.name,
+        joinedAt: Date.now(),
+        isFake: true
+      });
+
+      return {
+        type: added ? 'waitlist_added' : 'waitlist_exists',
+        roleName: targetRole.name,
+        queueSize: state.waitlist.length
+      };
+    }
+
+    addParticipantToRole(targetRole, participant);
+    return { type: 'joined_role', roleName: targetRole.name, size: targetRole.users.length, max: targetRole.max };
+  });
+
+  if (!updatedWar || !result) {
+    return await interaction.editReply({ content: 'No se pudo actualizar el evento' });
   }
 
-  // Actualizar el embed del evento
+  const refreshed = await refreshWarMessage(interaction, updatedWar);
+  if (!refreshed) {
+    return await interaction.editReply({ content: 'Evento actualizado en datos, pero no encontre el mensaje activo para refrescarlo' });
+  }
+
+  const replyByType = {
+    missing_role: `El rol **${roleName}** no existe`,
+    already_in_role: `**${fakeName}** ya esta en **${result.roleName}**`,
+    waitlist_exists: `**${fakeName}** ya estaba en waitlist`,
+    waitlist_added: `**${fakeName}** agregado a waitlist de **${result.roleName}** (#${result.queueSize})`,
+    joined_role: `**${fakeName}** agregado a **${result.roleName}** (${result.size}/${result.max})`
+  };
+
+  await interaction.editReply({ content: replyByType[result.type] || 'Evento actualizado' });
+}
+
+async function handleRemoveFakeUser(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const war = await resolveActiveWar(interaction);
+  if (!war) {
+    return await interaction.editReply({ content: 'No se encontro un evento publicado en este canal' });
+  }
+
+  const fakeName = interaction.options.getString('nombre').trim();
+  const fakeUserId = getFakeUserIdFromName(fakeName);
+
+  const { war: updatedWar, result } = updateWarByMessageId(war.messageId, state => {
+    const removedFromRoles = removeParticipantFromAllRoles(state, fakeUserId);
+    const removedFromWaitlist = removeFromWaitlist(state, fakeUserId);
+
+    if (!removedFromRoles && !removedFromWaitlist) {
+      return { type: 'not_found' };
+    }
+
+    state.roles.forEach(role => {
+      if (role.users.length >= role.max) return;
+
+      const next = pickWaitlistForRole(state, role.name);
+      if (!next) return;
+
+      addParticipantToRole(role, {
+        userId: next.userId,
+        displayName: next.userName,
+        isFake: next.isFake
+      });
+    });
+
+    return { type: 'removed' };
+  });
+
+  if (!updatedWar || !result) {
+    return await interaction.editReply({ content: 'No se pudo actualizar el evento' });
+  }
+
+  const refreshed = await refreshWarMessage(interaction, updatedWar);
+  if (!refreshed) {
+    return await interaction.editReply({ content: 'Evento actualizado en datos, pero no encontre el mensaje activo para refrescarlo' });
+  }
+
+  if (result.type === 'not_found') {
+    return await interaction.editReply({ content: `**${fakeName}** no estaba en roles ni waitlist` });
+  }
+
+  await interaction.editReply({ content: `**${fakeName}** removido del evento` });
+}
+
+async function refreshWarMessage(interaction, war) {
   try {
-    await eventMessage.edit(await buildEventMessage(war));
-  } catch (e) {
-    console.error('❌ Error actualizando evento:', e);
+    const message = await interaction.channel.messages.fetch(war.messageId);
+    await message.edit(buildWarMessagePayload(war));
+    return true;
+  } catch (error) {
+    if (error?.code === 10008) {
+      return false;
+    }
+
+    console.error('Error actualizando mensaje del evento:', error);
+    return false;
   }
 }
 
-async function buildEventMessage(war) {
-  const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+async function resolveActiveWar(interaction) {
+  const fallback = getLatestWarByChannelId(interaction.channelId);
+  const wars = loadWars()
+    .filter(war => war.channelId === interaction.channelId && war.messageId)
+    .sort((a, b) => b.createdAt - a.createdAt);
 
-  const embed = new EmbedBuilder()
-    .setTitle(`⚔️ ${war.name}`)
-    .setDescription(war.type)
-    .setColor(0x5865F2);
+  try {
+    const recentMessages = await interaction.channel.messages.fetch({ limit: 40 });
+    const messageIds = new Set(recentMessages.map(message => message.id));
 
-  // Cada rol en su propio campo
-  const roleFields = war.roles.map(role => {
-    const users = role.users.length > 0
-      ? role.users.join('\n')
-      : '—';
-
-    return {
-      name: `${role.emoji || '⚪'} ${role.name}`,
-      value: `${role.users.length}/${role.max}\n${users}`,
-      inline: true
-    };
-  });
-
-  if (roleFields.length > 0) {
-    embed.addFields(...roleFields);
+    const active = wars.find(war => messageIds.has(war.messageId));
+    if (active) return active;
+  } catch (error) {
+    console.warn('No se pudieron leer mensajes recientes para resolver evento activo');
   }
 
-  // Waitlist
-  if (war.waitlist && war.waitlist.length > 0) {
-    const waitlistText = war.waitlist
-      .map((w, idx) => {
-        const roleInfo = war.roles.find(r => r.name === w.roleName);
-        const roleLabel = roleInfo
-          ? `(${roleInfo.emoji || '⚪'} ${roleInfo.name})`
-          : '';
-        return `${idx + 1}. ${w.userName} ${roleLabel}`;
-      })
-      .join('\n');
-
-    embed.addFields({
-      name: `📋 Waitlist (${war.waitlist.length})`,
-      value: waitlistText,
-      inline: false
-    });
-  }
-
-  // Botones
-  const buttons = [];
-  let currentRow = new ActionRowBuilder();
-
-  war.roles.forEach(role => {
-    const btn = new ButtonBuilder()
-      .setCustomId(`join_${role.name}`)
-      .setLabel(`${role.emoji || '⚪'} ${role.name} (${role.users.length}/${role.max})`)
-      .setStyle(ButtonStyle.Secondary);
-
-    buttons.push(btn);
-  });
-
-  const rows = [];
-  for (let i = 0; i < buttons.length; i++) {
-    if (i > 0 && i % 5 === 0) {
-      rows.push(currentRow);
-      currentRow = new ActionRowBuilder();
-    }
-    currentRow.addComponents(buttons[i]);
-  }
-
-  if (currentRow.components.length > 0) {
-    rows.push(currentRow);
-  }
-
-  return { embeds: [embed], components: rows };
+  return fallback;
 }
