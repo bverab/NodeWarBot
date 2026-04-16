@@ -9,9 +9,6 @@ const {
   TextInputStyle
 } = require('discord.js');
 const { isValidTime } = require('../utils/cronHelper');
-const warService = require('../services/warService');
-const { normalizeWar } = require('../utils/warState');
-const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
 
 module.exports = async interaction => {
   try {
@@ -19,24 +16,16 @@ module.exports = async interaction => {
       return await handleWarCreation(interaction);
     }
 
-    if (interaction.customId === 'add_roles_bulk') {
-      return await handleAddRolesBulk(interaction);
-    }
-
     if (interaction.customId === 'add_roles_bulk_modal') {
       return await handleAddRolesBulkModal(interaction);
     }
 
-    if (interaction.customId === 'select_war_day') {
-      return await handleSelectDay(interaction);
+    if (interaction.customId === 'schedule_war_days') {
+      return await handleScheduleWarDays(interaction);
     }
 
-    if (interaction.customId === 'select_war_time') {
-      return await handleSelectTime(interaction);
-    }
-
-    if (interaction.customId === 'select_war_mentions') {
-      return await handleSelectMentions(interaction);
+    if (interaction.customId === 'schedule_war_mentions') {
+      return await handleScheduleWarMentions(interaction);
     }
   } catch (error) {
     console.error('Error en modalHandler:', error);
@@ -83,208 +72,28 @@ async function handleWarCreation(interaction) {
   if (!global.warEdits) global.warEdits = {};
   global.warEdits[interaction.user.id] = warData;
 
-  // Mostrar selector de día de semana
-  await showDaySelector(interaction, warData);
-}
-
-/**
- * Muestra selector de día de semana
- */
-async function showDaySelector(interaction, warData) {
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId('select_war_day')
-    .setPlaceholder('Selecciona el día para este evento')
-    .addOptions(
-      dayNames.map((day, index) => ({
-        label: day,
-        value: String(index),
-        description: `Evento para ${day}`
-      }))
-    );
-
-  const embed = new EmbedBuilder()
-    .setTitle(`Configurar: ${warData.name}`)
-    .setDescription('**Paso 1: Selecciona día de semana**')
-    .setColor(0x5865f2)
-    .addFields({
-      name: 'Información',
-      value: `Nombre: **${warData.name}**\nTipo: ${warData.type}\nZona: ${warData.timezone}`
-    });
-
-  await interaction.editReply({
-    embeds: [embed],
-    components: [new ActionRowBuilder().addComponents(menu)]
-  });
-}
-
-/**
- * PASO 2: Maneja selección de día
- */
-async function handleSelectDay(interaction) {
-  if (!interaction.isStringSelectMenu()) return;
-
-  const warData = global.warEdits?.[interaction.user.id];
-  if (!warData) {
-    return await interaction.update({ content: 'Sesión expirada', components: [] });
-  }
-
-  warData.dayOfWeek = Number(interaction.values[0]);
-  await interaction.deferUpdate();
-  await showTimeModal(interaction);
-}
-
-/**
- * Muestra modal para hora y duración
- */
-async function showTimeModal(interaction) {
-  const modal = new ModalBuilder()
-    .setCustomId('select_war_time')
-    .setTitle('Configurar Hora');
-
-  const timeInput = new TextInputBuilder()
-    .setCustomId('time_input')
-    .setLabel('Hora (HH:mm, ej: 22:00)')
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true)
-    .setMaxLength(5)
-    .setValue('22:00');
-
-  const durationInput = new TextInputBuilder()
-    .setCustomId('duration_input')
-    .setLabel('Duración (minutos)')
-    .setStyle(TextInputStyle.Short)
-    .setRequired(false)
-    .setValue('70');
-
-  modal.addComponents(
-    new ActionRowBuilder().addComponents(timeInput),
-    new ActionRowBuilder().addComponents(durationInput)
-  );
-
-  await interaction.showModal(modal);
-}
-
-/**
- * PASO 3: Maneja input de hora y duración
- */
-async function handleSelectTime(interaction) {
-  const warData = global.warEdits?.[interaction.user.id];
-  if (!warData) {
-    return await interaction.reply({ content: 'Sesión expirada', flags: 64 });
-  }
-
-  const timeStr = interaction.fields.getTextInputValue('time_input').trim();
-  const durationStr = interaction.fields.getTextInputValue('duration_input').trim();
-
-  if (!isValidTime(timeStr)) {
-    return await interaction.reply({ content: '❌ Hora inválida (usa HH:mm)', flags: 64 });
-  }
-
-  const duration = Number(durationStr) || 70;
-  if (duration < 1 || duration > 1440) {
-    return await interaction.reply({ content: '❌ Duración 1-1440 min', flags: 64 });
-  }
-
-  warData.time = timeStr;
-  warData.duration = duration;
-
-  await interaction.deferReply({ flags: 64 });
-  await showMentionsSelector(interaction, warData);
-}
-
-/**
- * Muestra selector de @mentions
- */
-async function showMentionsSelector(interaction, warData) {
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  const dayName = dayNames[warData.dayOfWeek];
-
-  const embed = new EmbedBuilder()
-    .setTitle(`Configurar: ${warData.name}`)
-    .setDescription('**Paso 2: Notificaciones (opcional)**')
-    .setColor(0x5865f2)
-    .addFields({
-      name: '⏰ Evento',
-      value: `${dayName} ${warData.time} (${warData.duration} min)`
-    },
-    {
-      name: '📢 Instrucciones',
-      value: 'Selecciona roles para @mencionar cuando se publique'
-    });
-
-  try {
-    const roles = await interaction.guild.roles.fetch();
-    const selectableRoles = roles
-      .filter(r => !r.managed && r.id !== interaction.guildId)
-      .slice(0, 25);
-
-    if (selectableRoles.size === 0) {
-      await showRolesEditor(interaction, warData);
-      return;
-    }
-
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId('select_war_mentions')
-      .setPlaceholder('Selecciona roles (opcional)')
-      .setMinValues(0)
-      .setMaxValues(selectableRoles.size)
-      .addOptions(
-        selectableRoles.map(role => ({
-          label: role.name,
-          value: role.id
-        }))
-      );
-
-    await interaction.editReply({
-      embeds: [embed],
-      components: [new ActionRowBuilder().addComponents(menu)]
-    });
-  } catch (error) {
-    console.warn('Error obteniendo roles:', error);
-    await showRolesEditor(interaction, warData);
-  }
-}
-
-/**
- * Maneja selección de mentions
- */
-async function handleSelectMentions(interaction) {
-  if (!interaction.isStringSelectMenu()) return;
-
-  const warData = global.warEdits?.[interaction.user.id];
-  if (!warData) {
-    return await interaction.update({ content: 'Sesión expirada', components: [] });
-  }
-
-  warData.notifyRoles = interaction.values;
-  await interaction.deferUpdate();
+  await interaction.editReply({ content: '✅ Evento iniciado' });
   await showRolesEditor(interaction, warData);
 }
 
+
+
 /**
- * Muestra editor de roles
+ * Muestra editor de roles (panel principal)
  */
 async function showRolesEditor(interaction, warData) {
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  const dayName = dayNames[warData.dayOfWeek];
-  const mentionsText = warData.notifyRoles.length > 0
-    ? warData.notifyRoles.map(id => `<@&${id}>`).join(' ')
-    : '*(ninguno)*';
-
   const rolesDisplay = warData.roles.length > 0
     ? warData.roles.map(r => `${r.emoji || '○'} ${r.name} (${r.max})`).join('\n')
     : '*(ninguno)*';
 
   const embed = new EmbedBuilder()
-    .setTitle(`${warData.name} - ${dayName}`)
+    .setTitle(`📋 ${warData.name}`)
+    .setDescription(warData.type || 'Evento de guerra')
     .setColor(0x5865f2)
     .addFields(
-      { name: '⏰ Horario', value: `${warData.time} (${warData.duration} min)`, inline: true },
-      { name: '🌍 Zona', value: warData.timezone, inline: true },
-      { name: '📢 Menciones', value: mentionsText, inline: false },
-      { name: '👥 Roles', value: rolesDisplay, inline: false }
+      { name: '🌍 Zona Horaria', value: warData.timezone, inline: true },
+      { name: '👥 Roles', value: rolesDisplay, inline: false },
+      { name: '📝 Pasos', value: '1. Agrega roles aquí\n2. Haz click en **Publicar** para elegir días y @mentions', inline: false }
     );
 
   const buttons = new ActionRowBuilder().addComponents(
@@ -406,6 +215,192 @@ function extractEmojiAndName(text, interaction) {
 
   return { emoji: null, cleanName: text.trim() };
 }
+
+/**
+ * Mostrar selector de días (llamado desde interactionHandler al hacer click "Publicar")
+ */
+async function showScheduleDaysSelector(interaction, warData) {
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('schedule_war_days')
+    .setPlaceholder('Selecciona el día (o días) para este evento')
+    .setMinValues(1)
+    .setMaxValues(7)
+    .addOptions(
+      dayNames.map((day, index) => ({
+        label: day,
+        value: String(index),
+        description: `Ejecutar ${day}s a las ${warData.time}`
+      }))
+    );
+
+  const embed = new EmbedBuilder()
+    .setTitle(`⏰ Configurar horario: ${warData.name}`)
+    .setDescription('**Paso 1: Selecciona día(s)**')
+    .setColor(0x5865f2)
+    .addFields({
+      name: 'Información',
+      value: `Hora: **${warData.time}**\nDuración: **${warData.duration} min**\nZona: **${warData.timezone}**`
+    });
+
+  await interaction.update({
+    embeds: [embed],
+    components: [new ActionRowBuilder().addComponents(menu)]
+  });
+}
+
+module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
+
+/**
+ * Maneja selección de días
+ */
+async function handleScheduleWarDays(interaction) {
+  if (!interaction.isStringSelectMenu()) return;
+
+  const warData = global.warEdits?.[interaction.user.id];
+  if (!warData) {
+    return await interaction.update({ content: '❌ Sesión expirada', components: [] });
+  }
+
+  const selectedDays = interaction.values.map(v => Number(v));
+  if (!global.warScheduleTemp) global.warScheduleTemp = {};
+  global.warScheduleTemp[interaction.user.id] = { days: selectedDays };
+
+  await interaction.deferUpdate();
+  await showScheduleMentionsSelector(interaction, warData, selectedDays);
+}
+
+/**
+ * Mostrar selector de mentions
+ */
+async function showScheduleMentionsSelector(interaction, warData, selectedDays) {
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const daysText = selectedDays.map(d => dayNames[d]).join(', ');
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📢 Configurar menciones: ${warData.name}`)
+    .setDescription('**Paso 2: Selecciona roles para @mencionar (opcional)**')
+    .setColor(0x5865f2)
+    .addFields({
+      name: 'Programado para',
+      value: `${daysText} a las ${warData.time}`
+    });
+
+  try {
+    const roles = await interaction.guild.roles.fetch();
+    const selectableRoles = roles
+      .filter(r => !r.managed && r.id !== interaction.guildId)
+      .slice(0, 25);
+
+    if (selectableRoles.size === 0) {
+      await confirmAndPublish(interaction, warData, selectedDays, []);
+      return;
+    }
+
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId('schedule_war_mentions')
+      .setPlaceholder('Roles a @mencionar (puedes elegir múltiples o dejar vacío)')
+      .setMinValues(0)
+      .setMaxValues(selectableRoles.size)
+      .addOptions(
+        selectableRoles.map(role => ({
+          label: role.name,
+          value: role.id
+        }))
+      );
+
+    const skipButton = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('skip_mentions_publish')
+        .setLabel('Sin menciones → Publicar')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await interaction.editReply({
+      embeds: [embed],
+      components: [
+        new ActionRowBuilder().addComponents(menu),
+        skipButton
+      ]
+    });
+  } catch (error) {
+    console.warn('Error obteniendo roles:', error);
+    await confirmAndPublish(interaction, warData, selectedDays, []);
+  }
+}
+
+/**
+ * Maneja selección de mentions
+ */
+async function handleScheduleWarMentions(interaction) {
+  if (!interaction.isStringSelectMenu()) return;
+
+  const warData = global.warEdits?.[interaction.user.id];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
+
+  if (!warData || !scheduleTemp) {
+    return await interaction.update({ content: '❌ Sesión expirada', components: [] });
+  }
+
+  await interaction.deferUpdate();
+  await confirmAndPublish(interaction, warData, scheduleTemp.days, interaction.values);
+}
+
+/**
+ * Confirma y publica eventos
+ */
+async function confirmAndPublish(interaction, warData, selectedDays, mentionRoleIds) {
+  const warService = require('../services/warService');
+  const { normalizeWar } = require('../utils/warState');
+  const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
+
+  if (warData.roles.length === 0) {
+    return await interaction.editReply({ content: '❌ Agrega al menos 1 rol antes de publicar', components: [] });
+  }
+
+  // Crear evento para cada día seleccionado
+  const createdWars = [];
+  for (const dayOfWeek of selectedDays) {
+    const warToCreate = {
+      ...warData,
+      dayOfWeek,
+      notifyRoles: mentionRoleIds,
+      id: `${warData.groupId}_day${dayOfWeek}`,
+      messageId: null
+    };
+
+    const normalized = normalizeWar(warToCreate);
+    
+    try {
+      const message = await interaction.channel.send({
+        ...buildWarMessagePayload(normalized)
+      });
+
+      normalized.messageId = message.id;
+      warService.createWar(normalized);
+      createdWars.push({ dayOfWeek, messageId: message.id });
+    } catch (error) {
+      console.error(`Error publicando evento para día ${dayOfWeek}:`, error);
+    }
+  }
+
+  delete global.warEdits[interaction.user.id];
+  delete global.warScheduleTemp[interaction.user.id];
+
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const daysText = selectedDays.map(d => dayNames[d]).join(', ');
+  const mentionText = mentionRoleIds.length > 0 
+    ? mentionRoleIds.map(id => `<@&${id}>`).join(' ')
+    : '(sin menciones)';
+
+  await interaction.editReply({
+    content: `✅ **${warData.name}** publicado\n📅 Días: ${daysText}\n⏰ Hora: ${warData.time}\n📢 Menciones: ${mentionText}`,
+    components: []
+  });
+}
+
+module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
 
 async function safeDefer(interaction) {
   if (interaction.deferred || interaction.replied) return true;

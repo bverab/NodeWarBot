@@ -16,6 +16,7 @@ module.exports = async interaction => {
     if (customId === 'add_roles_bulk') return await handleAddRolesBulkButton(interaction);
     if (customId === 'publish_war') return await handlePublishWar(interaction);
     if (customId === 'cancel_war') return await handleCancelWar(interaction);
+    if (customId === 'skip_mentions_publish') return await handleSkipMentionsPublish(interaction);
 
     if (customId === 'open_role_panel') return await handleOpenRolePanel(interaction);
     if (customId === 'panel_select_role') return await handlePanelSelectRole(interaction);
@@ -63,50 +64,21 @@ async function handlePublishWar(interaction) {
   const warData = global.warEdits?.[interaction.user.id];
 
   if (!warData) {
-    return await interaction.reply({ content: 'Sesión expirada', flags: 64 });
+    return await interaction.reply({ content: '❌ Sesión expirada', flags: 64 });
   }
 
   if (warData.creatorId !== interaction.user.id) {
-    return await interaction.reply({ content: 'Solo el creador puede publicar', flags: 64 });
+    return await interaction.reply({ content: '❌ Solo el creador puede publicar', flags: 64 });
   }
 
   if (warData.roles.length === 0) {
-    return await interaction.reply({ content: 'Agrega al menos 1 rol', flags: 64 });
+    return await interaction.reply({ content: '❌ Agrega al menos 1 rol antes de publicar', flags: 64 });
   }
 
-  await interaction.deferReply({ flags: 64 });
+  await interaction.deferUpdate();
 
-  const normalizedWar = normalizeWar({
-    ...warData,
-    id: warData.groupId,
-    channelId: interaction.channelId,
-    createdAt: warData.createdAt || Date.now(),
-    isClosed: false
-  });
-
-  try {
-    const message = await interaction.channel.send({
-      ...buildWarMessagePayload(normalizedWar)
-    });
-
-    normalizedWar.messageId = message.id;
-    warService.createWar(normalizedWar);
-
-    delete global.warEdits[interaction.user.id];
-    if (global.warEditSelections) {
-      delete global.warEditSelections[interaction.user.id];
-    }
-
-    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const dayName = dayNames[warData.dayOfWeek] || 'desconocido';
-    
-    await interaction.editReply({
-      content: `✅ Evento **${normalizedWar.name}** publicado para **${dayName}** a las **${warData.time}**`
-    });
-  } catch (error) {
-    console.error('Error publicando evento:', error);
-    await interaction.editReply({ content: '❌ Error al publicar el evento' });
-  }
+  const { showScheduleDaysSelector } = require('./modalHandler');
+  await showScheduleDaysSelector(interaction, warData);
 }
 
 async function handleCancelWar(interaction) {
@@ -120,8 +92,68 @@ async function handleCancelWar(interaction) {
   if (global.warEditSelections) {
     delete global.warEditSelections[interaction.user.id];
   }
+  if (global.warScheduleTemp) {
+    delete global.warScheduleTemp[interaction.user.id];
+  }
 
   await interaction.reply({ content: '❌ Evento cancelado', flags: 64 });
+}
+
+async function handleSkipMentionsPublish(interaction) {
+  const { confirmAndPublish } = require('./modalHandler');
+  const warData = global.warEdits?.[interaction.user.id];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
+
+  if (!warData || !scheduleTemp) {
+    return await interaction.reply({ content: '❌ Sesión expirada', flags: 64 });
+  }
+
+  await interaction.deferUpdate();
+  
+  // Importar directamente la función de confirmación
+  const warService = require('../services/warService');
+  const { normalizeWar } = require('../utils/warState');
+  const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+  if (warData.roles.length === 0) {
+    return await interaction.editReply({ content: '❌ Agrega al menos 1 rol antes de publicar', components: [] });
+  }
+
+  const createdWars = [];
+  for (const dayOfWeek of scheduleTemp.days) {
+    const warToCreate = {
+      ...warData,
+      dayOfWeek,
+      notifyRoles: [],
+      id: `${warData.groupId}_day${dayOfWeek}`,
+      messageId: null
+    };
+
+    const normalized = normalizeWar(warToCreate);
+    
+    try {
+      const message = await interaction.channel.send({
+        ...buildWarMessagePayload(normalized)
+      });
+
+      normalized.messageId = message.id;
+      warService.createWar(normalized);
+      createdWars.push({ dayOfWeek, messageId: message.id });
+    } catch (error) {
+      console.error(`Error publicando evento para día ${dayOfWeek}:`, error);
+    }
+  }
+
+  delete global.warEdits[interaction.user.id];
+  delete global.warScheduleTemp[interaction.user.id];
+
+  const daysText = scheduleTemp.days.map(d => dayNames[d]).join(', ');
+
+  await interaction.editReply({
+    content: `✅ **${warData.name}** publicado\n📅 Días: ${daysText}\n⏰ Hora: ${warData.time}\n📢 Sin menciones`,
+    components: []
+  });
 }
 
 async function handleOpenRolePanel(interaction) {
