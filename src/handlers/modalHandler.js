@@ -40,32 +40,37 @@ async function handleWarCreation(interaction) {
   const name = interaction.fields.getTextInputValue('war_name_input');
   const type = interaction.fields.getTextInputValue('war_type_input') || 'Evento de guerra';
   const timezone = interaction.fields.getTextInputValue('war_timezone_input') || 'America/Bogota';
+  const timeStr = interaction.fields.getTextInputValue('war_time_input')?.trim() || '22:00';
+  const durationStr = interaction.fields.getTextInputValue('war_duration_input')?.trim() || '70';
+
+  // Validar hora
+  if (!isValidTime(timeStr)) {
+    return await safeRespond(interaction, '❌ Hora inválida. Usa formato HH:mm (ej: 22:00)');
+  }
+
+  // Validar duración
+  const duration = Number(durationStr);
+  if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
+    return await safeRespond(interaction, '❌ Duración debe ser entre 1 y 1440 minutos');
+  }
 
   const groupId = `war_${Date.now()}`;
 
-  // Inicializar datos del evento
   const warData = {
     groupId,
     name,
     type,
     timezone,
+    time: timeStr,
+    duration,
     roles: [],
     waitlist: [],
     creatorId: interaction.user.id,
     createdAt: Date.now(),
     channelId: interaction.channelId,
-    
-    // Scheduling (se llenan después)
     dayOfWeek: null,
-    time: '22:00',  // Default
-    duration: 70,
     notifyRoles: [],
-    
-    schedule: {
-      enabled: true,
-      lastCreatedAt: null
-    },
-    
+    schedule: { enabled: true, lastCreatedAt: null },
     isClosed: false
   };
 
@@ -244,21 +249,10 @@ async function showScheduleDaysSelector(interaction, warData) {
       value: `Hora: **${warData.time}**\nDuración: **${warData.duration} min**\nZona: **${warData.timezone}**`
     });
 
-  try {
-    await interaction.update({
-      embeds: [embed],
-      components: [new ActionRowBuilder().addComponents(menu)]
-    });
-  } catch (error) {
-    if (error?.code === 40060) {
-      await interaction.editReply({
-        embeds: [embed],
-        components: [new ActionRowBuilder().addComponents(menu)]
-      });
-    } else {
-      throw error;
-    }
-  }
+  await interaction.editReply({
+    embeds: [embed],
+    components: [new ActionRowBuilder().addComponents(menu)]
+  });
 }
 
 module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
@@ -271,7 +265,7 @@ async function handleScheduleWarDays(interaction) {
 
   const warData = global.warEdits?.[interaction.user.id];
   if (!warData) {
-    return await interaction.update({ content: '❌ Sesión expirada', components: [] });
+    return await interaction.reply({ content: '❌ Sesión expirada', flags: 64 });
   }
 
   const selectedDays = interaction.values.map(v => Number(v));

@@ -75,6 +75,8 @@ async function handlePublishWar(interaction) {
     return await interaction.reply({ content: '❌ Agrega al menos 1 rol antes de publicar', flags: 64 });
   }
 
+  await interaction.deferUpdate();
+
   const { showScheduleDaysSelector } = require('./modalHandler');
   await showScheduleDaysSelector(interaction, warData);
 }

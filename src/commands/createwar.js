@@ -43,11 +43,29 @@ module.exports = {
         .setRequired(false)
         .setMaxLength(50);
 
+      const timeInput = new TextInputBuilder()
+        .setCustomId('war_time_input')
+        .setLabel('Hora de publicación (HH:mm, ej: 22:00)')
+        .setPlaceholder('22:00')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(5);
+
+      const durationInput = new TextInputBuilder()
+        .setCustomId('war_duration_input')
+        .setLabel('Duración del evento (minutos)')
+        .setPlaceholder('70')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(4);
+
       const row1 = new ActionRowBuilder().addComponents(nameInput);
       const row2 = new ActionRowBuilder().addComponents(typeInput);
       const row3 = new ActionRowBuilder().addComponents(timezoneInput);
+      const row4 = new ActionRowBuilder().addComponents(timeInput);
+      const row5 = new ActionRowBuilder().addComponents(durationInput);
 
-      modal.addComponents(row1, row2, row3);
+      modal.addComponents(row1, row2, row3, row4, row5);
       await interaction.showModal(modal);
     } catch (error) {
       console.error('Error en createwar:', error);
