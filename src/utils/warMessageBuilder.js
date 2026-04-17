@@ -17,7 +17,7 @@ const ICONS = {
 function buildWarEmbed(war) {
   const { totalSlots, totalSigned } = getWarTotals(war);
   const startsAt = Math.floor((war.createdAt || Date.now()) / 1000);
-  const endsAt = Math.floor((war.closesAt || Date.now()) / 1000);
+  const endsAt = Math.floor((war.expiresAt || war.closesAt || Date.now()) / 1000);
   const closesAt = `<t:${Math.floor(war.closesAt / 1000)}:R>`;
   const eventMeta = getEventTypeMeta(war.eventType);
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];

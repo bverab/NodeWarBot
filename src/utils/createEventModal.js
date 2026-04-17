@@ -53,11 +53,11 @@ async function showCreateEventModal(interaction, eventType = 'war') {
 
   const durationInput = new TextInputBuilder()
     .setCustomId('war_duration_input')
-    .setLabel('Duracion del evento (minutos)')
-    .setPlaceholder('70')
+    .setLabel('Duracion/cierreAntes (min), ej: 90/30')
+    .setPlaceholder('70 o 90/30')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
-    .setMaxLength(4);
+    .setMaxLength(9);
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),

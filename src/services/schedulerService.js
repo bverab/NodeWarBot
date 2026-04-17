@@ -64,6 +64,10 @@ async function checkAndExecuteEvents() {
     const now = new Date(nowMs);
 
     for (const war of wars) {
+      if (war.messageId && !war.isClosed && Number.isFinite(war.closesAt) && nowMs >= war.closesAt) {
+        await closeWarSignups(war);
+      }
+
       if (isWarExpired(war, nowMs)) {
         await expireWarMessage(war);
         continue;
@@ -129,16 +133,23 @@ async function executeWarPublication(war) {
 
     const publicationTimestamp = Date.now();
     const durationMinutes = Number.isFinite(war.duration) && war.duration > 0 ? war.duration : 70;
+    const closeBeforeMinutes = Number.isFinite(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0
+      ? Math.floor(war.closeBeforeMinutes)
+      : 0;
     const notifyRoles = Array.isArray(war.notifyRoles) ? war.notifyRoles.map(String).filter(Boolean) : [];
     const publishContent = notifyRoles.length > 0
       ? notifyRoles.map(roleId => `<@&${roleId}>`).join(' ')
       : 'Evento creado automaticamente';
 
+    const expiresAt = publicationTimestamp + durationMinutes * 60 * 1000;
+    const closesAt = Math.max(publicationTimestamp, expiresAt - closeBeforeMinutes * 60 * 1000);
+
     // Publicar nuevo mensaje (incluye menciones configuradas)
     const warForPublication = {
       ...war,
       createdAt: publicationTimestamp,
-      closesAt: publicationTimestamp + durationMinutes * 60 * 1000,
+      expiresAt,
+      closesAt,
       isClosed: false,
       waitlist: [],
       roles: Array.isArray(war.roles)
@@ -171,8 +182,32 @@ async function executeWarPublication(war) {
 
 function isWarExpired(war, nowMs) {
   if (!war.messageId) return false;
-  if (!Number.isFinite(war.closesAt) || war.closesAt <= 0) return false;
-  return nowMs >= war.closesAt;
+  if (!Number.isFinite(war.expiresAt) || war.expiresAt <= 0) return false;
+  return nowMs >= war.expiresAt;
+}
+
+async function closeWarSignups(war) {
+  const { client } = schedulerInstance;
+
+  try {
+    const channel = await client.channels.fetch(war.channelId).catch(() => null);
+    war.isClosed = true;
+
+    if (channel && channel.messages?.fetch && war.messageId) {
+      try {
+        const message = await channel.messages.fetch(war.messageId);
+        await message.edit(buildWarMessagePayload(war));
+      } catch (error) {
+        if (error?.code !== 10008) {
+          console.warn(`No se pudo actualizar cierre de inscripciones para ${war.id}:`, error?.message || error);
+        }
+      }
+    }
+
+    warService.updateWar(war);
+  } catch (error) {
+    console.error(`Error al cerrar inscripciones de ${war.id}:`, error);
+  }
 }
 
 async function expireWarMessage(war) {

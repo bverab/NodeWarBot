@@ -80,7 +80,13 @@ function normalizeWar(war = {}) {
   // Estandariza estructura del evento para evitar estados incompletos al leer JSON.
   const createdAt = Number.isFinite(war.createdAt) ? war.createdAt : deriveCreatedAt(war.id);
   const duration = Number.isFinite(war.duration) && war.duration > 0 ? war.duration : 70;
-  const closesAt = Number.isFinite(war.closesAt) ? war.closesAt : createdAt + duration * 60 * 1000;
+  const closeBeforeMinutes = Number.isFinite(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0
+    ? Math.floor(war.closeBeforeMinutes)
+    : 0;
+  const expiresAt = Number.isFinite(war.expiresAt) ? war.expiresAt : createdAt + duration * 60 * 1000;
+  const fallbackClosesAt = expiresAt - closeBeforeMinutes * 60 * 1000;
+  const closesAtRaw = Number.isFinite(war.closesAt) ? war.closesAt : fallbackClosesAt;
+  const closesAt = Math.max(createdAt, Math.min(closesAtRaw, expiresAt));
 
   return {
     // Identificación básica
@@ -104,6 +110,7 @@ function normalizeWar(war = {}) {
     time: war.time || null,                         // "HH:mm"
     timezone: war.timezone || 'America/Bogota',
     duration,                                       // minutos
+    closeBeforeMinutes,
     notifyRoles: Array.isArray(war.notifyRoles) ? war.notifyRoles : [],  // Array de role IDs o user IDs
     
     // Control de automatización (NUEVO)
@@ -111,6 +118,7 @@ function normalizeWar(war = {}) {
     
     // Timestamps
     createdAt,
+    expiresAt,
     closesAt,
     isClosed: Boolean(war.isClosed)
   };

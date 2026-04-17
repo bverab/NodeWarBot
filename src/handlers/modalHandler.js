@@ -74,17 +74,27 @@ async function handleWarCreation(interaction) {
   }
   const timezone = normalizeTimeZone(timezoneRaw);
   const timeStr = interaction.fields.getTextInputValue('war_time_input')?.trim() || '22:00';
-  const durationStr = interaction.fields.getTextInputValue('war_duration_input')?.trim() || '70';
+  const durationRaw = interaction.fields.getTextInputValue('war_duration_input')?.trim() || '70';
 
   // Validar hora
   if (!isValidTime(timeStr)) {
     return await safeRespond(interaction, '❌ Hora inválida. Usa formato HH:mm (ej: 22:00)');
   }
 
-  // Validar duración
-  const duration = Number(durationStr);
+  // Validar duración y cierre de inscripciones (formato: "duracion" o "duracion/cierreAntes")
+  const [durationPart, closeBeforePart] = durationRaw.split('/').map(value => value?.trim());
+  const duration = Number(durationPart);
+  const closeBeforeMinutes = closeBeforePart === undefined || closeBeforePart === ''
+    ? 0
+    : Number(closeBeforePart);
   if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
     return await safeRespond(interaction, '❌ Duración debe ser entre 1 y 1440 minutos');
+  }
+  if (!Number.isInteger(closeBeforeMinutes) || closeBeforeMinutes < 0 || closeBeforeMinutes >= duration) {
+    return await safeRespond(
+      interaction,
+      '❌ Cierre de inscripciones inválido. Debe ser 0 o menor que la duración. Ej: 90/30'
+    );
   }
 
   const groupId = `war_${Date.now()}`;
@@ -97,6 +107,7 @@ async function handleWarCreation(interaction) {
     timezone,
     time: timeStr,
     duration,
+    closeBeforeMinutes,
     roles: [],
     waitlist: [],
     creatorId: interaction.user.id,
@@ -609,6 +620,7 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
     .addFields(
       { name: 'Días', value: daysText, inline: false },
       { name: 'Hora / Duración', value: `${warData.time} (${warData.duration} min)`, inline: true },
+      { name: 'Cierre inscripciones', value: `${warData.closeBeforeMinutes || 0} min antes de borrar`, inline: true },
       { name: 'Zona', value: warData.timezone, inline: true },
       { name: 'Menciones', value: mentionText, inline: false }
     );

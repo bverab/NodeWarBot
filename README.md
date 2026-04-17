@@ -17,7 +17,7 @@ NodeWarBot is an open-source Discord bot to create and manage Node War events wi
   - Type/description
   - Timezone
   - Publish time (`HH:mm`)
-  - Duration (minutes)
+  - Duration and signup-close offset (`duration` or `duration/closeBefore`, e.g. `90/30`)
 - Multi-day scheduling:
   - Select one or many week days for the same event setup
   - Creates one scheduled event per selected day (same `groupId`)
@@ -135,7 +135,7 @@ NodeWarBot e um bot open-source para Discord que cria e gerencia eventos de Node
   - Tipo/descricao
   - Timezone
   - Hora de publicacao (`HH:mm`)
-  - Duracao (minutos)
+  - Duracao e antecedencia para fechar inscricoes (`duracao` ou `duracao/fecharAntes`, ex: `90/30`)
 - Agendamento em varios dias da semana:
   - seleciona 1+ dias
   - cria um evento agendado por dia (mesmo `groupId`)
