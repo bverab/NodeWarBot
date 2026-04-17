@@ -158,6 +158,9 @@ async function executeWarPublication(war) {
     // Actualizar registro del evento
     warForPublication.messageId = message.id;
     warForPublication.schedule.lastCreatedAt = publicationTimestamp;
+    if (warForPublication.schedule?.mode === 'once') {
+      warForPublication.schedule.enabled = false;
+    }
     warService.updateWar(warForPublication);
 
     console.log(`✅ Evento auto-publicado: ${war.id} en canal ${war.channelId}`);

@@ -93,14 +93,13 @@ function buildRoleRows(war) {
       row = new ActionRowBuilder();
     }
 
-    const emoji = toButtonEmoji(role.emoji || ICONS.whiteCircle, role.emojiSource);
+    const emoji = toButtonEmoji(role.emoji || ICONS.whiteCircle, role.emojiSource) || ICONS.whiteCircle;
     const button = new ButtonBuilder()
       .setCustomId(`join_${index}`)
       .setDisabled(war.isClosed)
       .setStyle(ButtonStyle.Secondary);
 
-    if (emoji) button.setEmoji(emoji);
-    else button.setLabel(role.name);
+    button.setEmoji(emoji);
 
     row.addComponents(button);
   });
@@ -124,7 +123,7 @@ function toButtonEmoji(emojiText, emojiSource) {
   }
 
   if (emojiSource === 'custom') {
-    return null;
+    return ICONS.whiteCircle;
   }
 
   const customMatch = String(emojiText).match(/^<(a?):([A-Za-z0-9_]+):(\d+)>$/);

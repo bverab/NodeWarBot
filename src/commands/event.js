@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { showCreateEventModal } = require('../utils/createEventModal');
 const { normalizeEventType } = require('../constants/eventTypes');
+const warService = require('../services/warService');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -37,12 +38,39 @@ module.exports = {
               { name: '10v10 (placeholder)', value: '10v10' }
             )
         )
+    )
+    .addSubcommandGroup(group =>
+      group
+        .setName('schedule')
+        .setDescription('Gestiona programaciones de eventos')
+        .addSubcommand(subcommand =>
+          subcommand
+            .setName('view')
+            .setDescription('Ver programaciones activas')
+        )
+        .addSubcommand(subcommand =>
+          subcommand
+            .setName('cancel')
+            .setDescription('Cancelar una programacion')
+            .addStringOption(option =>
+              option
+                .setName('id')
+                .setDescription('ID de la programacion')
+                .setRequired(true)
+                .setAutocomplete(true)
+            )
+        )
     ),
 
   async execute(interaction) {
     try {
+      if (interaction.isAutocomplete()) {
+        return await handleAutocomplete(interaction);
+      }
+
+      const group = interaction.options.getSubcommandGroup(false);
       const subcommand = interaction.options.getSubcommand();
-      const eventType = normalizeEventType(interaction.options.getString('tipo', true));
+      const eventType = group ? null : normalizeEventType(interaction.options.getString('tipo', true));
 
       if (subcommand === 'create') {
         if (eventType === '10v10') {
@@ -67,6 +95,39 @@ module.exports = {
         );
       }
 
+      if (group === 'schedule' && subcommand === 'view') {
+        const wars = warService
+          .loadWars()
+          .filter(war => war.schedule?.enabled && war.channelId === interaction.channelId)
+          .sort((a, b) => (a.dayOfWeek - b.dayOfWeek) || String(a.time).localeCompare(String(b.time)));
+
+        if (!wars.length) {
+          return await safeReply(interaction, 'No hay programaciones activas en este canal.');
+        }
+
+        const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+        const lines = wars.slice(0, 20).map(war => {
+          const mode = war.schedule?.mode === 'once' ? 'Unico' : 'Recurrente';
+          return `• \`${war.id}\` | **${war.name}** | ${dayNames[war.dayOfWeek] || '?'} ${war.time} (${war.timezone}) | ${mode}`;
+        });
+
+        return await safeReply(interaction, `Programaciones activas (${wars.length}):\n${lines.join('\n')}`);
+      }
+
+      if (group === 'schedule' && subcommand === 'cancel') {
+        const id = interaction.options.getString('id', true).trim();
+        const wars = warService.loadWars();
+        const target = wars.find(war => war.id === id);
+        if (!target) {
+          return await safeReply(interaction, `No se encontro programacion con id \`${id}\`.`);
+        }
+
+        const filtered = wars.filter(war => war.id !== id);
+        warService.saveWars(filtered);
+
+        return await safeReply(interaction, `Programacion cancelada: \`${id}\``);
+      }
+
       return await safeReply(interaction, 'Subcomando no soportado');
     } catch (error) {
       console.error('Error en event:', error);
@@ -74,6 +135,27 @@ module.exports = {
     }
   }
 };
+
+async function handleAutocomplete(interaction) {
+  const group = interaction.options.getSubcommandGroup(false);
+  const subcommand = interaction.options.getSubcommand();
+  if (group !== 'schedule' || subcommand !== 'cancel') {
+    return await interaction.respond([]);
+  }
+
+  const focused = interaction.options.getFocused().toLowerCase();
+  const wars = warService
+    .loadWars()
+    .filter(war => war.schedule?.enabled && war.channelId === interaction.channelId)
+    .map(war => ({
+      name: `${war.name} | ${war.time} | ${war.id}`.slice(0, 100),
+      value: String(war.id)
+    }))
+    .filter(item => item.name.toLowerCase().includes(focused) || item.value.toLowerCase().includes(focused))
+    .slice(0, 25);
+
+  await interaction.respond(wars);
+}
 
 async function safeReply(interaction, content) {
   try {

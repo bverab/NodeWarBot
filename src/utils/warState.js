@@ -116,6 +116,7 @@ function normalizeWar(war = {}) {
 function normalizeSchedule(schedule = {}) {
   return {
     enabled: Boolean(schedule.enabled),
+    mode: schedule.mode === 'once' ? 'once' : 'recurring',
     lastCreatedAt: schedule.lastCreatedAt || null,
     lastMessageIdDeleted: schedule.lastMessageIdDeleted || null
   };
