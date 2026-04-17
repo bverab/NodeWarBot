@@ -15,6 +15,7 @@ const {
 } = require('../utils/warState');
 const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
 
+// Comando de test local para simular usuarios y validar waitlist/promociones.
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('fakeuser')

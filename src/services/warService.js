@@ -2,6 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { normalizeWar } = require('../utils/warState');
 
+// Capa de persistencia de eventos:
+// - Lectura/escritura de data/wars.json
+// - Operaciones CRUD por id, messageId y groupId
 const filePath = path.join(__dirname, '../../data/wars.json');
 
 function readWarsFile() {
@@ -58,6 +61,7 @@ function updateWar(updatedWar) {
 }
 
 function updateWarByMessageId(messageId, updater) {
+  // Actualizacion atomica: carga -> muta con callback -> guarda.
   const wars = loadWars();
   const index = wars.findIndex(war => war.messageId === messageId);
   if (index < 0) {

@@ -3,6 +3,9 @@ const { showCreateEventModal } = require('../utils/createEventModal');
 const { normalizeEventType } = require('../constants/eventTypes');
 const warService = require('../services/warService');
 
+// Comando principal de eventos:
+// - crear evento por modal
+// - ver/cancelar programaciones por ID
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('event')

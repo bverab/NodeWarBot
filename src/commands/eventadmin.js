@@ -15,6 +15,9 @@ const {
 } = require('../utils/warState');
 const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
 
+// Comando administrativo para eventos publicados:
+// - add/remove miembros reales
+// - lock/unlock global de inscripciones por ID
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('eventadmin')
@@ -170,6 +173,7 @@ async function handleAutocomplete(interaction) {
 }
 
 async function handleAddMember(interaction) {
+  // Agrega o mueve un miembro al rol del evento; si esta lleno, lo envía a waitlist.
   await interaction.deferReply({ flags: 64 });
 
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
@@ -282,6 +286,7 @@ async function handleAddMember(interaction) {
 }
 
 async function handleRemoveMember(interaction) {
+  // Remueve miembro de un rol puntual y promueve waitlist si se libera un cupo.
   await interaction.deferReply({ flags: 64 });
 
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
@@ -400,6 +405,7 @@ async function resolveTargetWar(interaction, eventId) {
 }
 
 async function resolveActiveWar(interaction) {
+  // Elige el evento mas reciente realmente visible en el canal, evitando fallback ambiguo.
   const wars = loadWars()
     .filter(war => war.channelId === interaction.channelId && war.messageId)
     .sort((a, b) => b.createdAt - a.createdAt);

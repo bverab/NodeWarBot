@@ -6,6 +6,11 @@ const modalHandler = require('./handlers/modalHandler');
 const interactionHandler = require('./handlers/interactionHandler');
 const { initScheduler } = require('./services/schedulerService');
 
+// Punto de entrada del bot:
+// - Inicializa cliente Discord
+// - Carga comandos
+// - Enruta interacciones (slash, botones, modales, menus)
+// - Inicia scheduler de publicaciones automaticas
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,

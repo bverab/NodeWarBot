@@ -25,17 +25,25 @@ NodeWarBot is an open-source Discord bot to create and manage Node War events wi
   - Select Discord roles to mention when scheduler posts the event
 - Role management:
   - Bulk role creation
-  - Role edits with `/editrole`
+  - In-panel role edits (name, slots, icon, permissions, delete)
+  - Role edits with `/editrole` (supports autocomplete)
   - Permission restrictions per event role
+  - Restriction labels rendered in event embed (`🔒 @Role`)
+  - Cleaner edit UX with back-navigation buttons in a single ephemeral view
 - Signup and waitlist system:
   - One user cannot stay in two event roles at the same time
   - Waitlist promotion when a slot opens
-  - DM notification on promotion, with channel mention fallback
+  - DM notification on promotion, with event link and channel mention fallback
+  - Role buttons prioritize role icons and support custom server emojis
 - Scheduler automation:
   - Auto-publishes events at configured day/time
   - Uses selected mentions in the published message
   - Event expiration based on configured duration
   - Removes event message when it expires
+- Admin moderation tools:
+  - Add/remove real users to/from event roles
+  - Lock/unlock all signups for a published event by event ID
+  - View/cancel active scheduled events by ID
 - Persistence in `data/wars.json`
 
 ## Requirements
@@ -82,7 +90,13 @@ node src/index.js
 ## Command Summary
 
 - `/createwar`: starts event creation flow
-- `/editrole`: rename/slots/icon/clearicon for event roles
+- `/editrole`: rename/slots/icon/clearicon for draft event roles
+- `/event schedule view`: list scheduled events in current channel
+- `/event schedule cancel id:<event_id>`: cancel a scheduled event
+- `/eventadmin add`: add a real member to an event role (admin)
+- `/eventadmin remove`: remove a real member from an event role (admin)
+- `/eventadmin lock id:<event_id>`: close all signups for an active event (admin)
+- `/eventadmin unlock id:<event_id>`: reopen all signups for an active event (admin)
 - `/fakeuser`: test waitlist and slot behavior
 - `/ping`: bot latency check
 
@@ -129,17 +143,25 @@ NodeWarBot e um bot open-source para Discord que cria e gerencia eventos de Node
   - seleciona cargos para mencionar quando o scheduler publicar
 - Gerenciamento de papeis:
   - adicao em lote
-  - edicao com `/editrole`
+  - edicao por painel (nome, slots, icone, permissoes, remover)
+  - edicao com `/editrole` (com autocomplete)
   - restricoes de permissao por papel
+  - exibicao visual de restricoes no embed (`🔒 @Cargo`)
+  - fluxo de edicao com navegacao "voltar" na mesma view efemera
 - Inscricao e fila de espera:
   - usuario nao fica em dois papeis ao mesmo tempo
   - promocao automatica quando abre vaga
-  - notificacao por DM na promocao, com fallback no canal
+  - notificacao por DM na promocao com link do evento e fallback no canal
+  - botoes de papeis priorizam icones e suportam emoji custom do servidor
 - Automacao do scheduler:
   - publica automaticamente no dia/hora configurados
   - usa as mencoes definidas
   - encerra evento por duracao
   - remove mensagem do evento ao expirar
+- Ferramentas administrativas:
+  - adicionar/remover membros reais nos papeis do evento
+  - bloquear/desbloquear todas as inscricoes por ID do evento
+  - listar/cancelar programacoes por ID
 - Persistencia em `data/wars.json`
 
 ## Requisitos
@@ -186,7 +208,13 @@ node src/index.js
 ## Resumo de Comandos
 
 - `/createwar`: inicia fluxo de criacao
-- `/editrole`: editar nome/slots/icone/clearicon
+- `/editrole`: editar nome/slots/icone/clearicon em evento em criacao
+- `/event schedule view`: listar programacoes ativas no canal
+- `/event schedule cancel id:<event_id>`: cancelar programacao
+- `/eventadmin add`: adicionar membro real em papel do evento (admin)
+- `/eventadmin remove`: remover membro real de papel do evento (admin)
+- `/eventadmin lock id:<event_id>`: bloquear inscricoes do evento (admin)
+- `/eventadmin unlock id:<event_id>`: desbloquear inscricoes do evento (admin)
 - `/fakeuser`: testar fila de espera e vagas
 - `/ping`: latencia do bot
 

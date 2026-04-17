@@ -14,6 +14,11 @@ const {
 } = require('../utils/warState');
 const { buildWarMessagePayload, buildWarListText } = require('../utils/warMessageBuilder');
 
+// Maneja botones del mensaje publico del evento:
+// - Cerrar/abrir inscripciones
+// - Apagar evento
+// - Ver lista
+// - Unirse/cambiar/salir de rol con logica de waitlist
 module.exports = async interaction => {
   try {
     if (!interaction.isButton()) return;
@@ -99,6 +104,10 @@ async function handleViewList(interaction) {
 }
 
 async function handleJoinRole(interaction) {
+  // Flujo principal de inscripcion:
+  // 1) valida rol y permisos del usuario
+  // 2) aplica join/switch/leave en estado persistente
+  // 3) refresca embed y notifica promociones de waitlist
   const currentWar = getWarByMessageId(interaction.message.id);
   if (!currentWar) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
@@ -245,6 +254,7 @@ async function handleJoinRole(interaction) {
 }
 
 function promoteFromWaitlist(state, roleName) {
+  // Promueve al primer usuario en waitlist dirigido a ese rol.
   const role = getRoleByName(state, roleName);
   if (!role || role.users.length >= role.max) return null;
 
@@ -265,6 +275,7 @@ function promoteFromWaitlist(state, roleName) {
 }
 
 async function notifyPromotion(interaction, war, promotedUser) {
+  // Notifica por DM al usuario promovido y usa fallback en canal si DM falla.
   if (!promotedUser || promotedUser.isFake) return;
 
   const roleName = promotedUser.roleName || 'el rol seleccionado';

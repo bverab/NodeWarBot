@@ -9,6 +9,10 @@ const {
   ButtonStyle
 } = require('discord.js');
 
+// Handler de interacciones de "edicion de evento":
+// - Flujo de programacion antes de publicar
+// - Panel de edicion de roles (nombre, slots, icono, permisos)
+// - Navegacion para mantener una sola vista efimera y evitar spam en chat
 module.exports = async interaction => {
   const { customId } = interaction;
 
@@ -76,6 +80,7 @@ async function handleAddRolesBulkButton(interaction) {
 }
 
 async function handlePublishWar(interaction) {
+  // Abre flujo de programacion (modo, dias, menciones) para el draft actual.
   const warData = global.warEdits?.[interaction.user.id];
 
   if (!warData) {
@@ -223,6 +228,7 @@ async function handleConfirmPublish(interaction) {
 }
 
 async function handleOpenRolePanel(interaction) {
+  // Muestra lista de roles editables del draft en la misma vista efimera.
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
     return await interaction.update({ content: 'Sesion expirada', embeds: [], components: [] });
@@ -252,6 +258,7 @@ async function handlePanelSelectRole(interaction) {
 }
 
 async function handleBackToEditor(interaction) {
+  // Retorna al editor principal del evento (embed de creacion).
   const { showRolesEditor } = require('./modalHandler');
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
@@ -316,6 +323,7 @@ async function handlePanelEditSlots(interaction) {
 }
 
 async function handlePanelEditIcon(interaction) {
+  // Vista para seleccionar/editar icono de rol.
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
     return await interaction.update({ content: selected.message, embeds: [], components: [] });
@@ -512,6 +520,7 @@ async function handlePanelClearIcon(interaction) {
 }
 
 async function handleOpenEditPermissions(interaction) {
+  // Vista para definir restricciones de rol por cargos de Discord.
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
     return await interaction.update({ content: selected.message, embeds: [], components: [] });
@@ -683,6 +692,7 @@ async function handlePanelDeleteRole(interaction) {
 }
 
 function buildRolePanelPayload(role) {
+  // Panel de acciones por rol seleccionado.
   const permissions = role.allowedRoleIds?.length
     ? role.allowedRoleIds.map(roleId => `<@&${roleId}>`).join(', ')
     : 'Sin restriccion';
@@ -733,6 +743,7 @@ function buildRolePanelPayload(role) {
 }
 
 function buildRoleSelectionPayload(warData) {
+  // Menu de seleccion de rol con acceso rapido de regreso al editor.
   const menu = new StringSelectMenuBuilder()
     .setCustomId('panel_select_role')
     .setPlaceholder('Selecciona el rol del evento a editar')

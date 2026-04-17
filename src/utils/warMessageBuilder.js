@@ -2,6 +2,9 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { formatMemberList, getWarTotals } = require('./warState');
 const { getEventTypeMeta } = require('../constants/eventTypes');
 
+// Constructor de payload visual del evento:
+// - Embed principal (roles, waitlist, metadata)
+// - Botones de inscripcion y administracion
 const ICONS = {
   skull: '\uD83D\uDC80',
   calendar: '\uD83D\uDCC5',
@@ -86,6 +89,7 @@ function buildWarEmbed(war) {
 }
 
 function buildRoleRows(war) {
+  // Crea filas de botones (max 5 por fila) usando emoji del rol como icono principal.
   const rows = [];
   let row = new ActionRowBuilder();
 
@@ -112,6 +116,7 @@ function buildRoleRows(war) {
 }
 
 function toButtonEmoji(emojiText, emojiSource) {
+  // Convierte emoji persistido (unicode o custom <a:name:id>) al formato esperado por Discord.
   if (!emojiText) return null;
   const customMatch = String(emojiText).match(/^<(a?):([A-Za-z0-9_]+):(\d+)>$/);
 

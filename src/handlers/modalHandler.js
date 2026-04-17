@@ -11,6 +11,11 @@ const {
 const { isValidTime, normalizeTimeZone, normalizeTimeZoneInfo } = require('../utils/cronHelper');
 const { normalizeEventType, getEventTypeMeta } = require('../constants/eventTypes');
 
+// Handler de modales y menus de configuracion:
+// - Creacion inicial del evento (draft)
+// - Carga de roles en bloque
+// - Programacion (modo, dias, menciones)
+// - Modales de edicion de rol
 module.exports = async interaction => {
   try {
     if (interaction.customId === 'create_war_initial' || interaction.customId.startsWith('create_event_initial:')) {
@@ -116,6 +121,7 @@ async function handleWarCreation(interaction) {
  * Muestra editor de roles (panel principal)
  */
 async function showRolesEditor(interaction, warData) {
+  // Editor principal del draft (paso previo a publicacion programada).
   const eventMeta = getEventTypeMeta(warData.eventType);
   const rolesDisplay = warData.roles.length > 0
     ? warData.roles.map(r => `${r.emoji || '○'} ${r.name} (${r.max})`).join('\n')
@@ -262,6 +268,7 @@ function extractEmojiAndName(text, interaction) {
  * Mostrar selector de días (llamado desde interactionHandler al hacer click "Publicar")
  */
 async function showScheduleModeSelector(interaction, warData) {
+  // Paso 1: seleccionar si la programacion es recurrente o unica.
   const menu = new StringSelectMenuBuilder()
     .setCustomId('schedule_war_mode')
     .setPlaceholder('Selecciona si el evento se repite o es unico')
@@ -284,6 +291,7 @@ async function showScheduleModeSelector(interaction, warData) {
 }
 
 async function showScheduleDaysSelector(interaction, warData) {
+  // Paso 2: seleccionar uno o varios dias segun el modo elegido.
   const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const scheduleTemp = global.warScheduleTemp?.[interaction.user.id] || {};
   const mode = scheduleTemp.mode || 'recurring';
@@ -394,6 +402,7 @@ async function handleScheduleWarDays(interaction) {
 }
 
 async function showScheduleMentionsSelector(interaction, warData, selectedDays) {
+  // Paso 3: seleccionar roles a mencionar al publicar.
   const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const daysText = selectedDays.map(d => dayNames[d]).join(', ');
 
@@ -485,6 +494,7 @@ async function handleScheduleWarMentions(interaction) {
 }
 
 async function confirmAndPublish(interaction, warData, selectedDays, mentionRoleIds) {
+  // Crea uno o varios eventos persistidos (uno por dia) y limpia sesion de edicion.
   const warService = require('../services/warService');
   const { normalizeWar } = require('../utils/warState');
   const scheduleTemp = global.warScheduleTemp?.[interaction.user.id] || {};
@@ -584,6 +594,7 @@ function extractEventTypeFromCustomId(customId) {
   return normalizeEventType(rawType);
 }
 
+// Vista de confirmacion final antes de publicar la programacion.
 async function showPublishPreview(interaction, warData, selectedDays, mentionRoleIds, mode = 'editReply') {
   const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   const daysText = selectedDays.map(d => dayNames[d]).join(', ');

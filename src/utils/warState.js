@@ -1,6 +1,9 @@
 const EMPTY_SLOT = '-- vacio --';
 const { normalizeEventType } = require('../constants/eventTypes');
 
+// Utilidades de estado del evento:
+// - Normalizacion de datos persistidos
+// - Operaciones de roles, participantes y waitlist
 function toParticipant(entry) {
   if (!entry) return null;
 
@@ -74,6 +77,7 @@ function normalizeWaitlistEntry(entry = {}) {
 }
 
 function normalizeWar(war = {}) {
+  // Estandariza estructura del evento para evitar estados incompletos al leer JSON.
   const createdAt = Number.isFinite(war.createdAt) ? war.createdAt : deriveCreatedAt(war.id);
   const duration = Number.isFinite(war.duration) && war.duration > 0 ? war.duration : 70;
   const closesAt = Number.isFinite(war.closesAt) ? war.closesAt : createdAt + duration * 60 * 1000;
@@ -144,6 +148,7 @@ function findParticipantRole(war, userId) {
 }
 
 function removeParticipantFromAllRoles(war, userId) {
+  // Garantiza unicidad: un usuario no debe quedar inscrito en dos roles a la vez.
   let removedRoles = 0;
 
   war.roles.forEach(role => {
