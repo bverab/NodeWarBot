@@ -41,10 +41,12 @@ function buildWarEmbed(war) {
       (Array.isArray(role.allowedRoleIds) && role.allowedRoleIds.length > 0) ||
       (Array.isArray(role.allowedRoles) && role.allowedRoles.length > 0);
     const lockIcon = hasRestrictions ? ` ${ICONS.lock}` : '';
+    const restrictionsText = formatRoleRestrictions(role);
+    const membersText = formatMemberList(role);
 
     return {
       name: `${role.emoji || ICONS.whiteCircle} ${role.name} (${role.users.length}/${role.max})${lockIcon}`,
-      value: formatMemberList(role),
+      value: restrictionsText ? `${restrictionsText}\n${membersText}` : membersText,
       inline: true
     };
   });
@@ -136,6 +138,20 @@ function toButtonEmoji(emojiText, emojiSource) {
   }
 
   return String(emojiText);
+}
+
+function formatRoleRestrictions(role) {
+  const allowedIds = Array.isArray(role.allowedRoleIds) ? role.allowedRoleIds.filter(Boolean) : [];
+  if (allowedIds.length > 0) {
+    return `${ICONS.lock} ${allowedIds.map(roleId => `<@&${roleId}>`).join(' ')}`;
+  }
+
+  const allowedNames = Array.isArray(role.allowedRoles) ? role.allowedRoles.filter(Boolean) : [];
+  if (allowedNames.length > 0) {
+    return `${ICONS.lock} ${allowedNames.map(name => `@${name}`).join(' ')}`;
+  }
+
+  return null;
 }
 
 function buildManagementRow(war) {
