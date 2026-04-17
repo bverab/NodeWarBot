@@ -8,7 +8,7 @@ const {
   TextInputBuilder,
   TextInputStyle
 } = require('discord.js');
-const { isValidTime } = require('../utils/cronHelper');
+const { isValidTime, normalizeTimeZone } = require('../utils/cronHelper');
 const { normalizeEventType, getEventTypeMeta } = require('../constants/eventTypes');
 
 module.exports = async interaction => {
@@ -28,6 +28,18 @@ module.exports = async interaction => {
     if (interaction.customId === 'schedule_war_mentions') {
       return await handleScheduleWarMentions(interaction);
     }
+
+    if (interaction.customId === 'panel_edit_name_modal') {
+      return await handlePanelEditNameModal(interaction);
+    }
+
+    if (interaction.customId === 'panel_edit_slots_modal') {
+      return await handlePanelEditSlotsModal(interaction);
+    }
+
+    if (interaction.customId === 'panel_edit_icon_modal') {
+      return await handlePanelEditIconModal(interaction);
+    }
   } catch (error) {
     console.error('Error en modalHandler:', error);
     await safeRespond(interaction, 'Error procesando el modal');
@@ -43,7 +55,8 @@ async function handleWarCreation(interaction) {
 
   const name = interaction.fields.getTextInputValue('war_name_input');
   const type = interaction.fields.getTextInputValue('war_type_input') || eventMeta.defaultDescription;
-  const timezone = interaction.fields.getTextInputValue('war_timezone_input') || 'America/Bogota';
+  const timezoneRaw = interaction.fields.getTextInputValue('war_timezone_input') || 'America/Bogota';
+  const timezone = normalizeTimeZone(timezoneRaw);
   const timeStr = interaction.fields.getTextInputValue('war_time_input')?.trim() || '22:00';
   const durationStr = interaction.fields.getTextInputValue('war_duration_input')?.trim() || '70';
 
@@ -197,13 +210,14 @@ function parseRoleLine(line, interaction) {
   const max = Number.parseInt(match[2], 10);
   if (!max || max < 1) return null;
 
-  const { emoji, cleanName } = extractEmojiAndName(leftPart, interaction);
+  const { emoji, cleanName, emojiSource } = extractEmojiAndName(leftPart, interaction);
   if (!cleanName) return null;
 
   return {
     name: cleanName,
     max,
     emoji,
+    emojiSource,
     users: [],
     allowedRoleIds: [],
     allowedRoles: []
@@ -216,15 +230,21 @@ function parseRoleLine(line, interaction) {
 function extractEmojiAndName(text, interaction) {
   const customEmojiMatch = text.match(/^(<a?:[A-Za-z0-9_]+:\d+>)\s*(.+)$/);
   if (customEmojiMatch) {
-    return { emoji: customEmojiMatch[1], cleanName: customEmojiMatch[2].trim() };
+    const emojiId = customEmojiMatch[1].match(/^<a?:[A-Za-z0-9_]+:(\d+)>$/)?.[1] || null;
+    const isGuildEmoji = emojiId ? Boolean(interaction.guild?.emojis?.cache?.get(emojiId)) : false;
+    return {
+      emoji: customEmojiMatch[1],
+      cleanName: customEmojiMatch[2].trim(),
+      emojiSource: isGuildEmoji ? 'guild' : 'custom'
+    };
   }
 
   const unicodeMatch = text.match(/^(\p{Extended_Pictographic})\s*(.+)$/u);
   if (unicodeMatch) {
-    return { emoji: unicodeMatch[1], cleanName: unicodeMatch[2].trim() };
+    return { emoji: unicodeMatch[1], cleanName: unicodeMatch[2].trim(), emojiSource: 'unicode' };
   }
 
-  return { emoji: null, cleanName: text.trim() };
+  return { emoji: null, cleanName: text.trim(), emojiSource: null };
 }
 
 /**
@@ -541,4 +561,109 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
   }
 
   await interaction.editReply({ embeds: [embed], components: [actions] });
+}
+
+async function handlePanelEditNameModal(interaction) {
+  const selected = getSelectedRoleContextFromDraft(interaction.user.id);
+  if (!selected.ok) {
+    return await interaction.reply({ content: selected.message, flags: 64 });
+  }
+
+  const newName = interaction.fields.getTextInputValue('panel_edit_name_input')?.trim();
+  if (!newName) {
+    return await interaction.reply({ content: 'Nombre invalido.', flags: 64 });
+  }
+
+  selected.role.name = newName;
+  await interaction.reply({ content: `Nombre actualizado: **${newName}**`, flags: 64 });
+}
+
+async function handlePanelEditSlotsModal(interaction) {
+  const selected = getSelectedRoleContextFromDraft(interaction.user.id);
+  if (!selected.ok) {
+    return await interaction.reply({ content: selected.message, flags: 64 });
+  }
+
+  const raw = interaction.fields.getTextInputValue('panel_edit_slots_input')?.trim();
+  const qty = Number.parseInt(raw, 10);
+  if (!Number.isInteger(qty) || qty < 1) {
+    return await interaction.reply({ content: 'Slots invalidos. Debe ser un numero mayor a 0.', flags: 64 });
+  }
+
+  if (selected.role.users.length > qty) {
+    return await interaction.reply({
+      content: `No puedes bajar a ${qty}, hay ${selected.role.users.length} inscritos en ese rol.`,
+      flags: 64
+    });
+  }
+
+  selected.role.max = qty;
+  await interaction.reply({ content: `Slots actualizados: **${selected.role.name}** -> ${qty}`, flags: 64 });
+}
+
+async function handlePanelEditIconModal(interaction) {
+  const selected = getSelectedRoleContextFromDraft(interaction.user.id);
+  if (!selected.ok) {
+    return await interaction.reply({ content: selected.message, flags: 64 });
+  }
+
+  const value = interaction.fields.getTextInputValue('panel_edit_icon_input')?.trim();
+  if (!value) {
+    selected.role.emoji = null;
+    selected.role.emojiSource = null;
+    return await interaction.reply({ content: `Icono removido para **${selected.role.name}**`, flags: 64 });
+  }
+
+  const parsed = parseEmojiInput(value, interaction);
+  if (!parsed) {
+    return await interaction.reply({
+      content: 'Icono invalido. Usa emoji unicode o formato <:nombre:id> del servidor.',
+      flags: 64
+    });
+  }
+
+  selected.role.emoji = parsed.emoji;
+  selected.role.emojiSource = parsed.emojiSource;
+  await interaction.reply({ content: `Icono actualizado para **${selected.role.name}**: ${parsed.emoji}`, flags: 64 });
+}
+
+function getSelectedRoleContextFromDraft(userId) {
+  const warData = global.warEdits?.[userId];
+  if (!warData || warData.creatorId !== userId) {
+    return { ok: false, message: 'Sesion expirada' };
+  }
+
+  const selectedIndex = global.warEditSelections?.[userId];
+  if (!Number.isInteger(selectedIndex)) {
+    return { ok: false, message: 'Primero selecciona un rol en el panel de edicion' };
+  }
+
+  const role = warData.roles[selectedIndex];
+  if (!role) {
+    return { ok: false, message: 'El rol seleccionado ya no existe' };
+  }
+
+  return { ok: true, warData, role, roleIndex: selectedIndex };
+}
+
+function parseEmojiInput(text, interaction) {
+  const customEmojiMatch = text.match(/^<a?:[A-Za-z0-9_]+:(\d+)>$/);
+  if (customEmojiMatch) {
+    const emojiId = customEmojiMatch[1];
+    const isGuildEmoji = Boolean(interaction.guild?.emojis?.cache?.get(emojiId));
+
+    return {
+      emoji: text,
+      emojiSource: isGuildEmoji ? 'guild' : 'custom'
+    };
+  }
+
+  if (/\p{Extended_Pictographic}/u.test(text)) {
+    return {
+      emoji: text,
+      emojiSource: 'unicode'
+    };
+  }
+
+  return null;
 }

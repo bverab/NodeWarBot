@@ -1,6 +1,14 @@
 /**
  * Validaciones y helpers para scheduling
  */
+const DEFAULT_TIMEZONE = 'America/Bogota';
+const timezoneCache = new Map();
+const timezoneAliases = {
+  'america/brasil': 'America/Sao_Paulo',
+  'america/brazil': 'America/Sao_Paulo',
+  'america/santiago': 'America/Santiago',
+  'america/bogota': 'America/Bogota'
+};
 
 /**
  * Valida que la hora esté en formato HH:mm
@@ -43,7 +51,8 @@ function minutesToTime(minutes) {
  */
 function shouldExecute(dayOfWeek, time, currentDate = new Date(), timezone = 'America/Bogota') {
   const [hours, minutes] = time.split(':').map(Number);
-  const zonedNow = getZonedDateParts(currentDate, timezone);
+  const safeTimezone = normalizeTimeZone(timezone);
+  const zonedNow = getZonedDateParts(currentDate, safeTimezone);
   
   // Verificar si es el día correcto
   if (zonedNow.dayOfWeek !== dayOfWeek) {
@@ -89,6 +98,50 @@ function getZonedDateParts(date, timezone) {
   };
 }
 
+function normalizeTimeZone(timezone) {
+  const raw = String(timezone || DEFAULT_TIMEZONE).trim();
+  if (!raw) return DEFAULT_TIMEZONE;
+
+  const cacheKey = raw.toLowerCase();
+  if (timezoneCache.has(cacheKey)) {
+    return timezoneCache.get(cacheKey);
+  }
+
+  const aliasCandidate = timezoneAliases[cacheKey] || raw;
+  const candidates = [
+    aliasCandidate,
+    aliasCandidate.replace(/\s+/g, '_'),
+    aliasCandidate
+      .split('/')
+      .map(part =>
+        part
+          .split('_')
+          .map(word => word ? `${word[0].toUpperCase()}${word.slice(1).toLowerCase()}` : word)
+          .join('_')
+      )
+      .join('/')
+  ];
+
+  for (const candidate of candidates) {
+    if (isValidIanaTimezone(candidate)) {
+      timezoneCache.set(cacheKey, candidate);
+      return candidate;
+    }
+  }
+
+  timezoneCache.set(cacheKey, DEFAULT_TIMEZONE);
+  return DEFAULT_TIMEZONE;
+}
+
+function isValidIanaTimezone(timezone) {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Calcula tiempo hasta próxima ejecución (en milisegundos)
  * @param {number} dayOfWeek - 0-6
@@ -128,6 +181,7 @@ module.exports = {
   isValidTime,
   timeToMinutes,
   minutesToTime,
+  normalizeTimeZone,
   shouldExecute,
   msUntilNextExecution,
   getScheduleLabel

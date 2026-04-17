@@ -2,6 +2,9 @@ const {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   ButtonBuilder,
   ButtonStyle
 } = require('discord.js');
@@ -18,9 +21,9 @@ module.exports = async interaction => {
 
     if (customId === 'open_role_panel') return await handleOpenRolePanel(interaction);
     if (customId === 'panel_select_role') return await handlePanelSelectRole(interaction);
-    if (customId === 'panel_edit_name') return await handleShowEditRoleCommandHelp(interaction);
-    if (customId === 'panel_edit_slots') return await handleShowEditRoleCommandHelp(interaction);
-    if (customId === 'panel_edit_icon') return await handleShowEditRoleCommandHelp(interaction);
+    if (customId === 'panel_edit_name') return await handlePanelEditName(interaction);
+    if (customId === 'panel_edit_slots') return await handlePanelEditSlots(interaction);
+    if (customId === 'panel_edit_icon') return await handlePanelEditIcon(interaction);
     if (customId === 'panel_edit_permissions') return await handleOpenEditPermissions(interaction);
     if (customId === 'panel_set_permissions') return await handlePanelSetPermissions(interaction);
     if (customId === 'panel_clear_permissions') return await handlePanelClearPermissions(interaction);
@@ -171,22 +174,75 @@ async function handlePanelSelectRole(interaction) {
   await interaction.update(buildRolePanelPayload(role));
 }
 
-async function handleShowEditRoleCommandHelp(interaction) {
+async function handlePanelEditName(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
     return await interaction.reply({ content: selected.message, flags: 64 });
   }
 
-  await interaction.reply({
-    content: [
-      `Para editar **${selected.role.name}** usa el comando:`,
-      '`/editrole rename rol:<rol> nombre:<nuevo>`',
-      '`/editrole slots rol:<rol> cantidad:<n>`',
-      '`/editrole icon rol:<rol> valor:<emoji o <:nombre:id>>`',
-      '`/editrole clearicon rol:<rol>`'
-    ].join('\n'),
-    flags: 64
-  });
+  const modal = new ModalBuilder()
+    .setCustomId('panel_edit_name_modal')
+    .setTitle(`Editar nombre: ${selected.role.name}`);
+
+  const input = new TextInputBuilder()
+    .setCustomId('panel_edit_name_input')
+    .setLabel('Nuevo nombre')
+    .setValue(selected.role.name)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(50);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+async function handlePanelEditSlots(interaction) {
+  const selected = getSelectedRoleContext(interaction);
+  if (!selected.ok) {
+    return await interaction.reply({ content: selected.message, flags: 64 });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId('panel_edit_slots_modal')
+    .setTitle(`Editar slots: ${selected.role.name}`);
+
+  const input = new TextInputBuilder()
+    .setCustomId('panel_edit_slots_input')
+    .setLabel('Cantidad de slots')
+    .setPlaceholder('Ej: 5')
+    .setValue(String(selected.role.max))
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(3);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+async function handlePanelEditIcon(interaction) {
+  const selected = getSelectedRoleContext(interaction);
+  if (!selected.ok) {
+    return await interaction.reply({ content: selected.message, flags: 64 });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId('panel_edit_icon_modal')
+    .setTitle(`Editar icono: ${selected.role.name}`);
+
+  const input = new TextInputBuilder()
+    .setCustomId('panel_edit_icon_input')
+    .setLabel('Emoji unicode o <:nombre:id>')
+    .setPlaceholder('Ej: <:caller:123456789012345678> o 🛡️')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(80);
+
+  if (selected.role.emoji) {
+    input.setValue(String(selected.role.emoji).slice(0, 80));
+  }
+
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  await interaction.showModal(modal);
 }
 
 async function handleOpenEditPermissions(interaction) {
@@ -282,27 +338,21 @@ function buildRolePanelPayload(role) {
       `Panel de **${role.name}**`,
       `Slots: ${role.max}`,
       `Icono: ${role.emoji || 'Sin icono'}`,
-      `Permisos: ${permissions}`,
-      '',
-      'Edicion rapida:',
-      '/editrole rename',
-      '/editrole slots',
-      '/editrole icon',
-      '/editrole clearicon'
+      `Permisos: ${permissions}`
     ].join('\n'),
     components: [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('panel_edit_name')
-          .setLabel('Nombre (/editrole)')
+          .setLabel('Nombre')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('panel_edit_slots')
-          .setLabel('Slots (/editrole)')
+          .setLabel('Slots')
           .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('panel_edit_icon')
-          .setLabel('Icono (/editrole)')
+          .setLabel('Icono')
           .setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
           .setCustomId('panel_edit_permissions')
