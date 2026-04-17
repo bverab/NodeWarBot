@@ -49,9 +49,7 @@ module.exports = async interaction => {
     if (customId === 'panel_delete_role') return await handlePanelDeleteRole(interaction);
   } catch (error) {
     console.error('Error en interactionHandler:', error);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Error', flags: 64 });
-    }
+    await safeInteractionErrorResponse(interaction);
   }
 };
 
@@ -364,9 +362,18 @@ async function handlePanelEditSlots(interaction) {
 
 async function handlePanelEditIcon(interaction) {
   // Vista para seleccionar/editar icono de rol.
+  if (!interaction.deferred && !interaction.replied) {
+    try {
+      await interaction.deferUpdate();
+    } catch (error) {
+      if (error?.code === 10062 || error?.code === 40060) return;
+      throw error;
+    }
+  }
+
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, embeds: [], components: [] });
+    return await interaction.editReply({ content: selected.message, embeds: [], components: [] });
   }
 
   const emojis = await interaction.guild.emojis.fetch().catch(() => null);
@@ -415,7 +422,7 @@ async function handlePanelEditIcon(interaction) {
     )
   );
 
-  await interaction.update({
+  await interaction.editReply({
     content: emojiList.length > 0
       ? `Iconos para **${selected.role.name}**`
       : `No hay emojis del servidor disponibles. Usa "Escribir icono" para **${selected.role.name}**`,
@@ -864,4 +871,21 @@ function getPendingState(userId) {
     };
   }
   return global.warPanelPending[userId];
+}
+
+async function safeInteractionErrorResponse(interaction) {
+  if (interaction.replied || interaction.deferred) {
+    try {
+      await interaction.editReply({ content: 'Error', embeds: [], components: [] });
+    } catch (error) {
+      if (error?.code === 10062 || error?.code === 40060) return;
+    }
+    return;
+  }
+
+  try {
+    await interaction.reply({ content: 'Error', flags: 64 });
+  } catch (error) {
+    if (error?.code === 10062 || error?.code === 40060) return;
+  }
 }
