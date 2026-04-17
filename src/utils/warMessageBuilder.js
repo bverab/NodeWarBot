@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { formatMemberList, getWarTotals } = require('./warState');
+const { getEventTypeMeta } = require('../constants/eventTypes');
 
 const ICONS = {
   skull: '\uD83D\uDC80',
@@ -12,10 +13,17 @@ const ICONS = {
 
 function buildWarEmbed(war) {
   const { totalSlots, totalSigned } = getWarTotals(war);
+  const startsAt = Math.floor((war.createdAt || Date.now()) / 1000);
+  const endsAt = Math.floor((war.closesAt || Date.now()) / 1000);
   const closesAt = `<t:${Math.floor(war.closesAt / 1000)}:R>`;
+  const eventMeta = getEventTypeMeta(war.eventType);
+  const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+  const recurrenceLabel = Number.isInteger(war.dayOfWeek) ? dayNames[war.dayOfWeek] : null;
 
   const description = [
     `${ICONS.calendar} **Horario**`,
+    `<t:${startsAt}:F> - <t:${endsAt}:t>`,
+    `<t:${startsAt}:R>`,
     war.type || 'Por definir',
     '',
     `${ICONS.note} **Inscripciones**`,
@@ -24,9 +32,9 @@ function buildWarEmbed(war) {
   ].join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle(`${ICONS.skull} ${war.name}`)
+    .setTitle(`${ICONS.skull} ${war.name} (${eventMeta.label}) ${totalSlots} players`)
     .setDescription(description)
-    .setColor(0x2b2d31);
+    .setColor(0xf1c40f);
 
   const roleFields = war.roles.map(role => {
     const hasRestrictions =
@@ -47,28 +55,28 @@ function buildWarEmbed(war) {
     embed.addFields({ name: 'Roles', value: 'Sin roles configurados', inline: false });
   }
 
-  if (war.waitlist.length) {
-    const waitlistText = war.waitlist
+  const waitlistText = war.waitlist.length
+    ? war.waitlist
       .map((entry, index) => {
         const role = war.roles.find(r => r.name === entry.roleName);
         const roleLabel = role ? ` (${role.emoji || ICONS.whiteCircle} ${role.name})` : '';
         return `${index + 1}. ${entry.userName}${roleLabel}`;
       })
-      .join('\n');
+      .join('\n')
+    : '-- vacio --';
 
-    embed.addFields({
-      name: `${ICONS.waitlist} Waitlist (${war.waitlist.length})`,
-      value: waitlistText,
-      inline: false
-    });
-  }
+  embed.addFields({
+    name: `${ICONS.waitlist} Waitlist (${war.waitlist.length})`,
+    value: waitlistText,
+    inline: false
+  });
 
   const createdBy = war.creatorId ? `<@${war.creatorId}>` : 'Desconocido';
   const createdAt = `<t:${Math.floor(war.createdAt / 1000)}:R>`;
 
   embed.addFields({
     name: 'Registro',
-    value: `**${totalSigned}/${totalSlots}** jugadores inscritos\nCreado por ${createdBy} | ${createdAt}`,
+    value: `**${totalSigned}/${totalSlots}** jugadores inscritos\nCreado por ${createdBy} | ${createdAt}${recurrenceLabel ? `\nRepite: ${recurrenceLabel}` : ''}`,
     inline: false
   });
 

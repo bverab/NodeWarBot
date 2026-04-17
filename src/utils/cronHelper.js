@@ -37,23 +37,56 @@ function minutesToTime(minutes) {
  * Calcula si es hora de ejecutar basado en dayOfWeek y time
  * @param {number} dayOfWeek - 0-6
  * @param {string} time - "HH:mm"
- * @param {Date} currentDate - Fecha actual
+ * @param {Date} currentDate - Fecha actual (UTC/local del servidor)
+ * @param {string} timezone - Zona horaria del evento
  * @returns {boolean}
  */
-function shouldExecute(dayOfWeek, time, currentDate = new Date()) {
+function shouldExecute(dayOfWeek, time, currentDate = new Date(), timezone = 'America/Bogota') {
   const [hours, minutes] = time.split(':').map(Number);
+  const zonedNow = getZonedDateParts(currentDate, timezone);
   
   // Verificar si es el día correcto
-  if (currentDate.getDay() !== dayOfWeek) {
+  if (zonedNow.dayOfWeek !== dayOfWeek) {
     return false;
   }
 
   // Verificar si es la hora correcta (dentro del mismo minuto)
-  if (currentDate.getHours() === hours && currentDate.getMinutes() === minutes) {
+  if (zonedNow.hours === hours && zonedNow.minutes === minutes) {
     return true;
   }
 
   return false;
+}
+
+function getZonedDateParts(date, timezone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour12: false,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  const parts = formatter.formatToParts(date);
+  const weekday = parts.find(p => p.type === 'weekday')?.value || 'Sun';
+  const hour = Number(parts.find(p => p.type === 'hour')?.value || '0');
+  const minute = Number(parts.find(p => p.type === 'minute')?.value || '0');
+
+  const dayMap = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6
+  };
+
+  return {
+    dayOfWeek: dayMap[weekday] ?? 0,
+    hours: hour,
+    minutes: minute
+  };
 }
 
 /**

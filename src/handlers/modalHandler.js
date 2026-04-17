@@ -9,10 +9,11 @@ const {
   TextInputStyle
 } = require('discord.js');
 const { isValidTime } = require('../utils/cronHelper');
+const { normalizeEventType, getEventTypeMeta } = require('../constants/eventTypes');
 
 module.exports = async interaction => {
   try {
-    if (interaction.customId === 'create_war_initial') {
+    if (interaction.customId === 'create_war_initial' || interaction.customId.startsWith('create_event_initial:')) {
       return await handleWarCreation(interaction);
     }
 
@@ -37,8 +38,11 @@ async function handleWarCreation(interaction) {
   const acknowledged = await safeDefer(interaction);
   if (!acknowledged) return;
 
+  const eventType = extractEventTypeFromCustomId(interaction.customId);
+  const eventMeta = getEventTypeMeta(eventType);
+
   const name = interaction.fields.getTextInputValue('war_name_input');
-  const type = interaction.fields.getTextInputValue('war_type_input') || 'Evento de guerra';
+  const type = interaction.fields.getTextInputValue('war_type_input') || eventMeta.defaultDescription;
   const timezone = interaction.fields.getTextInputValue('war_timezone_input') || 'America/Bogota';
   const timeStr = interaction.fields.getTextInputValue('war_time_input')?.trim() || '22:00';
   const durationStr = interaction.fields.getTextInputValue('war_duration_input')?.trim() || '70';
@@ -58,6 +62,7 @@ async function handleWarCreation(interaction) {
 
   const warData = {
     groupId,
+    eventType,
     name,
     type,
     timezone,
@@ -87,12 +92,13 @@ async function handleWarCreation(interaction) {
  * Muestra editor de roles (panel principal)
  */
 async function showRolesEditor(interaction, warData) {
+  const eventMeta = getEventTypeMeta(warData.eventType);
   const rolesDisplay = warData.roles.length > 0
     ? warData.roles.map(r => `${r.emoji || '○'} ${r.name} (${r.max})`).join('\n')
     : '*(ninguno)*';
 
   const embed = new EmbedBuilder()
-    .setTitle(`📋 ${warData.name}`)
+    .setTitle(`📋 ${warData.name} (${eventMeta.label})`)
     .setDescription(warData.type || 'Evento de guerra')
     .setColor(0x5865f2)
     .addFields(
@@ -401,8 +407,8 @@ async function handleScheduleWarMentions(interaction) {
     return await interaction.update({ content: '❌ Sesión expirada', components: [] });
   }
 
-  await interaction.deferUpdate();
-  await confirmAndPublish(interaction, warData, scheduleTemp.days, interaction.values);
+  scheduleTemp.mentions = interaction.values.map(String);
+  await showPublishPreview(interaction, warData, scheduleTemp.days, scheduleTemp.mentions, 'update');
 }
 
 /**
@@ -450,6 +456,7 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
 
 module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
 module.exports.confirmAndPublish = confirmAndPublish;
+module.exports.showPublishPreview = showPublishPreview;
 
 async function finalizeScheduleInteraction(interaction, payload) {
   if (interaction.deferred || interaction.replied) {
@@ -489,4 +496,49 @@ async function safeRespond(interaction, content) {
   } catch (error) {
     console.warn(`No se pudo responder (${error?.code})`);
   }
+}
+
+function extractEventTypeFromCustomId(customId) {
+  if (!customId || typeof customId !== 'string') return 'war';
+  if (customId === 'create_war_initial') return 'war';
+  const [prefix, rawType] = customId.split(':');
+  if (prefix !== 'create_event_initial') return 'war';
+  return normalizeEventType(rawType);
+}
+
+async function showPublishPreview(interaction, warData, selectedDays, mentionRoleIds, mode = 'editReply') {
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const daysText = selectedDays.map(d => dayNames[d]).join(', ');
+  const mentionText = mentionRoleIds.length > 0
+    ? mentionRoleIds.map(id => `<@&${id}>`).join(' ')
+    : '(sin menciones)';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`✅ Confirmar publicación: ${warData.name}`)
+    .setDescription('**Paso 3: Revisa y confirma**')
+    .setColor(0x57f287)
+    .addFields(
+      { name: 'Días', value: daysText, inline: false },
+      { name: 'Hora / Duración', value: `${warData.time} (${warData.duration} min)`, inline: true },
+      { name: 'Zona', value: warData.timezone, inline: true },
+      { name: 'Menciones', value: mentionText, inline: false }
+    );
+
+  const actions = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('confirm_publish')
+      .setLabel('Confirmar y publicar')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('cancel_war')
+      .setLabel('Cancelar')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  if (mode === 'update' && (interaction.isStringSelectMenu() || interaction.isButton())) {
+    await interaction.update({ embeds: [embed], components: [actions] });
+    return;
+  }
+
+  await interaction.editReply({ embeds: [embed], components: [actions] });
 }

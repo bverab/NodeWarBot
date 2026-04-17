@@ -46,6 +46,7 @@ client.on(Events.InteractionCreate, async interaction => {
           'publish_war',
           'cancel_war',
           'skip_mentions_publish',
+          'confirm_publish',
           'open_role_panel',
           'panel_select_role',
           'panel_edit_name',

@@ -74,7 +74,7 @@ async function checkAndExecuteEvents() {
       if ((war.dayOfWeek === null || war.dayOfWeek === undefined) || !war.time) continue;
 
       // Verificar si debe ejecutarse
-      if (!shouldExecute(war.dayOfWeek, war.time, now)) continue;
+      if (!shouldExecute(war.dayOfWeek, war.time, now, war.timezone)) continue;
 
       // Verificar si ya se ejecutó hoy
       const lastCreatedDate = new Date(war.schedule.lastCreatedAt || 0);

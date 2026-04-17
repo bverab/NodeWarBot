@@ -1,4 +1,5 @@
 const EMPTY_SLOT = '-- vacio --';
+const { normalizeEventType } = require('../constants/eventTypes');
 
 function toParticipant(entry) {
   if (!entry) return null;
@@ -79,6 +80,7 @@ function normalizeWar(war = {}) {
     // Identificación básica
     id: String(war.id || Date.now()),
     groupId: war.groupId || null,                    // NUEVO: grupo de eventos relacionados
+    eventType: normalizeEventType(war.eventType || 'war'),
     name: war.name || 'Node War',
     type: war.type || 'Sin descripcion',
     

@@ -14,6 +14,7 @@ module.exports = async interaction => {
     if (customId === 'publish_war') return await handlePublishWar(interaction);
     if (customId === 'cancel_war') return await handleCancelWar(interaction);
     if (customId === 'skip_mentions_publish') return await handleSkipMentionsPublish(interaction);
+    if (customId === 'confirm_publish') return await handleConfirmPublish(interaction);
 
     if (customId === 'open_role_panel') return await handleOpenRolePanel(interaction);
     if (customId === 'panel_select_role') return await handlePanelSelectRole(interaction);
@@ -97,7 +98,7 @@ async function handleCancelWar(interaction) {
 }
 
 async function handleSkipMentionsPublish(interaction) {
-  const { confirmAndPublish } = require('./modalHandler');
+  const { showPublishPreview } = require('./modalHandler');
   const warData = global.warEdits?.[interaction.user.id];
   const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
 
@@ -105,8 +106,21 @@ async function handleSkipMentionsPublish(interaction) {
     return await interaction.reply({ content: '❌ Sesión expirada', flags: 64 });
   }
 
+  scheduleTemp.mentions = [];
+  await showPublishPreview(interaction, warData, scheduleTemp.days, [], 'update');
+}
+
+async function handleConfirmPublish(interaction) {
+  const { confirmAndPublish } = require('./modalHandler');
+  const warData = global.warEdits?.[interaction.user.id];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
+
+  if (!warData || !scheduleTemp || !Array.isArray(scheduleTemp.days)) {
+    return await interaction.reply({ content: '❌ Sesión expirada', flags: 64 });
+  }
+
   await interaction.deferUpdate();
-  await confirmAndPublish(interaction, warData, scheduleTemp.days, []);
+  await confirmAndPublish(interaction, warData, scheduleTemp.days, scheduleTemp.mentions || []);
 }
 
 async function handleOpenRolePanel(interaction) {
