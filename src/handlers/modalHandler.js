@@ -8,7 +8,7 @@ const {
   TextInputBuilder,
   TextInputStyle
 } = require('discord.js');
-const { isValidTime, normalizeTimeZone } = require('../utils/cronHelper');
+const { isValidTime, normalizeTimeZone, normalizeTimeZoneInfo } = require('../utils/cronHelper');
 const { normalizeEventType, getEventTypeMeta } = require('../constants/eventTypes');
 
 module.exports = async interaction => {
@@ -56,6 +56,13 @@ async function handleWarCreation(interaction) {
   const name = interaction.fields.getTextInputValue('war_name_input');
   const type = interaction.fields.getTextInputValue('war_type_input') || eventMeta.defaultDescription;
   const timezoneRaw = interaction.fields.getTextInputValue('war_timezone_input') || 'America/Bogota';
+  const timezoneInfo = normalizeTimeZoneInfo(timezoneRaw);
+  if (timezoneInfo.source === 'fallback' && timezoneRaw?.trim()) {
+    return await safeRespond(
+      interaction,
+      '❌ Zona horaria invalida. Usa formato IANA, por ejemplo: America/Santiago, America/Bogota, America/Sao_Paulo.'
+    );
+  }
   const timezone = normalizeTimeZone(timezoneRaw);
   const timeStr = interaction.fields.getTextInputValue('war_time_input')?.trim() || '22:00';
   const durationStr = interaction.fields.getTextInputValue('war_duration_input')?.trim() || '70';

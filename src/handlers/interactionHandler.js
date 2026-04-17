@@ -27,6 +27,9 @@ module.exports = async interaction => {
     if (customId === 'panel_edit_permissions') return await handleOpenEditPermissions(interaction);
     if (customId === 'panel_set_permissions') return await handlePanelSetPermissions(interaction);
     if (customId === 'panel_clear_permissions') return await handlePanelClearPermissions(interaction);
+    if (customId === 'panel_set_icon') return await handlePanelSetIcon(interaction);
+    if (customId === 'panel_open_icon_modal') return await handlePanelOpenIconModal(interaction);
+    if (customId === 'panel_clear_icon') return await handlePanelClearIcon(interaction);
     if (customId === 'panel_delete_role') return await handlePanelDeleteRole(interaction);
   } catch (error) {
     console.error('Error en interactionHandler:', error);
@@ -225,6 +228,78 @@ async function handlePanelEditIcon(interaction) {
     return await interaction.reply({ content: selected.message, flags: 64 });
   }
 
+  const emojis = await interaction.guild.emojis.fetch().catch(() => null);
+  const emojiList = emojis
+    ? Array.from(emojis.values()).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 25)
+    : [];
+
+  const components = [];
+  if (emojiList.length > 0) {
+    const iconMenu = new StringSelectMenuBuilder()
+      .setCustomId('panel_set_icon')
+      .setPlaceholder('Selecciona un emoji del servidor')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(
+        emojiList.map(emoji => ({
+          label: emoji.name.slice(0, 100),
+          value: String(emoji.id),
+          emoji: { id: emoji.id, name: emoji.name, animated: emoji.animated }
+        }))
+      );
+
+    components.push(new ActionRowBuilder().addComponents(iconMenu));
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('panel_open_icon_modal')
+        .setLabel('Escribir icono')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('panel_clear_icon')
+        .setLabel('Quitar icono')
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  await interaction.reply({
+    content: emojiList.length > 0
+      ? `Iconos para **${selected.role.name}**`
+      : `No hay emojis del servidor disponibles. Usa "Escribir icono" para **${selected.role.name}**`,
+    components,
+    flags: 64
+  });
+}
+
+async function handlePanelSetIcon(interaction) {
+  const selected = getSelectedRoleContext(interaction);
+  if (!selected.ok) {
+    return await interaction.update({ content: selected.message, components: [] });
+  }
+
+  const emojiId = interaction.values[0];
+  const emoji = interaction.guild.emojis.cache.get(emojiId);
+  if (!emoji) {
+    return await interaction.update({ content: 'Emoji invalido o no disponible.', components: [] });
+  }
+
+  selected.role.emoji = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
+  selected.role.emojiSource = 'guild';
+
+  await interaction.update({
+    content: `Icono actualizado para **${selected.role.name}**: <${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`,
+    components: []
+  });
+}
+
+async function handlePanelOpenIconModal(interaction) {
+  const selected = getSelectedRoleContext(interaction);
+  if (!selected.ok) {
+    return await interaction.reply({ content: selected.message, flags: 64 });
+  }
+
   const modal = new ModalBuilder()
     .setCustomId('panel_edit_icon_modal')
     .setTitle(`Editar icono: ${selected.role.name}`);
@@ -243,6 +318,20 @@ async function handlePanelEditIcon(interaction) {
 
   modal.addComponents(new ActionRowBuilder().addComponents(input));
   await interaction.showModal(modal);
+}
+
+async function handlePanelClearIcon(interaction) {
+  const selected = getSelectedRoleContext(interaction);
+  if (!selected.ok) {
+    return await interaction.update({ content: selected.message, components: [] });
+  }
+
+  selected.role.emoji = null;
+  selected.role.emojiSource = null;
+  await interaction.update({
+    content: `Icono removido para **${selected.role.name}**`,
+    components: []
+  });
 }
 
 async function handleOpenEditPermissions(interaction) {

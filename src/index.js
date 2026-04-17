@@ -55,6 +55,9 @@ client.on(Events.InteractionCreate, async interaction => {
           'panel_edit_permissions',
           'panel_set_permissions',
           'panel_clear_permissions',
+          'panel_set_icon',
+          'panel_open_icon_modal',
+          'panel_clear_icon',
           'panel_delete_role'
         ].includes(interaction.customId) ||
         interaction.customId.startsWith('panel_')

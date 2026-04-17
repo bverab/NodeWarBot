@@ -6,6 +6,7 @@ const timezoneCache = new Map();
 const timezoneAliases = {
   'america/brasil': 'America/Sao_Paulo',
   'america/brazil': 'America/Sao_Paulo',
+  'america/chile': 'America/Santiago',
   'america/santiago': 'America/Santiago',
   'america/bogota': 'America/Bogota'
 };
@@ -99,14 +100,20 @@ function getZonedDateParts(date, timezone) {
 }
 
 function normalizeTimeZone(timezone) {
+  return normalizeTimeZoneInfo(timezone).timezone;
+}
+
+function normalizeTimeZoneInfo(timezone) {
   const raw = String(timezone || DEFAULT_TIMEZONE).trim();
-  if (!raw) return DEFAULT_TIMEZONE;
+  if (!raw) return { timezone: DEFAULT_TIMEZONE, source: 'fallback' };
 
   const cacheKey = raw.toLowerCase();
   if (timezoneCache.has(cacheKey)) {
-    return timezoneCache.get(cacheKey);
+    const cached = timezoneCache.get(cacheKey);
+    return { timezone: cached, source: cached === DEFAULT_TIMEZONE ? 'fallback' : 'cache' };
   }
 
+  const hasAlias = Boolean(timezoneAliases[cacheKey]);
   const aliasCandidate = timezoneAliases[cacheKey] || raw;
   const candidates = [
     aliasCandidate,
@@ -125,12 +132,12 @@ function normalizeTimeZone(timezone) {
   for (const candidate of candidates) {
     if (isValidIanaTimezone(candidate)) {
       timezoneCache.set(cacheKey, candidate);
-      return candidate;
+      return { timezone: candidate, source: hasAlias ? 'alias' : 'exact' };
     }
   }
 
   timezoneCache.set(cacheKey, DEFAULT_TIMEZONE);
-  return DEFAULT_TIMEZONE;
+  return { timezone: DEFAULT_TIMEZONE, source: 'fallback' };
 }
 
 function isValidIanaTimezone(timezone) {
@@ -181,6 +188,7 @@ module.exports = {
   isValidTime,
   timeToMinutes,
   minutesToTime,
+  normalizeTimeZoneInfo,
   normalizeTimeZone,
   shouldExecute,
   msUntilNextExecution,
