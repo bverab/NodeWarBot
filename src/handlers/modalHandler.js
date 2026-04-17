@@ -21,6 +21,10 @@ module.exports = async interaction => {
       return await handleAddRolesBulkModal(interaction);
     }
 
+    if (interaction.customId === 'schedule_war_mode') {
+      return await handleScheduleWarMode(interaction);
+    }
+
     if (interaction.customId === 'schedule_war_days') {
       return await handleScheduleWarDays(interaction);
     }
@@ -257,30 +261,21 @@ function extractEmojiAndName(text, interaction) {
 /**
  * Mostrar selector de días (llamado desde interactionHandler al hacer click "Publicar")
  */
-async function showScheduleDaysSelector(interaction, warData) {
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-
+async function showScheduleModeSelector(interaction, warData) {
   const menu = new StringSelectMenuBuilder()
-    .setCustomId('schedule_war_days')
-    .setPlaceholder('Selecciona el día (o días) para este evento')
+    .setCustomId('schedule_war_mode')
+    .setPlaceholder('Selecciona si el evento se repite o es unico')
     .setMinValues(1)
-    .setMaxValues(7)
-    .addOptions(
-      dayNames.map((day, index) => ({
-        label: day,
-        value: String(index),
-        description: `Ejecutar ${day}s a las ${warData.time}`
-      }))
-    );
+    .setMaxValues(1)
+    .addOptions([
+      { label: 'Recurrente', value: 'recurring', description: 'Se publica cada semana' },
+      { label: 'Unico', value: 'once', description: 'Se publica una sola vez' }
+    ]);
 
   const embed = new EmbedBuilder()
-    .setTitle(`⏰ Configurar horario: ${warData.name}`)
-    .setDescription('**Paso 1: Selecciona día(s)**')
-    .setColor(0x5865f2)
-    .addFields({
-      name: 'Información',
-      value: `Hora: **${warData.time}**\nDuración: **${warData.duration} min**\nZona: **${warData.timezone}**`
-    });
+    .setTitle(`? Configurar horario: ${warData.name}`)
+    .setDescription('**Paso 1: Tipo de programacion**')
+    .setColor(0x5865f2);
 
   await interaction.editReply({
     embeds: [embed],
@@ -288,94 +283,125 @@ async function showScheduleDaysSelector(interaction, warData) {
   });
 }
 
-module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
+async function showScheduleDaysSelector(interaction, warData) {
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id] || {};
+  const mode = scheduleTemp.mode || 'recurring';
+  const selectedDays = Array.isArray(scheduleTemp.days) ? scheduleTemp.days : [];
 
-/**
- * Maneja selección de días
- */
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('schedule_war_days')
+    .setPlaceholder(mode === 'once' ? 'Selecciona 1 dia' : 'Selecciona uno o varios dias')
+    .setMinValues(1)
+    .setMaxValues(mode === 'once' ? 1 : 7)
+    .addOptions(
+      dayNames.map((day, index) => ({
+        label: day,
+        value: String(index),
+        description: `A las ${warData.time}`,
+        default: selectedDays.includes(index)
+      }))
+    );
+
+  const embed = new EmbedBuilder()
+    .setTitle(`? Configurar horario: ${warData.name}`)
+    .setDescription('**Paso 2: Selecciona dia(s)**')
+    .setColor(0x5865f2)
+    .addFields({ name: 'Modo', value: mode === 'once' ? 'Unico' : 'Recurrente' });
+
+  await interaction.editReply({
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(menu),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('confirm_schedule_days')
+          .setLabel('Confirmar dias y continuar')
+          .setStyle(ButtonStyle.Primary)
+      )
+    ]
+  });
+}
+
+async function handleScheduleWarMode(interaction) {
+  if (!interaction.isStringSelectMenu()) return;
+
+  const warData = global.warEdits?.[interaction.user.id];
+  if (!warData) {
+    return await interaction.reply({ content: 'Sesion expirada', flags: 64 });
+  }
+
+  if (!global.warScheduleTemp) global.warScheduleTemp = {};
+  const scheduleTemp = global.warScheduleTemp[interaction.user.id] || {};
+  scheduleTemp.mode = interaction.values[0] === 'once' ? 'once' : 'recurring';
+  if (scheduleTemp.mode === 'once' && Array.isArray(scheduleTemp.days) && scheduleTemp.days.length > 1) {
+    scheduleTemp.days = [scheduleTemp.days[0]];
+  }
+  global.warScheduleTemp[interaction.user.id] = scheduleTemp;
+
+  await interaction.update({
+    content: `Modo seleccionado: **${scheduleTemp.mode === 'once' ? 'Unico' : 'Recurrente'}**\nPresiona **Confirmar y continuar**.`,
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('confirm_schedule_mode')
+          .setLabel('Confirmar y continuar')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('edit_schedule_mode')
+          .setLabel('Volver a editar')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
+  });
+}
+
 async function handleScheduleWarDays(interaction) {
   if (!interaction.isStringSelectMenu()) return;
 
   const warData = global.warEdits?.[interaction.user.id];
   if (!warData) {
-    return await interaction.reply({ content: '❌ Sesión expirada', flags: 64 });
+    return await interaction.reply({ content: 'Sesion expirada', flags: 64 });
   }
 
-  const selectedDays = interaction.values.map(v => Number(v));
   if (!global.warScheduleTemp) global.warScheduleTemp = {};
-  global.warScheduleTemp[interaction.user.id] = { days: selectedDays };
+  const scheduleTemp = global.warScheduleTemp[interaction.user.id] || {};
+  const mode = scheduleTemp.mode || 'recurring';
+  const picked = interaction.values.map(v => Number(v));
+  scheduleTemp.days = mode === 'once' ? picked.slice(0, 1) : picked;
+  global.warScheduleTemp[interaction.user.id] = scheduleTemp;
 
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  const daysText = selectedDays.map(d => dayNames[d]).join(', ');
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+  const daysText = scheduleTemp.days.map(d => dayNames[d]).join(', ');
 
-  const embed = new EmbedBuilder()
-    .setTitle(`📢 Configurar menciones: ${warData.name}`)
-    .setDescription('**Paso 2: Selecciona roles para @mencionar (opcional)**')
-    .setColor(0x5865f2)
-    .addFields({
-      name: 'Programado para',
-      value: `${daysText} a las ${warData.time}`
-    });
-
-  try {
-    const roles = await interaction.guild.roles.fetch();
-    const selectableRoles = roles
-      .filter(r => !r.managed && r.id !== interaction.guildId)
-      .map(role => role)
-      .slice(0, 25);
-
-    if (selectableRoles.length === 0) {
-      await confirmAndPublish(interaction, warData, selectedDays, []);
-      return;
-    }
-
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId('schedule_war_mentions')
-      .setPlaceholder('Roles a @mencionar (puedes elegir múltiples o dejar vacío)')
-      .setMinValues(0)
-      .setMaxValues(selectableRoles.length)
-      .addOptions(
-        selectableRoles.map(role => ({
-          label: role.name,
-          value: role.id
-        }))
-      );
-
-    const skipButton = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('skip_mentions_publish')
-        .setLabel('Sin menciones → Publicar')
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    await interaction.update({
-      embeds: [embed],
-      components: [
-        new ActionRowBuilder().addComponents(menu),
-        skipButton
-      ]
-    });
-  } catch (error) {
-    console.error('Error en handleScheduleWarDays:', error);
-    await interaction.reply({ content: '❌ Error al procesar selección', flags: 64 });
-  }
+  await interaction.update({
+    content: `Dias seleccionados: **${daysText}**\nPresiona **Confirmar dias y continuar**.`,
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('confirm_schedule_days')
+          .setLabel('Confirmar dias y continuar')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('edit_schedule_days')
+          .setLabel('Volver a editar')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
+  });
 }
 
-/**
- * Mostrar selector de mentions
- */
 async function showScheduleMentionsSelector(interaction, warData, selectedDays) {
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const daysText = selectedDays.map(d => dayNames[d]).join(', ');
 
   const embed = new EmbedBuilder()
-    .setTitle(`📢 Configurar menciones: ${warData.name}`)
-    .setDescription('**Paso 2: Selecciona roles para @mencionar (opcional)**')
+    .setTitle(`?? Configurar menciones: ${warData.name}`)
+    .setDescription('**Paso 3: Selecciona roles para @mencionar (opcional)**')
     .setColor(0x5865f2)
-    .addFields({
-      name: 'Programado para',
-      value: `${daysText} a las ${warData.time}`
-    });
+    .addFields({ name: 'Programado para', value: `${daysText} a las ${warData.time}` });
 
   try {
     const roles = await interaction.guild.roles.fetch();
@@ -385,81 +411,103 @@ async function showScheduleMentionsSelector(interaction, warData, selectedDays) 
       .slice(0, 25);
 
     if (selectableRoles.length === 0) {
-      await confirmAndPublish(interaction, warData, selectedDays, []);
-      return;
+      return await showPublishPreview(interaction, warData, selectedDays, [], 'editReply');
     }
+
+    const existingMentions = Array.isArray(global.warScheduleTemp?.[interaction.user.id]?.mentions)
+      ? global.warScheduleTemp[interaction.user.id].mentions
+      : [];
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId('schedule_war_mentions')
-      .setPlaceholder('Roles a @mencionar (puedes elegir múltiples o dejar vacío)')
+      .setPlaceholder('Selecciona roles a mencionar')
       .setMinValues(0)
       .setMaxValues(selectableRoles.length)
       .addOptions(
         selectableRoles.map(role => ({
           label: role.name,
-          value: role.id
+          value: role.id,
+          default: existingMentions.includes(role.id)
         }))
       );
-
-    const skipButton = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('skip_mentions_publish')
-        .setLabel('Sin menciones → Publicar')
-        .setStyle(ButtonStyle.Primary)
-    );
 
     await interaction.editReply({
       embeds: [embed],
       components: [
         new ActionRowBuilder().addComponents(menu),
-        skipButton
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('confirm_schedule_mentions')
+            .setLabel('Confirmar menciones')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('skip_mentions_publish')
+            .setLabel('Sin menciones')
+            .setStyle(ButtonStyle.Secondary)
+        )
       ]
     });
   } catch (error) {
     console.warn('Error obteniendo roles:', error);
-    await confirmAndPublish(interaction, warData, selectedDays, []);
+    await showPublishPreview(interaction, warData, selectedDays, [], 'editReply');
   }
 }
 
-/**
- * Maneja selección de mentions
- */
 async function handleScheduleWarMentions(interaction) {
   if (!interaction.isStringSelectMenu()) return;
 
-  const warData = global.warEdits?.[interaction.user.id];
   const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
-
-  if (!warData || !scheduleTemp) {
-    return await interaction.update({ content: '❌ Sesión expirada', components: [] });
+  if (!scheduleTemp) {
+    return await interaction.update({ content: 'Sesion expirada', components: [] });
   }
 
   scheduleTemp.mentions = interaction.values.map(String);
-  await showPublishPreview(interaction, warData, scheduleTemp.days, scheduleTemp.mentions, 'update');
+  await interaction.update({
+    content: `Menciones seleccionadas: ${scheduleTemp.mentions.length > 0 ? scheduleTemp.mentions.map(id => `<@&${id}>`).join(' ') : '(sin menciones)'}\nPresiona **Confirmar menciones** para continuar.`,
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('confirm_schedule_mentions')
+          .setLabel('Confirmar menciones')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('edit_schedule_mentions')
+          .setLabel('Volver a editar')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('skip_mentions_publish')
+          .setLabel('Sin menciones')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
+  });
 }
 
-/**
- * Confirma y publica eventos
- */
 async function confirmAndPublish(interaction, warData, selectedDays, mentionRoleIds) {
   const warService = require('../services/warService');
   const { normalizeWar } = require('../utils/warState');
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id] || {};
+  const scheduleMode = scheduleTemp.mode === 'once' ? 'once' : 'recurring';
 
   if (warData.roles.length === 0) {
     return await finalizeScheduleInteraction(interaction, {
-      content: '❌ Agrega al menos 1 rol antes de publicar',
+      content: '? Agrega al menos 1 rol antes de publicar',
       components: []
     });
   }
 
-  // Guardar programación. La publicación real se hace en el scheduler.
   for (const dayOfWeek of selectedDays) {
     const warToCreate = {
       ...warData,
       dayOfWeek,
       notifyRoles: mentionRoleIds,
       id: `${warData.groupId}_day${dayOfWeek}`,
-      messageId: null
+      messageId: null,
+      schedule: {
+        ...(warData.schedule || {}),
+        mode: scheduleMode
+      }
     };
 
     const normalized = normalizeWar(warToCreate);
@@ -469,19 +517,21 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
   delete global.warEdits[interaction.user.id];
   delete global.warScheduleTemp[interaction.user.id];
 
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const daysText = selectedDays.map(d => dayNames[d]).join(', ');
-  const mentionText = mentionRoleIds.length > 0 
+  const mentionText = mentionRoleIds.length > 0
     ? mentionRoleIds.map(id => `<@&${id}>`).join(' ')
     : '(sin menciones)';
 
   await finalizeScheduleInteraction(interaction, {
-    content: `✅ **${warData.name}** programado\n📅 Días: ${daysText}\n⏰ Hora: ${warData.time}\n📢 Menciones al publicar: ${mentionText}`,
+    content: `Programacion creada: **${warData.name}**\nDias: ${daysText}\nHora: ${warData.time}\nModo: ${scheduleMode === 'once' ? 'Unico' : 'Recurrente'}\nMenciones al publicar: ${mentionText}`,
     components: []
   });
 }
 
+module.exports.showScheduleModeSelector = showScheduleModeSelector;
 module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
+module.exports.showScheduleMentionsSelector = showScheduleMentionsSelector;
 module.exports.confirmAndPublish = confirmAndPublish;
 module.exports.showPublishPreview = showPublishPreview;
 
@@ -556,6 +606,10 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
       .setCustomId('confirm_publish')
       .setLabel('Confirmar y publicar')
       .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('edit_schedule_mentions')
+      .setLabel('Volver a editar')
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('cancel_war')
       .setLabel('Cancelar')

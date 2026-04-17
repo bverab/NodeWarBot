@@ -18,6 +18,12 @@ module.exports = async interaction => {
     if (customId === 'cancel_war') return await handleCancelWar(interaction);
     if (customId === 'skip_mentions_publish') return await handleSkipMentionsPublish(interaction);
     if (customId === 'confirm_publish') return await handleConfirmPublish(interaction);
+    if (customId === 'confirm_schedule_mode') return await handleConfirmScheduleMode(interaction);
+    if (customId === 'confirm_schedule_days') return await handleConfirmScheduleDays(interaction);
+    if (customId === 'confirm_schedule_mentions') return await handleConfirmScheduleMentions(interaction);
+    if (customId === 'edit_schedule_mode') return await handleEditScheduleMode(interaction);
+    if (customId === 'edit_schedule_days') return await handleEditScheduleDays(interaction);
+    if (customId === 'edit_schedule_mentions') return await handleEditScheduleMentions(interaction);
 
     if (customId === 'open_role_panel') return await handleOpenRolePanel(interaction);
     if (customId === 'panel_select_role') return await handlePanelSelectRole(interaction);
@@ -26,8 +32,10 @@ module.exports = async interaction => {
     if (customId === 'panel_edit_icon') return await handlePanelEditIcon(interaction);
     if (customId === 'panel_edit_permissions') return await handleOpenEditPermissions(interaction);
     if (customId === 'panel_set_permissions') return await handlePanelSetPermissions(interaction);
+    if (customId === 'panel_confirm_permissions') return await handlePanelConfirmPermissions(interaction);
     if (customId === 'panel_clear_permissions') return await handlePanelClearPermissions(interaction);
     if (customId === 'panel_set_icon') return await handlePanelSetIcon(interaction);
+    if (customId === 'panel_confirm_icon') return await handlePanelConfirmIcon(interaction);
     if (customId === 'panel_open_icon_modal') return await handlePanelOpenIconModal(interaction);
     if (customId === 'panel_clear_icon') return await handlePanelClearIcon(interaction);
     if (customId === 'panel_delete_role') return await handlePanelDeleteRole(interaction);
@@ -81,8 +89,8 @@ async function handlePublishWar(interaction) {
 
   await interaction.deferUpdate();
 
-  const { showScheduleDaysSelector } = require('./modalHandler');
-  await showScheduleDaysSelector(interaction, warData);
+  const { showScheduleModeSelector } = require('./modalHandler');
+  await showScheduleModeSelector(interaction, warData);
 }
 
 async function handleCancelWar(interaction) {
@@ -114,6 +122,88 @@ async function handleSkipMentionsPublish(interaction) {
 
   scheduleTemp.mentions = [];
   await showPublishPreview(interaction, warData, scheduleTemp.days, [], 'update');
+}
+
+async function handleConfirmScheduleMode(interaction) {
+  const { showScheduleDaysSelector } = require('./modalHandler');
+  const warData = global.warEdits?.[interaction.user.id];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
+
+  if (!warData || !scheduleTemp || !scheduleTemp.mode) {
+    return await interaction.reply({ content: '❌ Selecciona primero el modo de programacion.', flags: 64 });
+  }
+
+  await interaction.deferUpdate();
+  await showScheduleDaysSelector(interaction, warData);
+}
+
+async function handleConfirmScheduleDays(interaction) {
+  const { showScheduleMentionsSelector } = require('./modalHandler');
+  const warData = global.warEdits?.[interaction.user.id];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
+
+  if (!warData || !scheduleTemp || !Array.isArray(scheduleTemp.days) || scheduleTemp.days.length === 0) {
+    return await interaction.reply({ content: '❌ Selecciona al menos un dia.', flags: 64 });
+  }
+
+  await interaction.deferUpdate();
+  await showScheduleMentionsSelector(interaction, warData, scheduleTemp.days);
+}
+
+async function handleConfirmScheduleMentions(interaction) {
+  const { showPublishPreview } = require('./modalHandler');
+  const warData = global.warEdits?.[interaction.user.id];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
+
+  if (!warData || !scheduleTemp || !Array.isArray(scheduleTemp.days)) {
+    return await interaction.reply({ content: '❌ Sesion expirada', flags: 64 });
+  }
+
+  await showPublishPreview(
+    interaction,
+    warData,
+    scheduleTemp.days,
+    Array.isArray(scheduleTemp.mentions) ? scheduleTemp.mentions : [],
+    'update'
+  );
+}
+
+async function handleEditScheduleMode(interaction) {
+  const { showScheduleModeSelector } = require('./modalHandler');
+  const warData = global.warEdits?.[interaction.user.id];
+
+  if (!warData) {
+    return await interaction.reply({ content: '❌ Sesion expirada', flags: 64 });
+  }
+
+  await interaction.deferUpdate();
+  await showScheduleModeSelector(interaction, warData);
+}
+
+async function handleEditScheduleDays(interaction) {
+  const { showScheduleDaysSelector } = require('./modalHandler');
+  const warData = global.warEdits?.[interaction.user.id];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
+
+  if (!warData || !scheduleTemp || !scheduleTemp.mode) {
+    return await interaction.reply({ content: '❌ Selecciona primero el modo de programacion.', flags: 64 });
+  }
+
+  await interaction.deferUpdate();
+  await showScheduleDaysSelector(interaction, warData);
+}
+
+async function handleEditScheduleMentions(interaction) {
+  const { showScheduleMentionsSelector } = require('./modalHandler');
+  const warData = global.warEdits?.[interaction.user.id];
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id];
+
+  if (!warData || !scheduleTemp || !Array.isArray(scheduleTemp.days) || scheduleTemp.days.length === 0) {
+    return await interaction.reply({ content: '❌ Selecciona al menos un dia.', flags: 64 });
+  }
+
+  await interaction.deferUpdate();
+  await showScheduleMentionsSelector(interaction, warData, scheduleTemp.days);
 }
 
 async function handleConfirmPublish(interaction) {
@@ -285,11 +375,50 @@ async function handlePanelSetIcon(interaction) {
     return await interaction.update({ content: 'Emoji invalido o no disponible.', components: [] });
   }
 
-  selected.role.emoji = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
-  selected.role.emojiSource = 'guild';
+  const pending = getPendingState(interaction.user.id);
+  pending.icon = {
+    emoji: `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`,
+    emojiSource: 'guild'
+  };
 
   await interaction.update({
-    content: `Icono actualizado para **${selected.role.name}**: <${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`,
+    content: `Icono pendiente para **${selected.role.name}**: <${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`,
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_confirm_icon')
+          .setLabel('Confirmar icono')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('panel_edit_icon')
+          .setLabel('Volver a editar')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_clear_icon')
+          .setLabel('Quitar icono')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
+  });
+}
+
+async function handlePanelConfirmIcon(interaction) {
+  const selected = getSelectedRoleContext(interaction);
+  if (!selected.ok) {
+    return await interaction.update({ content: selected.message, components: [] });
+  }
+
+  const pending = getPendingState(interaction.user.id);
+  if (!pending.icon) {
+    return await interaction.update({ content: 'No hay icono pendiente por confirmar.', components: [] });
+  }
+
+  selected.role.emoji = pending.icon.emoji;
+  selected.role.emojiSource = pending.icon.emojiSource;
+  pending.icon = null;
+
+  await interaction.update({
+    content: `Icono actualizado para **${selected.role.name}**: ${selected.role.emoji}`,
     components: []
   });
 }
@@ -372,10 +501,47 @@ async function handlePanelSetPermissions(interaction) {
   }
 
   const selectedIds = interaction.values.map(String);
+  const pending = getPendingState(interaction.user.id);
+  pending.permissionIds = selectedIds;
+
+  const linkedText = selectedIds.length
+    ? selectedIds.map(roleId => `<@&${roleId}>`).join(', ')
+    : 'Sin restriccion';
+
+  await interaction.update({
+    content: `Permisos pendientes para **${selected.role.name}**\nSeleccionados: ${linkedText}`,
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_confirm_permissions')
+          .setLabel('Confirmar permisos')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('panel_edit_permissions')
+          .setLabel('Volver a editar')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_clear_permissions')
+          .setLabel('Quitar Restricciones')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
+  });
+}
+
+async function handlePanelConfirmPermissions(interaction) {
+  const selected = getSelectedRoleContext(interaction);
+  if (!selected.ok) {
+    return await interaction.update({ content: selected.message, components: [] });
+  }
+
+  const pending = getPendingState(interaction.user.id);
+  const selectedIds = Array.isArray(pending.permissionIds) ? pending.permissionIds : [];
   selected.role.allowedRoleIds = selectedIds;
   selected.role.allowedRoles = selectedIds
     .map(roleId => interaction.guild?.roles.cache.get(roleId)?.name)
     .filter(Boolean);
+  pending.permissionIds = null;
 
   const linkedText = selectedIds.length
     ? selectedIds.map(roleId => `<@&${roleId}>`).join(', ')
@@ -495,4 +661,15 @@ function setSelectedRoleIndex(userId, index) {
 function clearSelectedRoleIndex(userId) {
   if (!global.warEditSelections) return;
   delete global.warEditSelections[userId];
+}
+
+function getPendingState(userId) {
+  if (!global.warPanelPending) global.warPanelPending = {};
+  if (!global.warPanelPending[userId]) {
+    global.warPanelPending[userId] = {
+      permissionIds: null,
+      icon: null
+    };
+  }
+  return global.warPanelPending[userId];
 }

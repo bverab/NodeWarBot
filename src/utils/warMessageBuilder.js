@@ -93,16 +93,14 @@ function buildRoleRows(war) {
       row = new ActionRowBuilder();
     }
 
+    const emoji = toButtonEmoji(role.emoji || ICONS.whiteCircle, role.emojiSource);
     const button = new ButtonBuilder()
       .setCustomId(`join_${index}`)
-      .setLabel(role.name)
       .setDisabled(war.isClosed)
       .setStyle(ButtonStyle.Secondary);
 
-    const emoji = toButtonEmoji(role.emoji || ICONS.whiteCircle, role.emojiSource);
-    if (emoji) {
-      button.setEmoji(emoji);
-    }
+    if (emoji) button.setEmoji(emoji);
+    else button.setLabel(role.name);
 
     row.addComponents(button);
   });

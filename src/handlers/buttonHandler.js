@@ -267,11 +267,20 @@ function promoteFromWaitlist(state, roleName) {
 async function notifyPromotion(interaction, war, promotedUser) {
   if (!promotedUser || promotedUser.isFake) return;
 
-  const text = `avanzaste en la waitlist, ahora tienes cupo para **${promotedUser.roleName}**`;
+  const roleName = promotedUser.roleName || 'el rol seleccionado';
+  const eventUrl = interaction.message?.url ||
+    (interaction.guildId && interaction.channelId && interaction.message?.id
+      ? `https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${interaction.message.id}`
+      : null);
+  const eventTitle = war?.name || 'Evento';
+  const text = eventUrl
+    ? `Se liberó un cupo para **${roleName}** en [${eventTitle}](${eventUrl}). Ya te movimos desde la waitlist.`
+    : `Se liberó un cupo para **${roleName}**. Ya te movimos desde la waitlist.`;
+  const dmContent = `**¡Entraste!**\n${text}`;
 
   try {
     const user = await interaction.client.users.fetch(promotedUser.userId);
-    await user.send(`**${war.name}**: ${text}`);
+    await user.send(dmContent);
     return;
   } catch (error) {
     console.log(`DM no disponible para ${promotedUser.userId}, usando fallback en canal`);
@@ -279,7 +288,7 @@ async function notifyPromotion(interaction, war, promotedUser) {
 
   try {
     await interaction.channel.send({
-      content: `<@${promotedUser.userId}> ${text}`,
+      content: `<@${promotedUser.userId}> ${dmContent}`,
       allowedMentions: { parse: ['users'] }
     });
   } catch (error) {
