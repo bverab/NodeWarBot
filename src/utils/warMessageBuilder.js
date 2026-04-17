@@ -113,22 +113,12 @@ function buildRoleRows(war) {
 
 function toButtonEmoji(emojiText, emojiSource) {
   if (!emojiText) return null;
-
-  if (!emojiSource) {
-    const isCustom = /^<a?:[A-Za-z0-9_]+:\d+>$/.test(String(emojiText));
-    if (isCustom) return null;
-    return String(emojiText);
-  }
-
-  if (emojiSource === 'unicode') {
-    return String(emojiText);
-  }
-
-  if (emojiSource === 'custom') {
-    return ICONS.whiteCircle;
-  }
-
   const customMatch = String(emojiText).match(/^<(a?):([A-Za-z0-9_]+):(\d+)>$/);
+
+  if (emojiSource === 'unicode' || (!emojiSource && !customMatch)) {
+    return String(emojiText);
+  }
+
   if (customMatch) {
     return {
       animated: customMatch[1] === 'a',

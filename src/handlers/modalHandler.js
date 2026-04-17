@@ -534,6 +534,7 @@ module.exports.showScheduleDaysSelector = showScheduleDaysSelector;
 module.exports.showScheduleMentionsSelector = showScheduleMentionsSelector;
 module.exports.confirmAndPublish = confirmAndPublish;
 module.exports.showPublishPreview = showPublishPreview;
+module.exports.showRolesEditor = showRolesEditor;
 
 async function finalizeScheduleInteraction(interaction, payload) {
   if (interaction.deferred || interaction.replied) {

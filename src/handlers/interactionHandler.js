@@ -26,7 +26,10 @@ module.exports = async interaction => {
     if (customId === 'edit_schedule_mentions') return await handleEditScheduleMentions(interaction);
 
     if (customId === 'open_role_panel') return await handleOpenRolePanel(interaction);
+    if (customId === 'panel_back_to_roles') return await handleOpenRolePanel(interaction);
+    if (customId === 'panel_back_to_editor') return await handleBackToEditor(interaction);
     if (customId === 'panel_select_role') return await handlePanelSelectRole(interaction);
+    if (customId === 'panel_back_to_role') return await handleBackToRole(interaction);
     if (customId === 'panel_edit_name') return await handlePanelEditName(interaction);
     if (customId === 'panel_edit_slots') return await handlePanelEditSlots(interaction);
     if (customId === 'panel_edit_icon') return await handlePanelEditIcon(interaction);
@@ -222,33 +225,14 @@ async function handleConfirmPublish(interaction) {
 async function handleOpenRolePanel(interaction) {
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
-    return await interaction.reply({ content: 'Sesion expirada', flags: 64 });
+    return await interaction.update({ content: 'Sesion expirada', embeds: [], components: [] });
   }
 
   if (!warData.roles.length) {
-    return await interaction.reply({ content: 'Agrega roles primero', flags: 64 });
+    return await interaction.update({ content: 'Agrega roles primero', embeds: [], components: [] });
   }
 
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId('panel_select_role')
-    .setPlaceholder('Selecciona el rol del evento a editar')
-    .addOptions(
-      warData.roles.slice(0, 25).map((role, index) => {
-        const permissionCount = Array.isArray(role.allowedRoleIds) ? role.allowedRoleIds.length : 0;
-        const iconStatus = role.emoji ? 'con icono' : 'sin icono';
-        return {
-          label: `${role.name} (${role.max})`,
-          value: String(index),
-          description: `${iconStatus} | permisos: ${permissionCount}`
-        };
-      })
-    );
-
-  await interaction.reply({
-    content: 'Selecciona un rol para abrir el panel de edicion',
-    components: [new ActionRowBuilder().addComponents(menu)],
-    flags: 64
-  });
+  await interaction.update(buildRoleSelectionPayload(warData));
 }
 
 async function handlePanelSelectRole(interaction) {
@@ -265,6 +249,25 @@ async function handlePanelSelectRole(interaction) {
 
   setSelectedRoleIndex(interaction.user.id, roleIndex);
   await interaction.update(buildRolePanelPayload(role));
+}
+
+async function handleBackToEditor(interaction) {
+  const { showRolesEditor } = require('./modalHandler');
+  const warData = getEditableWarForUser(interaction);
+  if (!warData) {
+    return await interaction.update({ content: 'Sesion expirada', embeds: [], components: [] });
+  }
+
+  await showRolesEditor(interaction, warData);
+}
+
+async function handleBackToRole(interaction) {
+  const selected = getSelectedRoleContext(interaction);
+  if (!selected.ok) {
+    return await interaction.update({ content: selected.message, embeds: [], components: [] });
+  }
+
+  await interaction.update(buildRolePanelPayload(selected.role));
 }
 
 async function handlePanelEditName(interaction) {
@@ -315,7 +318,7 @@ async function handlePanelEditSlots(interaction) {
 async function handlePanelEditIcon(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.reply({ content: selected.message, flags: 64 });
+    return await interaction.update({ content: selected.message, embeds: [], components: [] });
   }
 
   const emojis = await interaction.guild.emojis.fetch().catch(() => null);
@@ -351,15 +354,25 @@ async function handlePanelEditIcon(interaction) {
         .setCustomId('panel_clear_icon')
         .setLabel('Quitar icono')
         .setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('panel_back_to_role')
+        .setLabel('Volver al rol')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('panel_back_to_roles')
+        .setLabel('Volver a roles')
+        .setStyle(ButtonStyle.Secondary)
     )
   );
 
-  await interaction.reply({
+  await interaction.update({
     content: emojiList.length > 0
       ? `Iconos para **${selected.role.name}**`
       : `No hay emojis del servidor disponibles. Usa "Escribir icono" para **${selected.role.name}**`,
-    components,
-    flags: 64
+    embeds: [],
+    components
   });
 }
 
@@ -383,6 +396,7 @@ async function handlePanelSetIcon(interaction) {
 
   await interaction.update({
     content: `Icono pendiente para **${selected.role.name}**: <${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`,
+    embeds: [],
     components: [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -396,6 +410,16 @@ async function handlePanelSetIcon(interaction) {
         new ButtonBuilder()
           .setCustomId('panel_clear_icon')
           .setLabel('Quitar icono')
+          .setStyle(ButtonStyle.Secondary)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_role')
+          .setLabel('Volver al rol')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_roles')
+          .setLabel('Volver a roles')
           .setStyle(ButtonStyle.Secondary)
       )
     ]
@@ -419,7 +443,19 @@ async function handlePanelConfirmIcon(interaction) {
 
   await interaction.update({
     content: `Icono actualizado para **${selected.role.name}**: ${selected.role.emoji}`,
-    components: []
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_role')
+          .setLabel('Volver al rol')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_roles')
+          .setLabel('Volver a roles')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
   });
 }
 
@@ -459,22 +495,35 @@ async function handlePanelClearIcon(interaction) {
   selected.role.emojiSource = null;
   await interaction.update({
     content: `Icono removido para **${selected.role.name}**`,
-    components: []
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_role')
+          .setLabel('Volver al rol')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_roles')
+          .setLabel('Volver a roles')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
   });
 }
 
 async function handleOpenEditPermissions(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.reply({ content: selected.message, flags: 64 });
+    return await interaction.update({ content: selected.message, embeds: [], components: [] });
   }
 
   const currentText = selected.role.allowedRoleIds?.length
     ? selected.role.allowedRoleIds.map(roleId => `<@&${roleId}>`).join(', ')
     : 'Sin restriccion';
 
-  await interaction.reply({
+  await interaction.update({
     content: `Permisos para **${selected.role.name}**\nActual: ${currentText}`,
+    embeds: [],
     components: [
       new ActionRowBuilder().addComponents(
         new RoleSelectMenuBuilder()
@@ -488,9 +537,18 @@ async function handleOpenEditPermissions(interaction) {
           .setCustomId('panel_clear_permissions')
           .setLabel('Quitar Restricciones')
           .setStyle(ButtonStyle.Secondary)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_role')
+          .setLabel('Volver al rol')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_roles')
+          .setLabel('Volver a roles')
+          .setStyle(ButtonStyle.Secondary)
       )
-    ],
-    flags: 64
+    ]
   });
 }
 
@@ -510,6 +568,7 @@ async function handlePanelSetPermissions(interaction) {
 
   await interaction.update({
     content: `Permisos pendientes para **${selected.role.name}**\nSeleccionados: ${linkedText}`,
+    embeds: [],
     components: [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -523,6 +582,16 @@ async function handlePanelSetPermissions(interaction) {
         new ButtonBuilder()
           .setCustomId('panel_clear_permissions')
           .setLabel('Quitar Restricciones')
+          .setStyle(ButtonStyle.Secondary)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_role')
+          .setLabel('Volver al rol')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_roles')
+          .setLabel('Volver a roles')
           .setStyle(ButtonStyle.Secondary)
       )
     ]
@@ -549,7 +618,19 @@ async function handlePanelConfirmPermissions(interaction) {
 
   await interaction.update({
     content: `Permisos guardados para **${selected.role.name}**\nPermitidos: ${linkedText}`,
-    components: []
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_role')
+          .setLabel('Volver al rol')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_roles')
+          .setLabel('Volver a roles')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
   });
 }
 
@@ -564,22 +645,40 @@ async function handlePanelClearPermissions(interaction) {
 
   await interaction.update({
     content: `Restricciones removidas para **${selected.role.name}**`,
-    components: []
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_role')
+          .setLabel('Volver al rol')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_roles')
+          .setLabel('Volver a roles')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
   });
 }
 
 async function handlePanelDeleteRole(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.reply({ content: selected.message, flags: 64 });
+    return await interaction.update({ content: selected.message, embeds: [], components: [] });
   }
 
   const removed = selected.warData.roles.splice(selected.roleIndex, 1)[0];
 
   clearSelectedRoleIndex(interaction.user.id);
-  await interaction.reply({
-    content: `Rol eliminado: **${removed.name}**`,
-    flags: 64
+  if (!selected.warData.roles.length) {
+    const { showRolesEditor } = require('./modalHandler');
+    await showRolesEditor(interaction, selected.warData);
+    return;
+  }
+
+  await interaction.update({
+    ...buildRoleSelectionPayload(selected.warData),
+    content: `Rol eliminado: **${removed.name}**\nSelecciona un rol para continuar editando.`
   });
 }
 
@@ -595,6 +694,7 @@ function buildRolePanelPayload(role) {
       `Icono: ${role.emoji || 'Sin icono'}`,
       `Permisos: ${permissions}`
     ].join('\n'),
+    embeds: [],
     components: [
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -617,6 +717,47 @@ function buildRolePanelPayload(role) {
           .setCustomId('panel_delete_role')
           .setLabel('Eliminar')
           .setStyle(ButtonStyle.Danger)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_roles')
+          .setLabel('Volver a roles')
+          .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_editor')
+          .setLabel('Volver al editor')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
+  };
+}
+
+function buildRoleSelectionPayload(warData) {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('panel_select_role')
+    .setPlaceholder('Selecciona el rol del evento a editar')
+    .addOptions(
+      warData.roles.slice(0, 25).map((role, index) => {
+        const permissionCount = Array.isArray(role.allowedRoleIds) ? role.allowedRoleIds.length : 0;
+        const iconStatus = role.emoji ? 'con icono' : 'sin icono';
+        return {
+          label: `${role.name} (${role.max})`,
+          value: String(index),
+          description: `${iconStatus} | permisos: ${permissionCount}`
+        };
+      })
+    );
+
+  return {
+    content: 'Selecciona un rol para abrir el panel de edicion',
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(menu),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_back_to_editor')
+          .setLabel('Volver al editor')
+          .setStyle(ButtonStyle.Secondary)
       )
     ]
   };

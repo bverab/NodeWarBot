@@ -48,11 +48,13 @@ function normalizeRole(role = {}) {
   const users = Array.isArray(role.users)
     ? role.users.map(toParticipant).filter(Boolean)
     : [];
+  const emoji = role.emoji || null;
 
   return {
     name: (role.name || 'Rol').trim(),
     max: Number.isInteger(role.max) && role.max > 0 ? role.max : 1,
-    emoji: role.emoji || null,
+    emoji,
+    emojiSource: role.emojiSource || inferEmojiSource(emoji),
     users,
     allowedRoleIds: Array.isArray(role.allowedRoleIds) ? role.allowedRoleIds.map(String) : [],
     allowedRoles: Array.isArray(role.allowedRoles) ? role.allowedRoles : []
@@ -204,6 +206,18 @@ function formatMemberList(role) {
 function getFakeUserIdFromName(name) {
   const safe = name.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
   return `fake_${safe || Date.now()}`;
+}
+
+function inferEmojiSource(emoji) {
+  if (!emoji) return null;
+  const text = String(emoji);
+  if (/^<a?:[A-Za-z0-9_]+:\d+>$/.test(text)) {
+    return 'custom';
+  }
+  if (/\p{Extended_Pictographic}/u.test(text)) {
+    return 'unicode';
+  }
+  return null;
 }
 
 module.exports = {

@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const {
   loadWars,
-  getLatestWarByChannelId,
   updateWarByMessageId,
   updateWar
 } = require('../services/warService');
@@ -29,6 +28,31 @@ module.exports = {
           option
             .setName('usuario')
             .setDescription('Miembro a agregar')
+            .setRequired(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName('rol')
+            .setDescription('Rol del evento')
+            .setRequired(true)
+            .setAutocomplete(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName('id')
+            .setDescription('ID de evento (opcional, por defecto usa el activo del canal)')
+            .setRequired(false)
+            .setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('remove')
+        .setDescription('Saca un miembro real de un rol del evento activo')
+        .addUserOption(option =>
+          option
+            .setName('usuario')
+            .setDescription('Miembro a remover')
             .setRequired(true)
         )
         .addStringOption(option =>
@@ -86,6 +110,10 @@ module.exports = {
         return await handleAddMember(interaction);
       }
 
+      if (subcommand === 'remove') {
+        return await handleRemoveMember(interaction);
+      }
+
       if (subcommand === 'lock') {
         return await handleToggleLock(interaction, true);
       }
@@ -121,7 +149,7 @@ async function handleAutocomplete(interaction) {
     return await interaction.respond(wars);
   }
 
-  if (subcommand === 'add' && focusedOption?.name === 'rol') {
+  if ((subcommand === 'add' || subcommand === 'remove') && focusedOption?.name === 'rol') {
     const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
     if (!war || !war.roles.length) {
       return await interaction.respond([]);
@@ -146,7 +174,9 @@ async function handleAddMember(interaction) {
 
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) {
-    return await interaction.editReply({ content: 'No se encontro evento activo en este canal con ese criterio.' });
+    return await interaction.editReply({
+      content: 'No se encontro evento activo en este canal. Si hay varios, usa la opcion `id`.'
+    });
   }
 
   if (!war.messageId) {
@@ -251,6 +281,78 @@ async function handleAddMember(interaction) {
   }
 }
 
+async function handleRemoveMember(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) {
+    return await interaction.editReply({
+      content: 'No se encontro evento activo en este canal. Si hay varios, usa la opcion `id`.'
+    });
+  }
+
+  if (!war.messageId) {
+    return await interaction.editReply({ content: 'El evento aun no tiene mensaje publicado.' });
+  }
+
+  const user = interaction.options.getUser('usuario', true);
+  const roleName = interaction.options.getString('rol', true).trim();
+
+  const { war: updatedWar, result } = updateWarByMessageId(war.messageId, state => {
+    const selectedRole = getRoleByName(state, roleName);
+    if (!selectedRole) return { type: 'missing_role' };
+
+    const beforeCount = selectedRole.users.length;
+    selectedRole.users = selectedRole.users.filter(entry => entry.userId !== user.id);
+    const removedFromRole = selectedRole.users.length < beforeCount;
+
+    const waitlistBefore = state.waitlist.length;
+    state.waitlist = state.waitlist.filter(entry => !(entry.userId === user.id && entry.roleName === roleName));
+    const removedFromWaitlistForRole = state.waitlist.length < waitlistBefore;
+
+    if (!removedFromRole && !removedFromWaitlistForRole) {
+      return { type: 'not_in_role', roleName: selectedRole.name };
+    }
+
+    // Evita estados ambiguos: si el usuario estaba en waitlist para otro rol, lo limpiamos tambien.
+    removeFromWaitlist(state, user.id);
+
+    const promotedUsers = [];
+    if (removedFromRole) {
+      const promoted = promoteFromWaitlist(state, selectedRole.name);
+      if (promoted) promotedUsers.push(promoted);
+    }
+
+    return {
+      type: removedFromRole ? 'removed_from_role' : 'removed_from_waitlist',
+      roleName: selectedRole.name,
+      promotedUsers
+    };
+  });
+
+  if (!updatedWar || !result) {
+    return await interaction.editReply({ content: 'No se pudo actualizar el evento.' });
+  }
+
+  const refreshed = await refreshWarMessage(interaction, updatedWar);
+  if (!refreshed) {
+    return await interaction.editReply({ content: 'Evento actualizado en datos, pero no encontre el mensaje activo.' });
+  }
+
+  const responseByType = {
+    missing_role: `El rol **${roleName}** no existe`,
+    not_in_role: `<@${user.id}> no estaba en **${result.roleName}**`,
+    removed_from_role: `<@${user.id}> removido de **${result.roleName}**`,
+    removed_from_waitlist: `<@${user.id}> removido de waitlist de **${result.roleName}**`
+  };
+
+  await interaction.editReply({ content: responseByType[result.type] || 'Evento actualizado' });
+
+  for (const promotedUser of result.promotedUsers || []) {
+    await notifyPromotion(interaction, updatedWar, promotedUser);
+  }
+}
+
 async function handleToggleLock(interaction, shouldLock) {
   await interaction.deferReply({ flags: 64 });
 
@@ -298,21 +400,28 @@ async function resolveTargetWar(interaction, eventId) {
 }
 
 async function resolveActiveWar(interaction) {
-  const fallback = getLatestWarByChannelId(interaction.channelId);
   const wars = loadWars()
     .filter(war => war.channelId === interaction.channelId && war.messageId)
     .sort((a, b) => b.createdAt - a.createdAt);
 
   try {
-    const recentMessages = await interaction.channel.messages.fetch({ limit: 40 });
-    const messageIds = new Set(recentMessages.map(message => message.id));
-    const active = wars.find(war => messageIds.has(war.messageId));
+    const recentMessages = await interaction.channel.messages.fetch({ limit: 100 });
+    const orderMap = new Map();
+    let pos = 0;
+    for (const message of recentMessages.values()) {
+      orderMap.set(message.id, pos);
+      pos += 1;
+    }
+
+    const active = wars
+      .filter(war => orderMap.has(war.messageId))
+      .sort((a, b) => orderMap.get(a.messageId) - orderMap.get(b.messageId))[0];
     if (active) return active;
   } catch (error) {
     console.warn('No se pudieron leer mensajes recientes para resolver evento activo');
   }
 
-  return fallback;
+  return null;
 }
 
 async function refreshWarMessage(interaction, war) {
