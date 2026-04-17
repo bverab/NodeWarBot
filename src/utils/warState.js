@@ -115,6 +115,7 @@ function normalizeWar(war = {}) {
     
     // Control de automatización (NUEVO)
     schedule: normalizeSchedule(war.schedule),
+    recap: normalizeRecap(war.recap),
     
     // Timestamps
     createdAt,
@@ -133,6 +134,18 @@ function normalizeSchedule(schedule = {}) {
     mode: schedule.mode === 'once' ? 'once' : 'recurring',
     lastCreatedAt: schedule.lastCreatedAt || null,
     lastMessageIdDeleted: schedule.lastMessageIdDeleted || null
+  };
+}
+
+function normalizeRecap(recap = {}) {
+  return {
+    enabled: Boolean(recap.enabled),
+    minutesBeforeExpire: Number.isFinite(recap.minutesBeforeExpire) && recap.minutesBeforeExpire >= 0
+      ? Math.floor(recap.minutesBeforeExpire)
+      : 0,
+    messageText: String(recap.messageText || '').trim(),
+    threadId: recap.threadId || null,
+    lastPostedAt: recap.lastPostedAt || null
   };
 }
 

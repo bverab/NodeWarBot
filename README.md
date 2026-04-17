@@ -44,6 +44,11 @@ NodeWarBot is an open-source Discord bot to create and manage Node War events wi
   - Add/remove real users to/from event roles
   - Lock/unlock all signups for a published event by event ID
   - View/cancel active scheduled events by ID
+  - Live edit of published events (roles, slots, icons, permissions, recap config)
+- Optional final recap thread:
+  - Configurable in publish preview (`Configurar hilo final`)
+  - Scheduler opens a thread at configured offset before event deletion
+  - Mentions all signed users and posts a read-only copy of the event
 - Persistence in `data/wars.json`
 
 ## Requirements
@@ -97,6 +102,8 @@ node src/index.js
 - `/eventadmin remove`: remove a real member from an event role (admin)
 - `/eventadmin lock id:<event_id>`: close all signups for an active event (admin)
 - `/eventadmin unlock id:<event_id>`: reopen all signups for an active event (admin)
+- `/eventadmin role_*`: live edits for published event roles (admin)
+- `/eventadmin recap`: edit recap-thread config on a published event (admin)
 - `/fakeuser`: test waitlist and slot behavior
 - `/ping`: bot latency check
 
@@ -162,6 +169,11 @@ NodeWarBot e um bot open-source para Discord que cria e gerencia eventos de Node
   - adicionar/remover membros reais nos papeis do evento
   - bloquear/desbloquear todas as inscricoes por ID do evento
   - listar/cancelar programacoes por ID
+  - editar evento publicado em tempo real (roles, slots, icones, permissoes, recap)
+- Hilo/Thread final opcional:
+  - configuravel no preview de publicacao (`Configurar hilo final`)
+  - scheduler abre thread antes da exclusao do evento
+  - menciona inscritos e publica copia somente leitura do evento
 - Persistencia em `data/wars.json`
 
 ## Requisitos
@@ -215,6 +227,8 @@ node src/index.js
 - `/eventadmin remove`: remover membro real de papel do evento (admin)
 - `/eventadmin lock id:<event_id>`: bloquear inscricoes do evento (admin)
 - `/eventadmin unlock id:<event_id>`: desbloquear inscricoes do evento (admin)
+- `/eventadmin role_*`: edicoes em evento publicado (admin)
+- `/eventadmin recap`: editar configuracao do thread final em evento publicado (admin)
 - `/fakeuser`: testar fila de espera e vagas
 - `/ping`: latencia do bot
 

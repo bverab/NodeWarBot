@@ -96,6 +96,140 @@ module.exports = {
             .setRequired(true)
             .setAutocomplete(true)
         )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_add')
+        .setDescription('Agrega un rol al evento publicado')
+        .addStringOption(option =>
+          option.setName('nombre').setDescription('Nombre del rol del evento').setRequired(true)
+        )
+        .addIntegerOption(option =>
+          option.setName('slots').setDescription('Cantidad de slots').setRequired(true).setMinValue(1).setMaxValue(999)
+        )
+        .addStringOption(option =>
+          option.setName('icono').setDescription('Emoji unicode o <:nombre:id>').setRequired(false)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_rename')
+        .setDescription('Renombra un rol del evento publicado')
+        .addStringOption(option =>
+          option.setName('rol').setDescription('Rol actual').setRequired(true).setAutocomplete(true)
+        )
+        .addStringOption(option =>
+          option.setName('nuevo').setDescription('Nuevo nombre').setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_remove')
+        .setDescription('Elimina un rol del evento publicado')
+        .addStringOption(option =>
+          option.setName('rol').setDescription('Rol del evento').setRequired(true).setAutocomplete(true)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_slots')
+        .setDescription('Actualiza slots de un rol del evento publicado')
+        .addStringOption(option =>
+          option.setName('rol').setDescription('Rol del evento').setRequired(true).setAutocomplete(true)
+        )
+        .addIntegerOption(option =>
+          option.setName('slots').setDescription('Nueva cantidad de slots').setRequired(true).setMinValue(1).setMaxValue(999)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_icon')
+        .setDescription('Actualiza icono de un rol del evento publicado')
+        .addStringOption(option =>
+          option.setName('rol').setDescription('Rol del evento').setRequired(true).setAutocomplete(true)
+        )
+        .addStringOption(option =>
+          option.setName('icono').setDescription('Emoji unicode o <:nombre:id>').setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_icon_clear')
+        .setDescription('Quita icono de un rol del evento publicado')
+        .addStringOption(option =>
+          option.setName('rol').setDescription('Rol del evento').setRequired(true).setAutocomplete(true)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_perm_add')
+        .setDescription('Agrega permiso de rol Discord a un rol del evento')
+        .addStringOption(option =>
+          option.setName('rol').setDescription('Rol del evento').setRequired(true).setAutocomplete(true)
+        )
+        .addRoleOption(option =>
+          option.setName('permiso').setDescription('Rol Discord permitido').setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_perm_remove')
+        .setDescription('Quita permiso de rol Discord de un rol del evento')
+        .addStringOption(option =>
+          option.setName('rol').setDescription('Rol del evento').setRequired(true).setAutocomplete(true)
+        )
+        .addRoleOption(option =>
+          option.setName('permiso').setDescription('Rol Discord permitido').setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('role_perm_clear')
+        .setDescription('Quita todos los permisos de un rol del evento')
+        .addStringOption(option =>
+          option.setName('rol').setDescription('Rol del evento').setRequired(true).setAutocomplete(true)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('recap')
+        .setDescription('Edita configuracion del hilo final del evento')
+        .addIntegerOption(option =>
+          option.setName('minutos').setDescription('Minutos antes de borrar (0 desactiva)').setRequired(true).setMinValue(0).setMaxValue(1440)
+        )
+        .addStringOption(option =>
+          option.setName('texto').setDescription('Texto del aviso en el hilo').setRequired(false)
+        )
+        .addStringOption(option =>
+          option.setName('id').setDescription('ID del evento').setRequired(false).setAutocomplete(true)
+        )
     ),
 
   async execute(interaction) {
@@ -124,6 +258,17 @@ module.exports = {
       if (subcommand === 'unlock') {
         return await handleToggleLock(interaction, false);
       }
+
+      if (subcommand === 'role_add') return await handleRoleAdd(interaction);
+      if (subcommand === 'role_rename') return await handleRoleRename(interaction);
+      if (subcommand === 'role_remove') return await handleRoleRemove(interaction);
+      if (subcommand === 'role_slots') return await handleRoleSlots(interaction);
+      if (subcommand === 'role_icon') return await handleRoleIcon(interaction);
+      if (subcommand === 'role_icon_clear') return await handleRoleIconClear(interaction);
+      if (subcommand === 'role_perm_add') return await handleRolePermAdd(interaction);
+      if (subcommand === 'role_perm_remove') return await handleRolePermRemove(interaction);
+      if (subcommand === 'role_perm_clear') return await handleRolePermClear(interaction);
+      if (subcommand === 'recap') return await handleRecapConfig(interaction);
     } catch (error) {
       console.error('Error en eventadmin:', error);
       if (!interaction.replied && !interaction.deferred) {
@@ -152,7 +297,20 @@ async function handleAutocomplete(interaction) {
     return await interaction.respond(wars);
   }
 
-  if ((subcommand === 'add' || subcommand === 'remove') && focusedOption?.name === 'rol') {
+  const roleAutocompleteCommands = new Set([
+    'add',
+    'remove',
+    'role_remove',
+    'role_rename',
+    'role_slots',
+    'role_icon',
+    'role_icon_clear',
+    'role_perm_add',
+    'role_perm_remove',
+    'role_perm_clear'
+  ]);
+
+  if (roleAutocompleteCommands.has(subcommand) && focusedOption?.name === 'rol') {
     const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
     if (!war || !war.roles.length) {
       return await interaction.respond([]);
@@ -358,6 +516,208 @@ async function handleRemoveMember(interaction) {
   }
 }
 
+async function handleRoleAdd(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('nombre', true).trim();
+  const slots = interaction.options.getInteger('slots', true);
+  const iconRaw = interaction.options.getString('icono')?.trim() || '';
+
+  if (war.roles.some(role => role.name.toLowerCase() === roleName.toLowerCase())) {
+    return await interaction.editReply({ content: `Ya existe un rol llamado **${roleName}**.` });
+  }
+
+  const parsedIcon = iconRaw ? parseEmojiInput(iconRaw, interaction) : null;
+  if (iconRaw && !parsedIcon) {
+    return await interaction.editReply({ content: 'Icono invalido. Usa emoji unicode o formato <:nombre:id>.' });
+  }
+
+  war.roles.push({
+    name: roleName,
+    max: slots,
+    emoji: parsedIcon?.emoji || null,
+    emojiSource: parsedIcon?.emojiSource || null,
+    users: [],
+    allowedRoleIds: [],
+    allowedRoles: []
+  });
+
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Rol agregado: **${roleName}** (${slots})` });
+}
+
+async function handleRoleRename(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('rol', true).trim();
+  const newName = interaction.options.getString('nuevo', true).trim();
+  const role = war.roles.find(entry => entry.name === roleName);
+  if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
+  if (war.roles.some(entry => entry.name.toLowerCase() === newName.toLowerCase() && entry !== role)) {
+    return await interaction.editReply({ content: `Ya existe otro rol llamado **${newName}**.` });
+  }
+
+  const previousName = role.name;
+  role.name = newName;
+  war.waitlist = war.waitlist.map(entry => (
+    entry.roleName === previousName ? { ...entry, roleName: newName } : entry
+  ));
+
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Rol renombrado: **${previousName}** -> **${newName}**` });
+}
+
+async function handleRoleRemove(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('rol', true).trim();
+  const roleIndex = war.roles.findIndex(role => role.name === roleName);
+  if (roleIndex < 0) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
+
+  const [removed] = war.roles.splice(roleIndex, 1);
+  war.waitlist = war.waitlist.filter(entry => entry.roleName !== removed.name);
+
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Rol eliminado: **${removed.name}**` });
+}
+
+async function handleRoleSlots(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('rol', true).trim();
+  const slots = interaction.options.getInteger('slots', true);
+  const role = war.roles.find(entry => entry.name === roleName);
+  if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
+  if (role.users.length > slots) {
+    return await interaction.editReply({ content: `No puedes bajar a ${slots}; hay ${role.users.length} inscritos.` });
+  }
+
+  role.max = slots;
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Slots actualizados para **${roleName}**: ${slots}` });
+}
+
+async function handleRoleIcon(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('rol', true).trim();
+  const iconRaw = interaction.options.getString('icono', true).trim();
+  const role = war.roles.find(entry => entry.name === roleName);
+  if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
+
+  const parsed = parseEmojiInput(iconRaw, interaction);
+  if (!parsed) return await interaction.editReply({ content: 'Icono invalido. Usa emoji unicode o <:nombre:id>.' });
+
+  role.emoji = parsed.emoji;
+  role.emojiSource = parsed.emojiSource;
+
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Icono actualizado para **${roleName}**: ${parsed.emoji}` });
+}
+
+async function handleRoleIconClear(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('rol', true).trim();
+  const role = war.roles.find(entry => entry.name === roleName);
+  if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
+
+  role.emoji = null;
+  role.emojiSource = null;
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Icono removido para **${roleName}**` });
+}
+
+async function handleRolePermAdd(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('rol', true).trim();
+  const allowedRole = interaction.options.getRole('permiso', true);
+  const role = war.roles.find(entry => entry.name === roleName);
+  if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
+
+  if (!Array.isArray(role.allowedRoleIds)) role.allowedRoleIds = [];
+  if (!Array.isArray(role.allowedRoles)) role.allowedRoles = [];
+  if (!role.allowedRoleIds.includes(allowedRole.id)) role.allowedRoleIds.push(allowedRole.id);
+  if (!role.allowedRoles.includes(allowedRole.name)) role.allowedRoles.push(allowedRole.name);
+
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Permiso agregado en **${roleName}**: <@&${allowedRole.id}>` });
+}
+
+async function handleRolePermRemove(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('rol', true).trim();
+  const allowedRole = interaction.options.getRole('permiso', true);
+  const role = war.roles.find(entry => entry.name === roleName);
+  if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
+
+  role.allowedRoleIds = (role.allowedRoleIds || []).filter(id => id !== allowedRole.id);
+  role.allowedRoles = (role.allowedRoles || []).filter(name => name !== allowedRole.name);
+
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Permiso removido en **${roleName}**: <@&${allowedRole.id}>` });
+}
+
+async function handleRolePermClear(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const roleName = interaction.options.getString('rol', true).trim();
+  const role = war.roles.find(entry => entry.name === roleName);
+  if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
+
+  role.allowedRoleIds = [];
+  role.allowedRoles = [];
+  const updatedWar = updateWar(war);
+  await refreshWarMessage(interaction, updatedWar);
+  await interaction.editReply({ content: `Permisos limpiados para **${roleName}**` });
+}
+
+async function handleRecapConfig(interaction) {
+  await interaction.deferReply({ flags: 64 });
+  const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
+  if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
+
+  const minutes = interaction.options.getInteger('minutos', true);
+  const text = interaction.options.getString('texto')?.trim() || '';
+  if (!war.recap) war.recap = {};
+  war.recap.enabled = minutes > 0 || text.length > 0;
+  war.recap.minutesBeforeExpire = minutes;
+  war.recap.messageText = text;
+
+  const updatedWar = updateWar(war);
+  await interaction.editReply({
+    content: `Hilo final ${updatedWar.recap.enabled ? 'configurado' : 'desactivado'}: ${minutes} min antes de borrar.`
+  });
+}
+
 async function handleToggleLock(interaction, shouldLock) {
   await interaction.deferReply({ flags: 64 });
 
@@ -491,6 +851,27 @@ async function notifyPromotion(interaction, war, promotedUser) {
   } catch (error) {
     console.log(`No se pudo enviar fallback en canal para ${promotedUser.userId}`);
   }
+}
+
+function parseEmojiInput(text, interaction) {
+  const customEmojiMatch = text.match(/^<a?:[A-Za-z0-9_]+:(\d+)>$/);
+  if (customEmojiMatch) {
+    const emojiId = customEmojiMatch[1];
+    const isGuildEmoji = Boolean(interaction.guild?.emojis?.cache?.get(emojiId));
+    return {
+      emoji: text,
+      emojiSource: isGuildEmoji ? 'guild' : 'custom'
+    };
+  }
+
+  if (/\p{Extended_Pictographic}/u.test(text)) {
+    return {
+      emoji: text,
+      emojiSource: 'unicode'
+    };
+  }
+
+  return null;
 }
 
 function isAdminExecutor(interaction) {

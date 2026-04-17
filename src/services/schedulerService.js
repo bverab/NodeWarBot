@@ -1,4 +1,4 @@
-const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
+const { buildWarMessagePayload, buildWarReadOnlyPayload } = require('../utils/warMessageBuilder');
 const warService = require('./warService');
 const { shouldExecute } = require('../utils/cronHelper');
 
@@ -66,6 +66,10 @@ async function checkAndExecuteEvents() {
     for (const war of wars) {
       if (war.messageId && !war.isClosed && Number.isFinite(war.closesAt) && nowMs >= war.closesAt) {
         await closeWarSignups(war);
+      }
+
+      if (war.messageId && shouldPublishRecapThread(war, nowMs)) {
+        await publishRecapThread(war);
       }
 
       if (isWarExpired(war, nowMs)) {
@@ -151,6 +155,11 @@ async function executeWarPublication(war) {
       expiresAt,
       closesAt,
       isClosed: false,
+      recap: {
+        ...(war.recap || {}),
+        threadId: null,
+        lastPostedAt: null
+      },
       waitlist: [],
       roles: Array.isArray(war.roles)
         ? war.roles.map(role => ({
@@ -184,6 +193,61 @@ function isWarExpired(war, nowMs) {
   if (!war.messageId) return false;
   if (!Number.isFinite(war.expiresAt) || war.expiresAt <= 0) return false;
   return nowMs >= war.expiresAt;
+}
+
+function shouldPublishRecapThread(war, nowMs) {
+  if (!war.messageId) return false;
+  if (!war.recap?.enabled) return false;
+  if (war.recap.lastPostedAt) return false;
+  if (!Number.isFinite(war.expiresAt) || war.expiresAt <= 0) return false;
+
+  const minutesBefore = Number.isFinite(war.recap.minutesBeforeExpire) ? war.recap.minutesBeforeExpire : 0;
+  const publishAt = war.expiresAt - Math.max(0, minutesBefore) * 60 * 1000;
+  return nowMs >= publishAt;
+}
+
+async function publishRecapThread(war) {
+  const { client } = schedulerInstance;
+
+  try {
+    const channel = await client.channels.fetch(war.channelId).catch(() => null);
+    if (!channel || !channel.messages?.fetch) return;
+
+    const sourceMessage = await channel.messages.fetch(war.messageId).catch(() => null);
+    if (!sourceMessage) return;
+
+    const threadName = `Resumen ${war.name}`.slice(0, 100);
+    const thread = await sourceMessage.startThread({
+      name: threadName,
+      autoArchiveDuration: 1440,
+      reason: `Resumen final programado para ${war.name}`
+    }).catch(() => null);
+    if (!thread) return;
+
+    const uniqueUserIds = Array.from(new Set(
+      war.roles
+        .flatMap(role => Array.isArray(role.users) ? role.users : [])
+        .filter(user => user && !user.isFake && user.userId)
+        .map(user => String(user.userId))
+    ));
+    const mentionsLine = uniqueUserIds.length > 0
+      ? uniqueUserIds.map(userId => `<@${userId}>`).join(' ')
+      : '(sin inscritos para avisar)';
+    const customText = String(war.recap?.messageText || '').trim();
+
+    await thread.send({
+      content: customText ? `${customText}\n\n${mentionsLine}` : mentionsLine,
+      allowedMentions: { parse: ['users'] }
+    });
+
+    await thread.send(buildWarReadOnlyPayload({ ...war, isClosed: true }));
+
+    war.recap.threadId = thread.id;
+    war.recap.lastPostedAt = Date.now();
+    warService.updateWar(war);
+  } catch (error) {
+    console.error(`Error publicando hilo de resumen ${war.id}:`, error);
+  }
 }
 
 async function closeWarSignups(war) {

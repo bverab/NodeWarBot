@@ -175,6 +175,34 @@ function buildWarMessagePayload(war) {
   };
 }
 
+function buildWarReadOnlyPayload(war) {
+  const rows = [];
+  let row = new ActionRowBuilder();
+
+  war.roles.forEach((role, index) => {
+    if (index > 0 && index % 5 === 0) {
+      rows.push(row);
+      row = new ActionRowBuilder();
+    }
+
+    const emoji = toButtonEmoji(role.emoji || ICONS.whiteCircle, role.emojiSource) || ICONS.whiteCircle;
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`readonly_${index}`)
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true)
+        .setEmoji(emoji)
+    );
+  });
+
+  if (row.components.length) rows.push(row);
+
+  return {
+    embeds: [buildWarEmbed(war)],
+    components: rows
+  };
+}
+
 function buildWarListText(war) {
   const roleText = war.roles
     .map(role => {
@@ -202,5 +230,6 @@ function buildWarListText(war) {
 
 module.exports = {
   buildWarMessagePayload,
+  buildWarReadOnlyPayload,
   buildWarListText
 };

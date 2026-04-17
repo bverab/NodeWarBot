@@ -25,6 +25,7 @@ module.exports = async interaction => {
     if (customId === 'confirm_schedule_mode') return await handleConfirmScheduleMode(interaction);
     if (customId === 'confirm_schedule_days') return await handleConfirmScheduleDays(interaction);
     if (customId === 'confirm_schedule_mentions') return await handleConfirmScheduleMentions(interaction);
+    if (customId === 'configure_recap') return await handleConfigureRecap(interaction);
     if (customId === 'edit_schedule_mode') return await handleEditScheduleMode(interaction);
     if (customId === 'edit_schedule_days') return await handleEditScheduleDays(interaction);
     if (customId === 'edit_schedule_mentions') return await handleEditScheduleMentions(interaction);
@@ -174,6 +175,45 @@ async function handleConfirmScheduleMentions(interaction) {
     Array.isArray(scheduleTemp.mentions) ? scheduleTemp.mentions : [],
     'update'
   );
+}
+
+async function handleConfigureRecap(interaction) {
+  const warData = global.warEdits?.[interaction.user.id];
+  if (!warData) {
+    return await interaction.reply({ content: '❌ Sesion expirada', flags: 64 });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId('schedule_recap_modal')
+    .setTitle(`Configurar hilo final: ${warData.name}`);
+
+  const minutesInput = new TextInputBuilder()
+    .setCustomId('recap_minutes_before_expire_input')
+    .setLabel('Minutos antes de borrar (0 = desactivar)')
+    .setPlaceholder('Ej: 30')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(4)
+    .setValue(String(Number.isFinite(warData.recap?.minutesBeforeExpire) ? warData.recap.minutesBeforeExpire : 0));
+
+  const textInput = new TextInputBuilder()
+    .setCustomId('recap_message_text_input')
+    .setLabel('Texto editable del aviso')
+    .setPlaceholder('Ej: NodeWar Mediah 1 - Valencia 1')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setMaxLength(250);
+
+  if (warData.recap?.messageText) {
+    textInput.setValue(String(warData.recap.messageText).slice(0, 250));
+  }
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(minutesInput),
+    new ActionRowBuilder().addComponents(textInput)
+  );
+
+  await interaction.showModal(modal);
 }
 
 async function handleEditScheduleMode(interaction) {

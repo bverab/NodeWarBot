@@ -55,6 +55,7 @@ client.on(Events.InteractionCreate, async interaction => {
           'confirm_schedule_mode',
           'confirm_schedule_days',
           'confirm_schedule_mentions',
+          'configure_recap',
           'edit_schedule_mode',
           'edit_schedule_days',
           'edit_schedule_mentions',

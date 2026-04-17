@@ -49,6 +49,10 @@ module.exports = async interaction => {
     if (interaction.customId === 'panel_edit_icon_modal') {
       return await handlePanelEditIconModal(interaction);
     }
+
+    if (interaction.customId === 'schedule_recap_modal') {
+      return await handleScheduleRecapModal(interaction);
+    }
   } catch (error) {
     console.error('Error en modalHandler:', error);
     await safeRespond(interaction, 'Error procesando el modal');
@@ -116,6 +120,7 @@ async function handleWarCreation(interaction) {
     dayOfWeek: null,
     notifyRoles: [],
     schedule: { enabled: true, lastCreatedAt: null },
+    recap: { enabled: false, minutesBeforeExpire: 0, messageText: '', threadId: null, lastPostedAt: null },
     isClosed: false
   };
 
@@ -504,6 +509,42 @@ async function handleScheduleWarMentions(interaction) {
   });
 }
 
+async function handleScheduleRecapModal(interaction) {
+  const acknowledged = await safeDefer(interaction);
+  if (!acknowledged) return;
+
+  const warData = global.warEdits?.[interaction.user.id];
+  if (!warData) {
+    return await interaction.editReply({ content: 'Sesion expirada', embeds: [], components: [] });
+  }
+
+  const minutesRaw = interaction.fields.getTextInputValue('recap_minutes_before_expire_input')?.trim() || '0';
+  const textRaw = interaction.fields.getTextInputValue('recap_message_text_input')?.trim() || '';
+
+  const minutesBeforeExpire = Number(minutesRaw);
+  if (!Number.isInteger(minutesBeforeExpire) || minutesBeforeExpire < 0 || minutesBeforeExpire > 1440) {
+    return await interaction.editReply({
+      content: 'Minutos invalidos. Debe ser un numero entre 0 y 1440.',
+      embeds: [],
+      components: []
+    });
+  }
+
+  if (!warData.recap) {
+    warData.recap = { enabled: false, minutesBeforeExpire: 0, messageText: '', threadId: null, lastPostedAt: null };
+  }
+
+  warData.recap.enabled = minutesBeforeExpire > 0 || textRaw.length > 0;
+  warData.recap.minutesBeforeExpire = minutesBeforeExpire;
+  warData.recap.messageText = textRaw;
+
+  const scheduleTemp = global.warScheduleTemp?.[interaction.user.id] || {};
+  const selectedDays = Array.isArray(scheduleTemp.days) ? scheduleTemp.days : [];
+  const mentions = Array.isArray(scheduleTemp.mentions) ? scheduleTemp.mentions : [];
+
+  await showPublishPreview(interaction, warData, selectedDays, mentions, 'editReply');
+}
+
 async function confirmAndPublish(interaction, warData, selectedDays, mentionRoleIds) {
   // Crea uno o varios eventos persistidos (uno por dia) y limpia sesion de edicion.
   const warService = require('../services/warService');
@@ -528,6 +569,13 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
       schedule: {
         ...(warData.schedule || {}),
         mode: scheduleMode
+      },
+      recap: {
+        enabled: Boolean(warData.recap?.enabled),
+        minutesBeforeExpire: Number.isFinite(warData.recap?.minutesBeforeExpire) ? warData.recap.minutesBeforeExpire : 0,
+        messageText: String(warData.recap?.messageText || ''),
+        threadId: null,
+        lastPostedAt: null
       }
     };
 
@@ -612,6 +660,12 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
   const mentionText = mentionRoleIds.length > 0
     ? mentionRoleIds.map(id => `<@&${id}>`).join(' ')
     : '(sin menciones)';
+  const recapEnabled = Boolean(warData.recap?.enabled);
+  const recapMinutes = Number.isFinite(warData.recap?.minutesBeforeExpire) ? warData.recap.minutesBeforeExpire : 0;
+  const recapMessage = String(warData.recap?.messageText || '').trim();
+  const recapText = recapEnabled
+    ? `Activado (${recapMinutes} min antes de borrar)\nTexto: ${recapMessage || '(sin texto personalizado)'}`
+    : 'Desactivado';
 
   const embed = new EmbedBuilder()
     .setTitle(`✅ Confirmar publicación: ${warData.name}`)
@@ -622,7 +676,8 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
       { name: 'Hora / Duración', value: `${warData.time} (${warData.duration} min)`, inline: true },
       { name: 'Cierre inscripciones', value: `${warData.closeBeforeMinutes || 0} min antes de borrar`, inline: true },
       { name: 'Zona', value: warData.timezone, inline: true },
-      { name: 'Menciones', value: mentionText, inline: false }
+      { name: 'Menciones', value: mentionText, inline: false },
+      { name: 'Hilo de resumen', value: recapText, inline: false }
     );
 
   const actions = new ActionRowBuilder().addComponents(
@@ -633,6 +688,10 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
     new ButtonBuilder()
       .setCustomId('edit_schedule_mentions')
       .setLabel('Volver a editar')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('configure_recap')
+      .setLabel('Configurar hilo final')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('cancel_war')
