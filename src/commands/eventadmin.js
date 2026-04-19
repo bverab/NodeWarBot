@@ -10,10 +10,16 @@ const {
   removeParticipantFromAllRoles,
   addParticipantToRole,
   upsertWaitlistEntry,
-  removeFromWaitlist,
-  pickWaitlistForRole
+  removeFromWaitlist
 } = require('../utils/warState');
-const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
+const { notifyPromotion } = require('../utils/promotionNotifier');
+const { parseEmojiInput } = require('../utils/emojiHelper');
+const {
+  resolveTargetWar,
+  refreshWarMessage,
+  promoteFromWaitlist,
+  isAdminExecutor
+} = require('./eventadminShared');
 
 // Comando administrativo para eventos publicados:
 // - add/remove miembros reales
@@ -529,7 +535,7 @@ async function handleRoleAdd(interaction) {
     return await interaction.editReply({ content: `Ya existe un rol llamado **${roleName}**.` });
   }
 
-  const parsedIcon = iconRaw ? parseEmojiInput(iconRaw, interaction) : null;
+  const parsedIcon = iconRaw ? parseEmojiInput(iconRaw, interaction.guild) : null;
   if (iconRaw && !parsedIcon) {
     return await interaction.editReply({ content: 'Icono invalido. Usa emoji unicode o formato <:nombre:id>.' });
   }
@@ -619,7 +625,7 @@ async function handleRoleIcon(interaction) {
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
-  const parsed = parseEmojiInput(iconRaw, interaction);
+  const parsed = parseEmojiInput(iconRaw, interaction.guild);
   if (!parsed) return await interaction.editReply({ content: 'Icono invalido. Usa emoji unicode o <:nombre:id>.' });
 
   role.emoji = parsed.emoji;
@@ -754,132 +760,4 @@ async function handleToggleLock(interaction, shouldLock) {
       ? `Inscripciones bloqueadas para **${updatedWar.name}** (\`${updatedWar.id}\`)`
       : `Inscripciones desbloqueadas para **${updatedWar.name}** (\`${updatedWar.id}\`)`
   });
-}
-
-async function resolveTargetWar(interaction, eventId) {
-  if (eventId) {
-    return loadWars().find(war => war.id === String(eventId).trim() && war.channelId === interaction.channelId) || null;
-  }
-
-  return await resolveActiveWar(interaction);
-}
-
-async function resolveActiveWar(interaction) {
-  // Elige el evento mas reciente realmente visible en el canal, evitando fallback ambiguo.
-  const wars = loadWars()
-    .filter(war => war.channelId === interaction.channelId && war.messageId)
-    .sort((a, b) => b.createdAt - a.createdAt);
-
-  try {
-    const recentMessages = await interaction.channel.messages.fetch({ limit: 100 });
-    const orderMap = new Map();
-    let pos = 0;
-    for (const message of recentMessages.values()) {
-      orderMap.set(message.id, pos);
-      pos += 1;
-    }
-
-    const active = wars
-      .filter(war => orderMap.has(war.messageId))
-      .sort((a, b) => orderMap.get(a.messageId) - orderMap.get(b.messageId))[0];
-    if (active) return active;
-  } catch (error) {
-    console.warn('No se pudieron leer mensajes recientes para resolver evento activo');
-  }
-
-  return null;
-}
-
-async function refreshWarMessage(interaction, war) {
-  try {
-    const channel = await interaction.guild.channels.fetch(war.channelId).catch(() => null);
-    if (!channel || !channel.messages?.fetch) return false;
-
-    const message = await channel.messages.fetch(war.messageId);
-    await message.edit(buildWarMessagePayload(war));
-    return true;
-  } catch (error) {
-    if (error?.code === 10008) return false;
-    console.error('Error actualizando mensaje del evento:', error);
-    return false;
-  }
-}
-
-function promoteFromWaitlist(state, roleName) {
-  const role = getRoleByName(state, roleName);
-  if (!role || role.users.length >= role.max) return null;
-
-  const nextInWaitlist = pickWaitlistForRole(state, role.name);
-  if (!nextInWaitlist) return null;
-
-  const promoted = {
-    userId: nextInWaitlist.userId,
-    displayName: nextInWaitlist.userName,
-    isFake: nextInWaitlist.isFake
-  };
-
-  addParticipantToRole(role, promoted);
-  return { ...promoted, roleName: role.name };
-}
-
-async function notifyPromotion(interaction, war, promotedUser) {
-  if (!promotedUser || promotedUser.isFake) return;
-
-  const roleName = promotedUser.roleName || 'el rol seleccionado';
-  const eventUrl = interaction.guildId && war?.channelId && war?.messageId
-    ? `https://discord.com/channels/${interaction.guildId}/${war.channelId}/${war.messageId}`
-    : null;
-  const eventTitle = war?.name || 'Evento';
-  const text = eventUrl
-    ? `Se libero un cupo para **${roleName}** en [${eventTitle}](${eventUrl}). Ya te movimos desde la waitlist.`
-    : `Se libero un cupo para **${roleName}**. Ya te movimos desde la waitlist.`;
-  const dmContent = `**Entraste!**\n${text}`;
-
-  try {
-    const user = await interaction.client.users.fetch(promotedUser.userId);
-    await user.send(dmContent);
-    return;
-  } catch (error) {
-    console.log(`DM no disponible para ${promotedUser.userId}, usando fallback en canal`);
-  }
-
-  try {
-    await interaction.channel.send({
-      content: `<@${promotedUser.userId}> ${dmContent}`,
-      allowedMentions: { parse: ['users'] }
-    });
-  } catch (error) {
-    console.log(`No se pudo enviar fallback en canal para ${promotedUser.userId}`);
-  }
-}
-
-function parseEmojiInput(text, interaction) {
-  const customEmojiMatch = text.match(/^<a?:[A-Za-z0-9_]+:(\d+)>$/);
-  if (customEmojiMatch) {
-    const emojiId = customEmojiMatch[1];
-    const isGuildEmoji = Boolean(interaction.guild?.emojis?.cache?.get(emojiId));
-    return {
-      emoji: text,
-      emojiSource: isGuildEmoji ? 'guild' : 'custom'
-    };
-  }
-
-  if (/\p{Extended_Pictographic}/u.test(text)) {
-    return {
-      emoji: text,
-      emojiSource: 'unicode'
-    };
-  }
-
-  return null;
-}
-
-function isAdminExecutor(interaction) {
-  const hasAdminPermission = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
-  const adminRoleNames = new Set(['admin', 'administrador']);
-  const hasAdminRole = Boolean(
-    interaction.member?.roles?.cache?.some(role => adminRoleNames.has(String(role.name).toLowerCase().trim()))
-  );
-
-  return Boolean(hasAdminPermission || hasAdminRole);
 }

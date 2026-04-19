@@ -5,11 +5,18 @@ const { REST, Routes } = require('discord.js');
 
 const commands = [];
 const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath);
+const commandFiles = fs.readdirSync(commandsPath, { withFileTypes: true });
 const SNOWFLAKE_REGEX = /^\d{17,20}$/;
 
-for (const file of commandFiles) {
-  const command = require(`./commands/${file}`);
+for (const fileEntry of commandFiles) {
+  if (!fileEntry.isFile()) continue;
+  if (!fileEntry.name.endsWith('.js')) continue;
+
+  const command = require(`./commands/${fileEntry.name}`);
+  if (!command?.data || typeof command.data.toJSON !== 'function' || typeof command.execute !== 'function') {
+    continue;
+  }
+
   commands.push(command.data.toJSON());
 }
 

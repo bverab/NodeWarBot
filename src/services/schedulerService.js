@@ -59,6 +59,7 @@ async function checkAndExecuteEvents() {
   if (!schedulerInstance) return;
 
   try {
+    schedulerInstance.lastCheck = Date.now();
     const wars = warService.loadWars();
     const nowMs = Date.now();
     const now = new Date(nowMs);

@@ -2,6 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const { showCreateEventModal } = require('../utils/createEventModal');
 const { normalizeEventType } = require('../constants/eventTypes');
 const warService = require('../services/warService');
+const { safeEphemeralReply } = require('../utils/interactionReply');
 
 // Comando principal de eventos:
 // - crear evento por modal
@@ -77,7 +78,7 @@ module.exports = {
 
       if (subcommand === 'create') {
         if (eventType === '10v10') {
-          return await safeReply(
+          return await safeEphemeralReply(
             interaction,
             '10v10 esta en roadmap. Por ahora usa /event create tipo:war o tipo:siege.'
           );
@@ -89,10 +90,10 @@ module.exports = {
 
       if (subcommand === 'edit') {
         if (eventType === '10v10') {
-          return await safeReply(interaction, '10v10 aun no tiene flujo de edicion.');
+          return await safeEphemeralReply(interaction, '10v10 aun no tiene flujo de edicion.');
         }
 
-        return await safeReply(
+        return await safeEphemeralReply(
           interaction,
           `Edicion unificada para ${eventType} en construccion. Usa temporalmente /editrole durante la sesion de creacion.`
         );
@@ -105,7 +106,7 @@ module.exports = {
           .sort((a, b) => (a.dayOfWeek - b.dayOfWeek) || String(a.time).localeCompare(String(b.time)));
 
         if (!wars.length) {
-          return await safeReply(interaction, 'No hay programaciones activas en este canal.');
+          return await safeEphemeralReply(interaction, 'No hay programaciones activas en este canal.');
         }
 
         const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
@@ -114,27 +115,30 @@ module.exports = {
           return `• \`${war.id}\` | **${war.name}** | ${dayNames[war.dayOfWeek] || '?'} ${war.time} (${war.timezone}) | ${mode}`;
         });
 
-        return await safeReply(interaction, `Programaciones activas (${wars.length}):\n${lines.join('\n')}`);
+        return await safeEphemeralReply(interaction, `Programaciones activas (${wars.length}):\n${lines.join('\n')}`);
       }
 
       if (group === 'schedule' && subcommand === 'cancel') {
         const id = interaction.options.getString('id', true).trim();
         const wars = warService.loadWars();
-        const target = wars.find(war => war.id === id);
+        const target = wars.find(war => war.id === id && war.channelId === interaction.channelId);
         if (!target) {
-          return await safeReply(interaction, `No se encontro programacion con id \`${id}\`.`);
+          return await safeEphemeralReply(
+            interaction,
+            `No se encontro programacion con id \`${id}\` en este canal.`
+          );
         }
 
-        const filtered = wars.filter(war => war.id !== id);
+        const filtered = wars.filter(war => !(war.id === id && war.channelId === interaction.channelId));
         warService.saveWars(filtered);
 
-        return await safeReply(interaction, `Programacion cancelada: \`${id}\``);
+        return await safeEphemeralReply(interaction, `Programacion cancelada: \`${id}\``);
       }
 
-      return await safeReply(interaction, 'Subcomando no soportado');
+      return await safeEphemeralReply(interaction, 'Subcomando no soportado');
     } catch (error) {
       console.error('Error en event:', error);
-      await safeReply(interaction, 'Error al ejecutar /event');
+      await safeEphemeralReply(interaction, 'Error al ejecutar /event');
     }
   }
 };
@@ -158,17 +162,4 @@ async function handleAutocomplete(interaction) {
     .slice(0, 25);
 
   await interaction.respond(wars);
-}
-
-async function safeReply(interaction, content) {
-  try {
-    if (interaction.replied || interaction.deferred) return;
-    await interaction.reply({ content, flags: 64 });
-  } catch (error) {
-    if (error?.code === 40060 || error?.code === 10062) {
-      console.warn(`No se pudo responder event (${error.code})`);
-      return;
-    }
-    throw error;
-  }
 }

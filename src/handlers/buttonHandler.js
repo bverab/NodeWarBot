@@ -13,6 +13,7 @@ const {
   pickWaitlistForRole
 } = require('../utils/warState');
 const { buildWarMessagePayload, buildWarListText } = require('../utils/warMessageBuilder');
+const { notifyPromotion } = require('../utils/promotionNotifier');
 
 // Maneja botones del mensaje publico del evento:
 // - Cerrar/abrir inscripciones
@@ -272,37 +273,4 @@ function promoteFromWaitlist(state, roleName) {
     ...promoted,
     roleName: role.name
   };
-}
-
-async function notifyPromotion(interaction, war, promotedUser) {
-  // Notifica por DM al usuario promovido y usa fallback en canal si DM falla.
-  if (!promotedUser || promotedUser.isFake) return;
-
-  const roleName = promotedUser.roleName || 'el rol seleccionado';
-  const eventUrl = interaction.message?.url ||
-    (interaction.guildId && interaction.channelId && interaction.message?.id
-      ? `https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${interaction.message.id}`
-      : null);
-  const eventTitle = war?.name || 'Evento';
-  const text = eventUrl
-    ? `Se liberó un cupo para **${roleName}** en [${eventTitle}](${eventUrl}). Ya te movimos desde la waitlist.`
-    : `Se liberó un cupo para **${roleName}**. Ya te movimos desde la waitlist.`;
-  const dmContent = `**¡Entraste!**\n${text}`;
-
-  try {
-    const user = await interaction.client.users.fetch(promotedUser.userId);
-    await user.send(dmContent);
-    return;
-  } catch (error) {
-    console.log(`DM no disponible para ${promotedUser.userId}, usando fallback en canal`);
-  }
-
-  try {
-    await interaction.channel.send({
-      content: `<@${promotedUser.userId}> ${dmContent}`,
-      allowedMentions: { parse: ['users'] }
-    });
-  } catch (error) {
-    console.log(`No se pudo enviar fallback en canal para ${promotedUser.userId}`);
-  }
 }

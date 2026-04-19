@@ -6,6 +6,39 @@ const modalHandler = require('./handlers/modalHandler');
 const interactionHandler = require('./handlers/interactionHandler');
 const { initScheduler } = require('./services/schedulerService');
 
+const SCHEDULE_CUSTOM_IDS = new Set(['schedule_war_mode', 'schedule_war_days', 'schedule_war_mentions']);
+const INTERACTION_HANDLER_CUSTOM_IDS = new Set([
+  'add_roles_bulk',
+  'publish_war',
+  'cancel_war',
+  'skip_mentions_publish',
+  'confirm_publish',
+  'confirm_schedule_mode',
+  'confirm_schedule_days',
+  'confirm_schedule_mentions',
+  'configure_recap',
+  'edit_schedule_mode',
+  'edit_schedule_days',
+  'edit_schedule_mentions',
+  'open_role_panel',
+  'panel_back_to_roles',
+  'panel_back_to_editor',
+  'panel_select_role',
+  'panel_back_to_role',
+  'panel_edit_name',
+  'panel_edit_slots',
+  'panel_edit_icon',
+  'panel_edit_permissions',
+  'panel_set_permissions',
+  'panel_confirm_permissions',
+  'panel_clear_permissions',
+  'panel_set_icon',
+  'panel_confirm_icon',
+  'panel_open_icon_modal',
+  'panel_clear_icon',
+  'panel_delete_role'
+]);
+
 // Punto de entrada del bot:
 // - Inicializa cliente Discord
 // - Carga comandos
@@ -32,53 +65,18 @@ client.once(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async interaction => {
   try {
-    const scheduleCustomIds = new Set(['schedule_war_mode', 'schedule_war_days', 'schedule_war_mentions']);
-
     if (interaction.isAutocomplete()) {
       const command = client.commands.get(interaction.commandName);
       if (command) await command.execute(interaction);
       return;
     }
 
-    if (interaction.isModalSubmit() || (interaction.isStringSelectMenu() && scheduleCustomIds.has(interaction.customId))) {
+    if (interaction.isModalSubmit() || (interaction.isStringSelectMenu() && SCHEDULE_CUSTOM_IDS.has(interaction.customId))) {
       return modalHandler(interaction);
     }
 
     if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu()) {
-      if (
-        [
-          'add_roles_bulk',
-          'publish_war',
-          'cancel_war',
-          'skip_mentions_publish',
-          'confirm_publish',
-          'confirm_schedule_mode',
-          'confirm_schedule_days',
-          'confirm_schedule_mentions',
-          'configure_recap',
-          'edit_schedule_mode',
-          'edit_schedule_days',
-          'edit_schedule_mentions',
-          'open_role_panel',
-          'panel_back_to_roles',
-          'panel_back_to_editor',
-          'panel_select_role',
-          'panel_back_to_role',
-          'panel_edit_name',
-          'panel_edit_slots',
-          'panel_edit_icon',
-          'panel_edit_permissions',
-          'panel_set_permissions',
-          'panel_confirm_permissions',
-          'panel_clear_permissions',
-          'panel_set_icon',
-          'panel_confirm_icon',
-          'panel_open_icon_modal',
-          'panel_clear_icon',
-          'panel_delete_role'
-        ].includes(interaction.customId) ||
-        interaction.customId.startsWith('panel_')
-      ) {
+      if (INTERACTION_HANDLER_CUSTOM_IDS.has(interaction.customId) || interaction.customId.startsWith('panel_')) {
         return interactionHandler(interaction);
       }
 

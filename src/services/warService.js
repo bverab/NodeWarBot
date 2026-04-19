@@ -6,11 +6,20 @@ const { normalizeWar } = require('../utils/warState');
 // - Lectura/escritura de data/wars.json
 // - Operaciones CRUD por id, messageId y groupId
 const filePath = path.join(__dirname, '../../data/wars.json');
+const dataDirPath = path.dirname(filePath);
+
+function ensureWarsStore() {
+  if (!fs.existsSync(dataDirPath)) {
+    fs.mkdirSync(dataDirPath, { recursive: true });
+  }
+
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, '[]', 'utf8');
+  }
+}
 
 function readWarsFile() {
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, '[]');
-  }
+  ensureWarsStore();
 
   const raw = fs.readFileSync(filePath, 'utf8').trim();
   if (!raw) return [];
@@ -29,7 +38,11 @@ function loadWars() {
 }
 
 function saveWars(wars) {
-  fs.writeFileSync(filePath, JSON.stringify(wars, null, 2));
+  ensureWarsStore();
+
+  const tempFilePath = `${filePath}.tmp`;
+  fs.writeFileSync(tempFilePath, JSON.stringify(wars, null, 2), 'utf8');
+  fs.renameSync(tempFilePath, filePath);
 }
 
 function createWar(data) {

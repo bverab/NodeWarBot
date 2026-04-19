@@ -1,4 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
+const { parseEmojiInput } = require('../utils/emojiHelper');
+const { getDraftWar: getDraftWarFromStore } = require('../utils/draftSessionStore');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -129,7 +131,7 @@ module.exports = {
 
       if (subcommand === 'icon') {
         const value = interaction.options.getString('valor', true).trim();
-        const parsed = parseEmojiInput(value, interaction);
+        const parsed = parseEmojiInput(value, interaction.guild);
         if (!parsed) {
           return await interaction.editReply({ content: 'Icono invalido. Usa emoji unicode o formato <:nombre:id>.' });
         }
@@ -192,12 +194,6 @@ async function handleAutocomplete(interaction) {
   await interaction.respond(options);
 }
 
-function getDraftWar(userId) {
-  const warData = global.warEdits?.[userId];
-  if (!warData || warData.creatorId !== userId) return null;
-  return warData;
-}
-
 function resolveRoleFromOption(warData, optionValue) {
   if (!optionValue) return null;
 
@@ -215,24 +211,8 @@ function resolveRoleFromOption(warData, optionValue) {
   return null;
 }
 
-function parseEmojiInput(text, interaction) {
-  const customEmojiMatch = text.match(/^<a?:[A-Za-z0-9_]+:(\d+)>$/);
-  if (customEmojiMatch) {
-    const emojiId = customEmojiMatch[1];
-    const isGuildEmoji = Boolean(interaction.guild?.emojis?.cache?.get(emojiId));
-
-    return {
-      emoji: text,
-      emojiSource: isGuildEmoji ? 'guild' : 'custom'
-    };
-  }
-
-  if (/\p{Extended_Pictographic}/u.test(text)) {
-    return {
-      emoji: text,
-      emojiSource: 'unicode'
-    };
-  }
-
-  return null;
+function getDraftWar(userId) {
+  const warData = getDraftWarFromStore(userId);
+  if (!warData || warData.creatorId !== userId) return null;
+  return warData;
 }

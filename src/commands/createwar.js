@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { showCreateEventModal } = require('../utils/createEventModal');
+const { safeEphemeralReply } = require('../utils/interactionReply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -11,20 +12,7 @@ module.exports = {
       await showCreateEventModal(interaction, 'war');
     } catch (error) {
       console.error('Error en createwar:', error);
-      await safeReply(interaction, 'Error al abrir el formulario');
+      await safeEphemeralReply(interaction, 'Error al abrir el formulario');
     }
   }
 };
-
-async function safeReply(interaction, content) {
-  try {
-    if (interaction.replied || interaction.deferred) return;
-    await interaction.reply({ content, flags: 64 });
-  } catch (error) {
-    if (error?.code === 40060 || error?.code === 10062) {
-      console.warn(`No se pudo responder createwar (${error.code})`);
-      return;
-    }
-    throw error;
-  }
-}

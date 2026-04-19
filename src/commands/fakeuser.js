@@ -14,6 +14,7 @@ const {
   getFakeUserIdFromName
 } = require('../utils/warState');
 const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
+const { notifyPromotion } = require('../utils/promotionNotifier');
 
 // Comando de test local para simular usuarios y validar waitlist/promociones.
 module.exports = {
@@ -256,35 +257,4 @@ async function resolveActiveWar(interaction) {
   }
 
   return fallback;
-}
-
-async function notifyPromotion(interaction, war, promotedUser) {
-  if (!promotedUser || promotedUser.isFake) return;
-
-  const roleName = promotedUser.roleName || 'el rol seleccionado';
-  const eventUrl = interaction.channelId && war?.messageId
-    ? `https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${war.messageId}`
-    : null;
-  const eventTitle = war?.name || 'Evento';
-  const text = eventUrl
-    ? `Se liberó un cupo para **${roleName}** en [${eventTitle}](${eventUrl}). Ya te movimos desde la waitlist.`
-    : `Se liberó un cupo para **${roleName}**. Ya te movimos desde la waitlist.`;
-  const dmContent = `**¡Entraste!**\n${text}`;
-
-  try {
-    const user = await interaction.client.users.fetch(promotedUser.userId);
-    await user.send(dmContent);
-    return;
-  } catch (error) {
-    console.log(`DM no disponible para ${promotedUser.userId}, usando fallback en canal`);
-  }
-
-  try {
-    await interaction.channel.send({
-      content: `<@${promotedUser.userId}> ${dmContent}`,
-      allowedMentions: { parse: ['users'] }
-    });
-  } catch (error) {
-    console.log(`No se pudo enviar fallback en canal para ${promotedUser.userId}`);
-  }
 }
