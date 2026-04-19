@@ -12,9 +12,15 @@ const {
   setDraftWar
 } = require('../utils/draftSessionStore');
 const scheduleFlow = require('./modal/scheduleFlow');
+const { EVENT_ADMIN_MODAL_ACTIONS } = require('./modal/eventAdminModalActions');
 
 module.exports = async interaction => {
   try {
+    const eventAdminModalHandler = EVENT_ADMIN_MODAL_ACTIONS[interaction.customId];
+    if (eventAdminModalHandler) {
+      return await eventAdminModalHandler(interaction);
+    }
+
     if (interaction.customId === 'create_war_initial' || interaction.customId.startsWith('create_event_initial:')) {
       return await handleWarCreation(interaction);
     }
@@ -70,7 +76,7 @@ async function handleWarCreation(interaction) {
   if (timezoneInfo.source === 'fallback' && timezoneRaw?.trim()) {
     return await safeRespond(
       interaction,
-      'âŒ Zona horaria invalida. Usa formato IANA, por ejemplo: America/Santiago, America/Bogota, America/Sao_Paulo.'
+      '\u274C Zona horaria invalida. Usa formato IANA, por ejemplo: America/Santiago, America/Bogota, America/Sao_Paulo.'
     );
   }
   const timezone = normalizeTimeZone(timezoneRaw);
@@ -78,7 +84,7 @@ async function handleWarCreation(interaction) {
   const durationRaw = interaction.fields.getTextInputValue('war_duration_input')?.trim() || '70';
 
   if (!isValidTime(timeStr)) {
-    return await safeRespond(interaction, 'âŒ Hora invÃ¡lida. Usa formato HH:mm (ej: 22:00)');
+    return await safeRespond(interaction, '\u274C Hora invalida. Usa formato HH:mm (ej: 22:00)');
   }
 
   const [durationPart, closeBeforePart] = durationRaw.split('/').map(value => value?.trim());
@@ -87,12 +93,12 @@ async function handleWarCreation(interaction) {
     ? 0
     : Number(closeBeforePart);
   if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
-    return await safeRespond(interaction, 'âŒ DuraciÃ³n debe ser entre 1 y 1440 minutos');
+    return await safeRespond(interaction, '\u274C Duracion debe ser entre 1 y 1440 minutos');
   }
   if (!Number.isInteger(closeBeforeMinutes) || closeBeforeMinutes < 0 || closeBeforeMinutes >= duration) {
     return await safeRespond(
       interaction,
-      'âŒ Cierre de inscripciones invÃ¡lido. Debe ser 0 o menor que la duraciÃ³n. Ej: 90/30'
+      '\u274C Cierre de inscripciones invalido. Debe ser 0 o menor que la duracion. Ej: 90/30'
     );
   }
 
@@ -121,24 +127,24 @@ async function handleWarCreation(interaction) {
 
   setDraftWar(interaction.user.id, warData);
 
-  await interaction.editReply({ content: 'âœ… Evento iniciado' });
+  await interaction.editReply({ content: '\u2705 Evento iniciado' });
   await showRolesEditor(interaction, warData);
 }
 
 async function showRolesEditor(interaction, warData) {
   const eventMeta = getEventTypeMeta(warData.eventType);
   const rolesDisplay = warData.roles.length > 0
-    ? warData.roles.map(r => `${r.emoji || 'â—‹'} ${r.name} (${r.max})`).join('\n')
+    ? warData.roles.map(r => `${r.emoji || '\u25CB'} ${r.name} (${r.max})`).join('\n')
     : '*(ninguno)*';
 
   const embed = new EmbedBuilder()
-    .setTitle(`ðŸ“‹ ${warData.name} (${eventMeta.label})`)
+    .setTitle(`\u{1F4CB} ${warData.name} (${eventMeta.label})`)
     .setDescription(warData.type || 'Evento de guerra')
     .setColor(0x5865f2)
     .addFields(
-      { name: 'ðŸŒ Zona Horaria', value: warData.timezone, inline: true },
-      { name: 'ðŸ‘¥ Roles', value: rolesDisplay, inline: false },
-      { name: 'ðŸ“ Pasos', value: '1. Agrega roles aquÃ­\n2. Haz click en **Publicar** para elegir dÃ­as y @mentions', inline: false }
+      { name: '\u{1F30D} Zona Horaria', value: warData.timezone, inline: true },
+      { name: '\u{1F465} Roles', value: rolesDisplay, inline: false },
+      { name: '\u{1F4DD} Pasos', value: '1. Agrega roles aqui\n2. Haz click en **Publicar** para elegir dias y @mentions', inline: false }
     );
 
   const buttons = new ActionRowBuilder().addComponents(
@@ -170,7 +176,7 @@ async function showRolesEditor(interaction, warData) {
 async function handleAddRolesBulkModal(interaction) {
   const warData = getDraftWar(interaction.user.id);
   if (!warData) {
-    return await interaction.reply({ content: 'SesiÃ³n expirada', flags: 64 });
+    return await interaction.reply({ content: 'Sesion expirada', flags: 64 });
   }
 
   const rolesText = interaction.fields.getTextInputValue('roles_text');
@@ -186,7 +192,7 @@ async function handleAddRolesBulkModal(interaction) {
   }
 
   if (added === 0) {
-    return await interaction.reply({ content: 'âŒ Formato: `Nombre: slots` (ej: Dosa: 3)', flags: 64 });
+    return await interaction.reply({ content: '\u274C Formato: `Nombre: slots` (ej: Dosa: 3)', flags: 64 });
   }
 
   await interaction.deferReply({ flags: 64 });

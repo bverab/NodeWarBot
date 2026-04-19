@@ -269,7 +269,7 @@ async function handlePanelOpenIconModal(interaction) {
   const input = new TextInputBuilder()
     .setCustomId('panel_edit_icon_input')
     .setLabel('Emoji unicode o <:nombre:id>')
-    .setPlaceholder('Ej: <:caller:123456789012345678> o ðŸ›¡ï¸')
+    .setPlaceholder('Ej: <:caller:123456789012345678> o \uD83D\uDEE1\uFE0F')
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(80);

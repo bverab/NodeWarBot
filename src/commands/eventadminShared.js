@@ -1,11 +1,28 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { loadWars } = require('../services/warService');
+const {
+  getSelectedEventContext,
+  setSelectedEventContext
+} = require('../utils/eventAdminContextStore');
 const { getRoleByName, addParticipantToRole, pickWaitlistForRole } = require('../utils/warState');
 const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
 
 async function resolveTargetWar(interaction, eventId) {
   if (eventId) {
-    return loadWars().find(war => war.id === String(eventId).trim() && war.channelId === interaction.channelId) || null;
+    const explicit = loadWars().find(war => war.id === String(eventId).trim() && war.channelId === interaction.channelId) || null;
+    if (explicit) {
+      const defaultScope = explicit.schedule?.mode === 'once' ? 'single' : 'series';
+      setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, explicit.id, { scope: defaultScope });
+    }
+    return explicit;
+  }
+
+  const selectedContext = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  if (selectedContext?.eventId) {
+    const selected = loadWars().find(war =>
+      war.id === String(selectedContext.eventId) && war.channelId === interaction.channelId
+    ) || null;
+    if (selected) return selected;
   }
 
   return await resolveActiveWar(interaction);
@@ -28,7 +45,11 @@ async function resolveActiveWar(interaction) {
     const active = wars
       .filter(war => orderMap.has(war.messageId))
       .sort((a, b) => orderMap.get(a.messageId) - orderMap.get(b.messageId))[0];
-    if (active) return active;
+    if (active) {
+      const defaultScope = active.schedule?.mode === 'once' ? 'single' : 'series';
+      setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, active.id, { scope: defaultScope });
+      return active;
+    }
   } catch (error) {
     console.warn('No se pudieron leer mensajes recientes para resolver evento activo');
   }

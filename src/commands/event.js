@@ -2,6 +2,8 @@ const { SlashCommandBuilder } = require('discord.js');
 const { showCreateEventModal } = require('../utils/createEventModal');
 const { normalizeEventType } = require('../constants/eventTypes');
 const warService = require('../services/warService');
+const { buildEventSelectorPayload } = require('../utils/eventAdminUi');
+const { isAdminExecutor } = require('./eventadminShared');
 const { safeEphemeralReply } = require('../utils/interactionReply');
 
 // Comando principal de eventos:
@@ -30,18 +32,7 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('edit')
-        .setDescription('Base para futura edicion unificada de eventos')
-        .addStringOption(option =>
-          option
-            .setName('tipo')
-            .setDescription('Tipo de evento')
-            .setRequired(true)
-            .addChoices(
-              { name: 'War', value: 'war' },
-              { name: 'Siege', value: 'siege' },
-              { name: '10v10 (placeholder)', value: '10v10' }
-            )
-        )
+        .setDescription('Selecciona un evento para reabrir su panel administrativo')
     )
     .addSubcommandGroup(group =>
       group
@@ -74,7 +65,7 @@ module.exports = {
 
       const group = interaction.options.getSubcommandGroup(false);
       const subcommand = interaction.options.getSubcommand();
-      const eventType = group ? null : normalizeEventType(interaction.options.getString('tipo', true));
+      const eventType = group ? null : normalizeEventType(interaction.options.getString('tipo', subcommand === 'edit' ? false : true));
 
       if (subcommand === 'create') {
         if (eventType === '10v10') {
@@ -89,14 +80,14 @@ module.exports = {
       }
 
       if (subcommand === 'edit') {
-        if (eventType === '10v10') {
-          return await safeEphemeralReply(interaction, '10v10 aun no tiene flujo de edicion.');
+        if (!isAdminExecutor(interaction)) {
+          return await safeEphemeralReply(interaction, 'Solo Admin puede gestionar eventos.');
         }
 
-        return await safeEphemeralReply(
-          interaction,
-          `Edicion unificada para ${eventType} en construccion. Usa temporalmente /editrole durante la sesion de creacion.`
-        );
+        const wars = warService.loadWars().filter(war => war.channelId === interaction.channelId);
+        const payload = buildEventSelectorPayload(wars);
+        await interaction.reply({ flags: 64, ...payload });
+        return;
       }
 
       if (group === 'schedule' && subcommand === 'view') {

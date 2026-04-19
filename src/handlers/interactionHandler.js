@@ -10,6 +10,7 @@ const {
   clearDraftSession
 } = require('../utils/draftSessionStore');
 const { ROLE_PANEL_ACTIONS } = require('./interaction/rolePanelActions');
+const { EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/eventAdminPanelActions');
 
 module.exports = async interaction => {
   const { customId } = interaction;
@@ -31,6 +32,11 @@ module.exports = async interaction => {
     const rolePanelHandler = ROLE_PANEL_ACTIONS[customId];
     if (rolePanelHandler) {
       return await rolePanelHandler(interaction);
+    }
+
+    const eventPanelHandler = EVENT_ADMIN_PANEL_ACTIONS[customId];
+    if (eventPanelHandler) {
+      return await eventPanelHandler(interaction);
     }
   } catch (error) {
     console.error('Error en interactionHandler:', error);

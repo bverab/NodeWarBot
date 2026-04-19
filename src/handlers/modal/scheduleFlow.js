@@ -321,7 +321,7 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
 }
 
 async function showPublishPreview(interaction, warData, selectedDays, mentionRoleIds, mode = 'editReply') {
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'MiÃ©rcoles', 'Jueves', 'Viernes', 'SÃ¡bado'];
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const daysText = selectedDays.map(d => dayNames[d]).join(', ');
   const mentionText = mentionRoleIds.length > 0
     ? mentionRoleIds.map(id => `<@&${id}>`).join(' ')
@@ -334,12 +334,12 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
     : 'Desactivado';
 
   const embed = new EmbedBuilder()
-    .setTitle(`âœ… Confirmar publicaciÃ³n: ${warData.name}`)
+    .setTitle(`\u2705 Confirmar publicacion: ${warData.name}`)
     .setDescription('**Paso 3: Revisa y confirma**')
     .setColor(0x57f287)
     .addFields(
-      { name: 'DÃ­as', value: daysText, inline: false },
-      { name: 'Hora / DuraciÃ³n', value: `${warData.time} (${warData.duration} min)`, inline: true },
+      { name: 'Dias', value: daysText, inline: false },
+      { name: 'Hora / Duracion', value: `${warData.time} (${warData.duration} min)`, inline: true },
       { name: 'Cierre inscripciones', value: `${warData.closeBeforeMinutes || 0} min antes de borrar`, inline: true },
       { name: 'Zona', value: warData.timezone, inline: true },
       { name: 'Menciones', value: mentionText, inline: false },
@@ -412,3 +412,4 @@ module.exports = {
   confirmAndPublish,
   showPublishPreview
 };
+
