@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "discordUserId": "158622386613256192",
+    "guildId": "693672285995008090",
+    "garmothProfileUrl": "https://garmoth.com/character/cXyI4QNYFr",
+    "linkedAt": 1776622101690,
+    "updatedAt": 1776632046635,
+    "characterName": "Makami",
+    "classId": 158,
+    "className": "Maegu",
+    "specRaw": "1734",
+    "spec": "Awakening",
+    "gearScore": 856,
+    "lastSyncAt": 1776632044653,
+    "syncStatus": "success",
+    "syncErrorMessage": null
+  },
+  {
+    "discordUserId": "341771008354680833",
+    "guildId": "693672285995008090",
+    "garmothProfileUrl": "https://garmoth.com/character/cnjeUeCBYL",
+    "linkedAt": 1776632782344,
+    "updatedAt": 1776633434343,
+    "characterName": "DerMeisterSelene",
+    "classId": 158,
+    "className": "Dark Knight",
+    "specRaw": "1734",
+    "spec": "Awakening",
+    "gearScore": 859,
+    "lastSyncAt": 1776633432793,
+    "syncStatus": "success",
+    "syncErrorMessage": null
+  }
+]
