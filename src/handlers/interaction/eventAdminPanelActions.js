@@ -24,6 +24,7 @@ const {
   setSelectedEventContext
 } = require('../../utils/eventAdminContextStore');
 const { refreshWarMessage, isAdminExecutor } = require('../../commands/eventadminShared');
+const { normalizeClassIconSource } = require('../../utils/participantDisplayFormatter');
 
 async function handleEventSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
@@ -339,13 +340,38 @@ async function handleEventRoleIcon(interaction) {
     return await interaction.reply({ content: context.message, flags: 64 });
   }
 
-  const emojiOptions = await fetchGuildEmojiOptions(interaction);
-  await updateWithContext(
-    interaction,
-    buildRoleIconPickerPayload(context.war, context.role, emojiOptions),
-    context.war.id,
-    { currentView: 'role_icon' }
-  );
+  const source = resolveEventRoleIconSource(interaction, context.war);
+  await ensureIconSourcesLoaded(interaction, source);
+  const payload = await buildEventRoleIconPickerView(interaction, context.war, context.role, source, '', 0);
+  await updateWithContext(interaction, payload, context.war.id, {
+    currentView: 'role_icon',
+    pendingIconSource: source,
+    pendingIconPage: 0
+  });
+}
+
+async function handleEventRoleIconSource(interaction) {
+  if (!interaction.isStringSelectMenu()) return;
+  const context = getSelectedRoleContext(interaction);
+  if (!context.ok) {
+    return await interaction.update({ content: context.message, embeds: [], components: [] });
+  }
+
+  const source = normalizeClassIconSource(interaction.values?.[0]);
+  const sourceChanged = normalizeClassIconSource(context.war.classIconSource) !== source;
+  context.war.classIconSource = source;
+  const updatedWar = sourceChanged ? updateWar(context.war) : context.war;
+  if (sourceChanged && updatedWar.messageId) {
+    await refreshWarMessage(interaction, updatedWar);
+  }
+
+  await ensureIconSourcesLoaded(interaction, source);
+  const payload = await buildEventRoleIconPickerView(interaction, updatedWar, context.role, source, '', 0);
+  await updateWithContext(interaction, payload, updatedWar.id, {
+    currentView: 'role_icon',
+    pendingIconSource: source,
+    pendingIconPage: 0
+  });
 }
 
 async function handleEventRoleIconPick(interaction) {
@@ -355,21 +381,25 @@ async function handleEventRoleIconPick(interaction) {
     return await interaction.update({ content: context.message, embeds: [], components: [] });
   }
 
-  const emojiRaw = String(interaction.values?.[0] || '').trim();
-  const parsed = parseRoleIconInput(emojiRaw, interaction.guild);
-  if (!parsed) {
-    const options = await fetchGuildEmojiOptions(interaction);
-    await updateWithContext(
+  const emojiId = String(interaction.values?.[0] || '').trim();
+  const emoji = interaction.guild?.emojis?.cache?.get(emojiId);
+  if (!emoji) {
+    const source = resolveEventRoleIconSource(interaction, context.war);
+    await ensureIconSourcesLoaded(interaction, source);
+    const payload = await buildEventRoleIconPickerView(
       interaction,
-      buildRoleIconPickerPayload(context.war, context.role, options, 'Emoji invalido. Selecciona uno del listado o escribe uno valido.'),
-      context.war.id,
-      { currentView: 'role_icon' }
+      context.war,
+      context.role,
+      source,
+      'Emoji invalido. Selecciona uno del servidor o escribe uno manualmente.'
     );
+    await updateWithContext(interaction, payload, context.war.id, { currentView: 'role_icon' });
     return;
   }
 
-  context.role.emoji = parsed.emoji;
-  context.role.emojiSource = parsed.emojiSource;
+  const inline = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
+  context.role.emoji = inline;
+  context.role.emojiSource = 'guild';
   const updated = updateWar(context.war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
@@ -379,11 +409,78 @@ async function handleEventRoleIconPick(interaction) {
     interaction,
     {
       ...buildEventRolesEditorPayload(updated, context.roleIndex),
-      content: `Icono guardado para **${updated.roles[context.roleIndex].name}**: ${parsed.emoji}`
+      content: `Icono guardado para **${updated.roles[context.roleIndex].name}**: ${inline}`
     },
     updated.id,
     { currentView: 'roles' }
   );
+}
+
+async function handleEventRoleIconBotPick(interaction) {
+  if (!interaction.isStringSelectMenu()) return;
+  const context = getSelectedRoleContext(interaction);
+  if (!context.ok) {
+    return await interaction.update({ content: context.message, embeds: [], components: [] });
+  }
+
+  const emojiId = String(interaction.values?.[0] || '').trim();
+  const appEmojis = await fetchApplicationEmojis(interaction);
+  const emoji = appEmojis.find(entry => String(entry.id) === emojiId);
+  if (!emoji) {
+    const payload = await buildEventRoleIconPickerView(
+      interaction,
+      context.war,
+      context.role,
+      'bot',
+      'No se pudo usar ese icono del bot. Vuelve a intentarlo.'
+    );
+    await updateWithContext(interaction, payload, context.war.id, { currentView: 'role_icon' });
+    return;
+  }
+
+  context.role.emoji = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
+  context.role.emojiSource = 'application';
+  const updated = updateWar(context.war);
+  if (updated.messageId) {
+    await refreshWarMessage(interaction, updated);
+  }
+
+  await updateWithContext(
+    interaction,
+    {
+      ...buildEventRolesEditorPayload(updated, context.roleIndex),
+      content: `Icono guardado para **${updated.roles[context.roleIndex].name}**: ${context.role.emoji}`
+    },
+    updated.id,
+    { currentView: 'roles' }
+  );
+}
+
+async function handleEventRoleIconBotPage(interaction, delta) {
+  const context = getSelectedRoleContext(interaction);
+  if (!context.ok) {
+    return await interaction.update({ content: context.message, embeds: [], components: [] });
+  }
+
+  const emojis = await fetchApplicationEmojis(interaction);
+  const totalPages = Math.max(1, Math.ceil(emojis.length / 25));
+  const current = resolveEventRoleIconPage(interaction);
+  const next = Math.max(0, Math.min(totalPages - 1, current + delta));
+  const payload = await buildEventRoleIconPickerView(interaction, context.war, context.role, 'bot', '', next);
+
+  await updateWithContext(interaction, payload, context.war.id, {
+    currentView: 'role_icon',
+    pendingIconSource: 'bot',
+    pendingIconPage: next
+  });
+}
+
+async function handleEventRoleIconBotPrev(interaction) {
+  return await handleEventRoleIconBotPage(interaction, -1);
+}
+
+async function handleEventRoleIconBotNext(interaction) {
+  return await handleEventRoleIconBotPage(interaction, 1);
 }
 
 async function handleEventRoleIconModalOpen(interaction) {
@@ -862,6 +959,58 @@ async function showEditScheduleModal(interaction, war) {
   await interaction.showModal(modal);
 }
 
+async function buildEventRoleIconPickerView(interaction, war, role, source, notice = '', forcedPage = null) {
+  const selectedSource = normalizeClassIconSource(source);
+  const botPage = resolveEventRoleIconPage(interaction, forcedPage);
+  const guildEmojiOptions = await fetchGuildEmojiOptions(interaction);
+  const appEmojis = selectedSource === 'bot' ? await fetchApplicationEmojis(interaction) : getApplicationEmojiCache(interaction);
+  const botTotalPages = Math.max(1, Math.ceil(appEmojis.length / 25));
+  const safePage = Math.max(0, Math.min(botTotalPages - 1, botPage));
+  const botEmojiOptions = appEmojis
+    .slice(safePage * 25, safePage * 25 + 25)
+    .map(emoji => ({
+      label: String(emoji.name).slice(0, 100),
+      value: String(emoji.id),
+      emoji: { id: emoji.id, name: emoji.name, animated: emoji.animated }
+    }));
+
+  return buildRoleIconPickerPayload(war, role, {
+    source: selectedSource,
+    guildLabel: interaction.guild?.name || 'Servidor',
+    guildEmojiOptions,
+    botEmojiOptions,
+    botPage: safePage,
+    botTotalPages,
+    notice
+  });
+}
+
+function resolveEventRoleIconSource(interaction, war) {
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const rawSource = String(context?.pendingIconSource || '').trim().toLowerCase();
+  if (rawSource === 'guild' || rawSource === 'bot') {
+    return rawSource;
+  }
+  return normalizeClassIconSource(war?.classIconSource);
+}
+
+function resolveEventRoleIconPage(interaction, forcedPage = null) {
+  if (Number.isInteger(forcedPage) && forcedPage >= 0) return forcedPage;
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  return Number.isInteger(context?.pendingIconPage) && context.pendingIconPage >= 0
+    ? context.pendingIconPage
+    : 0;
+}
+
+async function ensureIconSourcesLoaded(interaction, source) {
+  const normalized = normalizeClassIconSource(source);
+  if (normalized === 'guild') {
+    await interaction.guild?.emojis?.fetch().catch(() => null);
+    return;
+  }
+  await fetchApplicationEmojis(interaction);
+}
+
 async function fetchGuildEmojiOptions(interaction) {
   const cache = interaction.guild?.emojis?.cache;
   if (!cache) return [];
@@ -875,9 +1024,44 @@ async function fetchGuildEmojiOptions(interaction) {
     .slice(0, 25)
     .map(emoji => ({
       label: emoji.name.slice(0, 100),
-      value: `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`,
+      value: String(emoji.id),
       emoji: { id: emoji.id, name: emoji.name, animated: emoji.animated }
     }));
+}
+
+async function fetchApplicationEmojis(interaction) {
+  try {
+    await interaction.client.application.fetch();
+    const fetched = await interaction.client.application.emojis.fetch();
+    const emojis = Array.from(fetched.values()).filter(emoji => emoji?.id && emoji?.name);
+    cacheApplicationEmojis(interaction, emojis);
+    return emojis;
+  } catch (error) {
+    return getApplicationEmojiCache(interaction);
+  }
+}
+
+function cacheApplicationEmojis(interaction, emojis) {
+  if (!global.appEmojiCacheByAppId) global.appEmojiCacheByAppId = {};
+  const appId = String(interaction.client?.application?.id || interaction.client?.user?.id || '');
+  if (!appId) return;
+  global.appEmojiCacheByAppId[appId] = {
+    at: Date.now(),
+    emojis
+  };
+}
+
+function getApplicationEmojiCache(interaction) {
+  const appId = String(interaction.client?.application?.id || interaction.client?.user?.id || '');
+  const cached = appId && global.appEmojiCacheByAppId ? global.appEmojiCacheByAppId[appId] : null;
+  if (cached?.emojis?.length) return cached.emojis;
+
+  const fromClient = interaction.client?.application?.emojis?.cache;
+  if (fromClient && fromClient.size > 0) {
+    return Array.from(fromClient.values()).filter(emoji => emoji?.id && emoji?.name);
+  }
+
+  return [];
 }
 
 function parseRoleIconInput(value, guild) {
@@ -918,7 +1102,11 @@ const EVENT_ADMIN_PANEL_ACTIONS = {
   panel_event_role_rename: handleEventRoleRename,
   panel_event_role_slots: handleEventRoleSlots,
   panel_event_role_icon: handleEventRoleIcon,
+  panel_event_role_icon_source: handleEventRoleIconSource,
   panel_event_role_icon_pick: handleEventRoleIconPick,
+  panel_event_role_icon_bot_pick: handleEventRoleIconBotPick,
+  panel_event_role_icon_bot_prev: handleEventRoleIconBotPrev,
+  panel_event_role_icon_bot_next: handleEventRoleIconBotNext,
   panel_event_role_icon_modal_open: handleEventRoleIconModalOpen,
   panel_event_role_icon_clear: handleEventRoleIconClear,
   panel_event_role_icon_back: handleEventRoleIconBack,

@@ -17,6 +17,12 @@ function setSelectedEventContext(userId, guildId, channelId, eventId, options = 
     pendingMentionRoleIds: Array.isArray(options.pendingMentionRoleIds)
       ? options.pendingMentionRoleIds
       : (Array.isArray(previous.pendingMentionRoleIds) ? previous.pendingMentionRoleIds : null),
+    pendingIconSource: Object.prototype.hasOwnProperty.call(options, 'pendingIconSource')
+      ? options.pendingIconSource
+      : (previous.pendingIconSource || null),
+    pendingIconPage: Number.isInteger(options.pendingIconPage)
+      ? options.pendingIconPage
+      : (Number.isInteger(previous.pendingIconPage) ? previous.pendingIconPage : 0),
     panelMessageId: options.panelMessageId || previous.panelMessageId || null,
     currentView: options.currentView || previous.currentView || 'panel',
     updatedAt: Date.now()

@@ -206,12 +206,22 @@ function buildRolePermissionsPickerPayload(war, role, notice = '') {
   };
 }
 
-function buildRoleIconPickerPayload(war, role, emojiOptions, notice = '') {
+function buildRoleIconPickerPayload(war, role, options = {}) {
+  const source = String(options.source || 'bot');
+  const guildEmojiOptions = Array.isArray(options.guildEmojiOptions) ? options.guildEmojiOptions : [];
+  const botEmojiOptions = Array.isArray(options.botEmojiOptions) ? options.botEmojiOptions : [];
+  const notice = String(options.notice || '');
+  const botPage = Number.isInteger(options.botPage) && options.botPage >= 0 ? options.botPage : 0;
+  const botTotalPages = Number.isInteger(options.botTotalPages) && options.botTotalPages > 0 ? options.botTotalPages : 1;
+  const sourceLabel = source === 'guild' ? (String(options.guildLabel || 'Servidor')) : 'Bot';
+
   const embed = new EmbedBuilder()
     .setTitle(`Icono de rol: ${role.name}`)
     .setDescription(
       [
-        'Puedes seleccionar un emoji del servidor o escribir uno manualmente.',
+        `Fuente actual: **${sourceLabel}**`,
+        'Paso 1: Elige la fuente del icono.',
+        'Paso 2: Selecciona el icono segun esa fuente.',
         'Formatos validos manuales:',
         '- Emoji unicode (ej: ✅)',
         '- Emoji custom (ej: <:maegu:123456789012345678> o <a:anim:123456789012345678>)'
@@ -225,14 +235,60 @@ function buildRoleIconPickerPayload(war, role, emojiOptions, notice = '') {
   }
 
   const components = [];
-  if (Array.isArray(emojiOptions) && emojiOptions.length > 0) {
-    const menu = new StringSelectMenuBuilder()
+  const sourceMenu = new StringSelectMenuBuilder()
+    .setCustomId('panel_event_role_icon_source')
+    .setPlaceholder('Paso 1: Fuente de icono')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions([
+      {
+        label: 'Bot',
+        value: 'bot',
+        description: 'Usa application emojis del bot',
+        default: source === 'bot'
+      },
+      {
+        label: 'Servidor',
+        value: 'guild',
+        description: 'Usa emojis del servidor actual',
+        default: source === 'guild'
+      }
+    ]);
+  components.push(new ActionRowBuilder().addComponents(sourceMenu));
+
+  if (source === 'guild' && guildEmojiOptions.length > 0) {
+    const guildMenu = new StringSelectMenuBuilder()
       .setCustomId('panel_event_role_icon_pick')
-      .setPlaceholder('Elegir emoji del servidor')
+      .setPlaceholder('Paso 2: Selecciona un emoji del servidor')
       .setMinValues(1)
       .setMaxValues(1)
-      .addOptions(emojiOptions.slice(0, 25));
-    components.push(new ActionRowBuilder().addComponents(menu));
+      .addOptions(guildEmojiOptions.slice(0, 25));
+    components.push(new ActionRowBuilder().addComponents(guildMenu));
+  }
+
+  if (source === 'bot' && botEmojiOptions.length > 0) {
+    const botMenu = new StringSelectMenuBuilder()
+      .setCustomId('panel_event_role_icon_bot_pick')
+      .setPlaceholder('Paso 2: Selecciona un icono del bot')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(botEmojiOptions.slice(0, 25));
+    components.push(new ActionRowBuilder().addComponents(botMenu));
+
+    components.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_event_role_icon_bot_prev')
+          .setLabel('Anterior')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(botPage <= 0),
+        new ButtonBuilder()
+          .setCustomId('panel_event_role_icon_bot_next')
+          .setLabel(`Siguiente (${botPage + 1}/${botTotalPages})`)
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(botPage >= botTotalPages - 1)
+      )
+    );
   }
 
   components.push(
@@ -243,6 +299,21 @@ function buildRoleIconPickerPayload(war, role, emojiOptions, notice = '') {
       new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
     )
   );
+
+  if (source === 'bot' && botEmojiOptions.length === 0) {
+    embed.addFields({
+      name: 'Info',
+      value: 'No hay application emojis disponibles en este momento para el bot.',
+      inline: false
+    });
+  }
+  if (source === 'guild' && guildEmojiOptions.length === 0) {
+    embed.addFields({
+      name: 'Info',
+      value: 'No hay emojis del servidor disponibles en este momento.',
+      inline: false
+    });
+  }
 
   return {
     embeds: [embed],

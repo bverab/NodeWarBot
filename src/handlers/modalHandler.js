@@ -109,6 +109,8 @@ async function handleWarCreation(interaction) {
     eventType,
     name,
     type,
+    classIconSource: 'bot',
+    participantDisplayStyle: 'modern',
     timezone,
     time: timeStr,
     duration,
@@ -116,6 +118,7 @@ async function handleWarCreation(interaction) {
     roles: [],
     waitlist: [],
     creatorId: interaction.user.id,
+    guildId: interaction.guildId,
     createdAt: Date.now(),
     channelId: interaction.channelId,
     dayOfWeek: null,
@@ -143,6 +146,7 @@ async function showRolesEditor(interaction, warData) {
     .setColor(0x5865f2)
     .addFields(
       { name: '\u{1F30D} Zona Horaria', value: warData.timezone, inline: true },
+      { name: '\u{1F58C}\uFE0F Visual', value: `Fuente: ${String(warData.classIconSource || 'bot')}\nEstilo: ${String(warData.participantDisplayStyle || 'modern')}`, inline: true },
       { name: '\u{1F465} Roles', value: rolesDisplay, inline: false },
       { name: '\u{1F4DD} Pasos', value: '1. Agrega roles aqui\n2. Haz click en **Publicar** para elegir dias y @mentions', inline: false }
     );
@@ -160,6 +164,10 @@ async function showRolesEditor(interaction, warData) {
       .setCustomId('publish_war')
       .setLabel('Publicar')
       .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('panel_visual_settings')
+      .setLabel('Visual')
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('cancel_war')
       .setLabel('Cancelar')
