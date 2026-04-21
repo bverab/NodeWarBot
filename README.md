@@ -1,253 +1,182 @@
-# NodeWarBot - Black Desert Online Node War Manager
+# NodeWarBot
 
-[English](#english) | [Portugues (Brasil)](#portugues-brasil)
+Bot de Discord para gestionar eventos tipo Node War (Black Desert Online), con flujo interactivo de creacion, publicacion programada, inscripcion por roles y herramientas de administracion.
 
----
+## Estado actual (resumen)
 
-# English
+- Estable:
+  - Creacion y publicacion de eventos (`/event create`, alias `/createwar`)
+  - Eventos unicos y recurrentes (scheduler por dias)
+  - Inscripcion por botones con waitlist y promociones
+  - Edicion contextual de eventos publicados (`/event edit`)
+  - Integracion Garmoth (`link`, `view`, `unlink`, `refresh`)
+  - Render enriquecido de participantes con datos Garmoth (cuando existen)
+- En evolucion:
+  - UX del editor avanzado (iteraciones frecuentes en paneles)
+  - Configuracion visual por evento (fuente de iconos/estilo)
+- Persistencia:
+  - Archivos JSON locales en `data/` (sin base de datos)
 
-## What is NodeWarBot?
+## Funcionalidades principales
 
-NodeWarBot is an open-source Discord bot to create and manage Node War events with interactive role signups, waitlist logic, and scheduled publication.
+### 1) Creacion y programacion de eventos
 
-## Main Features
+- `/event create tipo:war|siege` abre modal de creacion.
+- Alias legacy: `/createwar` (equivale a crear evento tipo war).
+- Soporta:
+  - nombre, descripcion, timezone, hora de publicacion
+  - duracion y cierre de inscripcion antes del inicio (`duracion` o `duracion/cierreAntes`)
+- Flujo schedule:
+  - seleccion de modo y dias
+  - publicacion automatica por scheduler
+  - cancelacion de programaciones (`/event schedule cancel`)
 
-- Interactive event creation via `/createwar` modal:
-  - Name
-  - Type/description
-  - Timezone
-  - Publish time (`HH:mm`)
-  - Duration and signup-close offset (`duration` or `duration/closeBefore`, e.g. `90/30`)
-- Multi-day scheduling:
-  - Select one or many week days for the same event setup
-  - Creates one scheduled event per selected day (same `groupId`)
-- Optional role mentions on publish:
-  - Select Discord roles to mention when scheduler posts the event
-- Role management:
-  - Bulk role creation
-  - In-panel role edits (name, slots, icon, permissions, delete)
-  - Role edits with `/editrole` (supports autocomplete)
-  - Permission restrictions per event role
-  - Restriction labels rendered in event embed (`🔒 @Role`)
-  - Cleaner edit UX with back-navigation buttons in a single ephemeral view
-- Signup and waitlist system:
-  - One user cannot stay in two event roles at the same time
-  - Waitlist promotion when a slot opens
-  - DM notification on promotion, with event link and channel mention fallback
-  - Role buttons prioritize role icons and support custom server emojis
-- Scheduler automation:
-  - Auto-publishes events at configured day/time
-  - Uses selected mentions in the published message
-  - Event expiration based on configured duration
-  - Removes event message when it expires
-- Admin moderation tools:
-  - Add/remove real users to/from event roles
-  - Lock/unlock all signups for a published event by event ID
-  - View/cancel active scheduled events by ID
-  - Live edit of published events (roles, slots, icons, permissions, recap config)
-- Optional final recap thread:
-  - Configurable in publish preview (`Configurar hilo final`)
-  - Scheduler opens a thread at configured offset before event deletion
-  - Mentions all signed users and posts a read-only copy of the event
-- Persistence in `data/wars.json`
+### 2) Inscripciones, roles y waitlist
 
-## Requirements
+- Inscripcion por botones en mensaje del evento.
+- Un usuario no queda en dos roles del mismo evento.
+- Waitlist por rol con promocion automatica al liberarse un slot.
+- Soporte de restricciones por rol de Discord (permisos por rol del evento).
 
-- Node.js 16.6.0+
-- npm
-- Discord bot token and app credentials
-- Admin permissions in target server(s)
+### 3) Edicion contextual de eventos publicados
 
-## Installation
+- `/event edit` abre selector de eventos del canal y panel administrativo contextual.
+- Edicion de roles en flujo (nombre, slots, permisos, icono, eliminar).
+- Edicion de datos del evento y horario.
+- Publicar/actualizar mensaje del evento desde el panel.
+- Configuracion de menciones para publicacion.
+
+### 4) Iconos de rol y visual
+
+- Fuente de iconos configurable por evento: `bot` o `guild`.
+- Fuente `bot`:
+  - usa application emojis de la app del bot
+  - selector UI con emojis disponibles (sin limitarse solo a clases BDO)
+- Fuente `guild`:
+  - usa emojis del servidor actual
+- Fallback manual:
+  - escribir icono manualmente
+  - limpiar icono
+
+### 5) Render enriquecido de participantes
+
+Cuando hay datos Garmoth validos para el usuario inscrito, el listado muestra linea enriquecida con:
+
+- nickname de Discord (siempre como nombre principal)
+- icono de clase (segun fuente configurada)
+- gear score (si existe)
+- spec corta (`A` Awakening / `S` Succession, si existe)
+
+Si no hay datos o faltan campos, aplica fallback limpio sin romper el render.
+
+### 6) Integracion Garmoth
+
+Comando: `/garmoth`
+
+- `link <url>`: vincula perfil y ejecuta auto-refresh inmediato
+- `view`: muestra datos vinculados
+- `unlink`: desvincula perfil
+- `refresh`: sincronizacion manual
+
+Datos extraidos/parceados actualmente:
+
+- `characterName`
+- `className`
+- `spec`
+- `gearScore`
+
+Notas:
+
+- El parser intenta rutas semanticas y fallback de estructura HTML/estado embebido.
+- Si no hay confianza suficiente, el sistema marca parcial/fail y evita datos basura.
+
+### 7) Herramientas admin adicionales
+
+- `/eventadmin add/remove`: gestionar inscritos reales en evento publicado
+- `/eventadmin lock/unlock`: bloquear o abrir inscripciones por ID
+- `/eventadmin role_*`: operaciones administrativas sobre roles del evento
+- `/eventadmin recap`: configuracion de hilo final
+
+## Comandos disponibles
+
+- `/event create`
+- `/event edit`
+- `/event schedule view`
+- `/event schedule cancel`
+- `/createwar` (alias legacy)
+- `/editrole` (edicion de roles en draft)
+- `/eventadmin ...`
+- `/garmoth ...`
+- `/fakeuser` (pruebas)
+- `/ping`
+
+## Instalacion
 
 ```bash
-git clone https://github.com/bverab/NodeWarBot.git
+git clone <tu-repo>
 cd NodeWarBot
 npm install
 ```
 
-## Environment Variables
+## Variables de entorno
 
-Create `.env` in project root:
+Crear `.env` en la raiz:
 
 ```env
-TOKEN=your_bot_token
-CLIENT_ID=your_app_client_id
+TOKEN=tu_token_discord
+CLIENT_ID=tu_client_id
 GUILD_ID=123456789012345678,987654321098765432
 ```
 
-Notes:
-- `GUILD_ID` supports one or many guild IDs separated by commas.
-- `register-commands.js` validates IDs and skips invalid entries.
+Notas:
 
-## Register Slash Commands
+- `GUILD_ID` acepta uno o varios IDs separados por coma.
+- `register-commands` ignora IDs invalidos y reporta resumen.
+
+## Registrar comandos
 
 ```bash
 node src/register-commands.js
 ```
 
-## Run Bot
+## Ejecutar bot
 
 ```bash
 node src/index.js
 ```
 
-## Command Summary
-
-- `/createwar`: starts event creation flow
-- `/editrole`: rename/slots/icon/clearicon for draft event roles
-- `/event schedule view`: list scheduled events in current channel
-- `/event schedule cancel id:<event_id>`: cancel a scheduled event
-- `/eventadmin add`: add a real member to an event role (admin)
-- `/eventadmin remove`: remove a real member from an event role (admin)
-- `/eventadmin lock id:<event_id>`: close all signups for an active event (admin)
-- `/eventadmin unlock id:<event_id>`: reopen all signups for an active event (admin)
-- `/eventadmin role_*`: live edits for published event roles (admin)
-- `/eventadmin recap`: edit recap-thread config on a published event (admin)
-- `/fakeuser`: test waitlist and slot behavior
-- `/ping`: bot latency check
-
-## Waitlist Rules
-
-- If target role is full, user goes to waitlist for that role.
-- If user was in another event role and tries to switch to a full role:
-  - user is removed from previous role,
-  - user is added to waitlist for the selected role.
-- Promotion from waitlist keeps role consistency (no double-role state).
-
-## Troubleshooting
-
-- Commands not showing:
-  - run `node src/register-commands.js`
-  - verify `CLIENT_ID` and `GUILD_ID`
-- No promotion DM:
-  - user may have DMs disabled for server
-  - bot falls back to channel mention notification
-- Scheduler not publishing:
-  - verify bot is running continuously
-  - verify event day/time/timezone in data and UI flow
-
----
-
-# Portugues (Brasil)
-
-## O que e o NodeWarBot?
-
-NodeWarBot e um bot open-source para Discord que cria e gerencia eventos de Node War com inscricao por botoes, fila de espera e publicacao automatica por horario.
-
-## Principais Recursos
-
-- Criacao de evento por modal `/createwar` com:
-  - Nome
-  - Tipo/descricao
-  - Timezone
-  - Hora de publicacao (`HH:mm`)
-  - Duracao e antecedencia para fechar inscricoes (`duracao` ou `duracao/fecharAntes`, ex: `90/30`)
-- Agendamento em varios dias da semana:
-  - seleciona 1+ dias
-  - cria um evento agendado por dia (mesmo `groupId`)
-- Mencoes opcionais ao publicar:
-  - seleciona cargos para mencionar quando o scheduler publicar
-- Gerenciamento de papeis:
-  - adicao em lote
-  - edicao por painel (nome, slots, icone, permissoes, remover)
-  - edicao com `/editrole` (com autocomplete)
-  - restricoes de permissao por papel
-  - exibicao visual de restricoes no embed (`🔒 @Cargo`)
-  - fluxo de edicao com navegacao "voltar" na mesma view efemera
-- Inscricao e fila de espera:
-  - usuario nao fica em dois papeis ao mesmo tempo
-  - promocao automatica quando abre vaga
-  - notificacao por DM na promocao com link do evento e fallback no canal
-  - botoes de papeis priorizam icones e suportam emoji custom do servidor
-- Automacao do scheduler:
-  - publica automaticamente no dia/hora configurados
-  - usa as mencoes definidas
-  - encerra evento por duracao
-  - remove mensagem do evento ao expirar
-- Ferramentas administrativas:
-  - adicionar/remover membros reais nos papeis do evento
-  - bloquear/desbloquear todas as inscricoes por ID do evento
-  - listar/cancelar programacoes por ID
-  - editar evento publicado em tempo real (roles, slots, icones, permissoes, recap)
-- Hilo/Thread final opcional:
-  - configuravel no preview de publicacao (`Configurar hilo final`)
-  - scheduler abre thread antes da exclusao do evento
-  - menciona inscritos e publica copia somente leitura do evento
-- Persistencia em `data/wars.json`
-
-## Requisitos
-
-- Node.js 16.6.0+
-- npm
-- Credenciais do app Discord
-- Permissao de administrador no(s) servidor(es)
-
-## Instalacao
+Tambien disponible:
 
 ```bash
-git clone https://github.com/bverab/NodeWarBot.git
-cd NodeWarBot
-npm install
+npm run register
+npm start
 ```
 
-## Variaveis de Ambiente
+## Estructura resumida
 
-Crie `.env` na raiz:
+- `src/commands/`: slash commands
+- `src/handlers/`: handlers de interacciones, botones y modales
+- `src/services/`: persistencia, scheduler, integraciones (Garmoth, etc.)
+- `src/utils/`: builders, formatters, resolvers y helpers
+- `data/`: almacenamiento JSON (`wars.json`, links Garmoth, etc.)
 
-```env
-TOKEN=seu_token_do_bot
-CLIENT_ID=seu_client_id
-GUILD_ID=123456789012345678,987654321098765432
-```
+## Configuracion opcional de iconos de clase por servidor
 
-Observacoes:
-- `GUILD_ID` aceita um ou varios IDs separados por virgula.
-- `register-commands.js` valida os IDs e ignora entradas invalidas.
+Existe soporte para mapping explicito por servidor en:
 
-## Registrar Comandos Slash
+- `data/server-class-emojis.json`
 
-```bash
-node src/register-commands.js
-```
+Si no existe mapping o no hay emoji resoluble, el render hace fallback limpio.
 
-## Executar o Bot
+## Limitaciones actuales
 
-```bash
-node src/index.js
-```
+- Persistencia local JSON (sin DB transaccional ni locking distribuido).
+- No hay suite de tests automatizados aun.
+- Parte de la UX del editor sigue en iteracion (aunque funcional en produccion).
+- Tipo `10v10` aparece como placeholder/roadmap en creacion, no como flujo completo.
 
-## Resumo de Comandos
+## Siguientes mejoras razonables (corto)
 
-- `/createwar`: inicia fluxo de criacao
-- `/editrole`: editar nome/slots/icone/clearicon em evento em criacao
-- `/event schedule view`: listar programacoes ativas no canal
-- `/event schedule cancel id:<event_id>`: cancelar programacao
-- `/eventadmin add`: adicionar membro real em papel do evento (admin)
-- `/eventadmin remove`: remover membro real de papel do evento (admin)
-- `/eventadmin lock id:<event_id>`: bloquear inscricoes do evento (admin)
-- `/eventadmin unlock id:<event_id>`: desbloquear inscricoes do evento (admin)
-- `/eventadmin role_*`: edicoes em evento publicado (admin)
-- `/eventadmin recap`: editar configuracao do thread final em evento publicado (admin)
-- `/fakeuser`: testar fila de espera e vagas
-- `/ping`: latencia do bot
-
-## Regras de Waitlist
-
-- Se o papel alvo estiver cheio, usuario entra na fila desse papel.
-- Se tentar trocar de papel para um papel cheio:
-  - sai do papel anterior,
-  - entra na fila do papel selecionado.
-- Promocao da fila respeita consistencia (sem usuario em dois papeis).
-
-## Solucao de Problemas
-
-- Comandos nao aparecem:
-  - execute `node src/register-commands.js`
-  - confira `CLIENT_ID` e `GUILD_ID`
-- DM de promocao nao chegou:
-  - usuario pode ter DM bloqueado no servidor
-  - bot usa fallback com mencao no canal
-- Scheduler nao publica:
-  - confirme bot rodando continuamente
-  - valide dia/hora/timezone do evento
+- Migrar persistencia a DB.
+- Agregar tests de integracion para flujos criticos (`/event edit`, scheduler, garmoth refresh).
+- Endurecer observabilidad (logs estructurados y metricas de errores de scraping).
