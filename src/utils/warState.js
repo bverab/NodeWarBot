@@ -1,5 +1,6 @@
-const EMPTY_SLOT = '-- vacio --';
+const EMPTY_SLOT = '-';
 const { normalizeEventType } = require('../constants/eventTypes');
+const { normalizeClassIconSource, normalizeParticipantDisplayStyle } = require('./participantDisplayFormatter');
 
 // Utilidades de estado del evento:
 // - Normalizacion de datos persistidos
@@ -95,6 +96,8 @@ function normalizeWar(war = {}) {
     eventType: normalizeEventType(war.eventType || 'war'),
     name: war.name || 'Node War',
     type: war.type || 'Sin descripcion',
+    classIconSource: normalizeClassIconSource(war.classIconSource),
+    participantDisplayStyle: normalizeParticipantDisplayStyle(war.participantDisplayStyle),
     
     // Contenido
     roles: Array.isArray(war.roles) ? war.roles.map(normalizeRole) : [],
@@ -102,6 +105,7 @@ function normalizeWar(war = {}) {
     
     // Discord
     creatorId: war.creatorId || null,
+    guildId: war.guildId || null,
     channelId: war.channelId || null,
     messageId: war.messageId || null,
     

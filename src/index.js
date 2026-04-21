@@ -5,6 +5,7 @@ const buttonHandler = require('./handlers/buttonHandler');
 const modalHandler = require('./handlers/modalHandler');
 const interactionHandler = require('./handlers/interactionHandler');
 const { initScheduler } = require('./services/schedulerService');
+const { primeApplicationEmojiCache } = require('./utils/applicationEmojiResolver');
 
 const SCHEDULE_CUSTOM_IDS = new Set(['schedule_war_mode', 'schedule_war_days', 'schedule_war_mentions']);
 const INTERACTION_HANDLER_CUSTOM_IDS = new Set([
@@ -52,14 +53,16 @@ const client = new Client({
     GatewayIntentBits.MessageContent
   ]
 });
+global.discordClient = client;
 
 commandHandler(client);
 
 client.once(Events.ClientReady, () => {
   console.log(`Bot listo como ${client.user.tag}`);
   console.log(`Comandos cargados: ${client.commands.size}`);
-  
-  // Iniciar scheduler de eventos automáticos
+  primeApplicationEmojiCache(client).catch(() => null);
+
+  // Iniciar scheduler de eventos automaticos
   initScheduler(client);
 });
 

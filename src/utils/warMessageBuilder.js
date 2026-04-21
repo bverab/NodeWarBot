@@ -1,6 +1,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { formatMemberList, getWarTotals } = require('./warState');
+const { getWarTotals } = require('./warState');
 const { getEventTypeMeta } = require('../constants/eventTypes');
+const { createParticipantDisplayFormatter } = require('./participantDisplayFormatter');
 
 // Constructor de payload visual del evento:
 // - Embed principal (roles, waitlist, metadata)
@@ -13,9 +14,15 @@ const ICONS = {
   lock: '\uD83D\uDD12',
   whiteCircle: '\u26AA'
 };
+const PARTICIPANT_PREFIX = '▏ ';
 
 function buildWarEmbed(war) {
   const { totalSlots, totalSigned } = getWarTotals(war);
+  const formatParticipantDisplay = createParticipantDisplayFormatter({
+    guildId: war.guildId,
+    classIconSource: war.classIconSource,
+    participantDisplayStyle: war.participantDisplayStyle
+  });
   const startsAt = Math.floor((war.createdAt || Date.now()) / 1000);
   const endsAt = Math.floor((war.expiresAt || war.closesAt || Date.now()) / 1000);
   const closesAt = `<t:${Math.floor(war.closesAt / 1000)}:R>`;
@@ -37,18 +44,14 @@ function buildWarEmbed(war) {
   const embed = new EmbedBuilder()
     .setTitle(`${ICONS.skull} ${war.name} (${eventMeta.label}) ${totalSlots} players`)
     .setDescription(description)
-    .setColor(0xf1c40f);
+    .setColor(0x9333ea);
 
   const roleFields = war.roles.map(role => {
-    const hasRestrictions =
-      (Array.isArray(role.allowedRoleIds) && role.allowedRoleIds.length > 0) ||
-      (Array.isArray(role.allowedRoles) && role.allowedRoles.length > 0);
-    const lockIcon = hasRestrictions ? ` ${ICONS.lock}` : '';
     const restrictionsText = formatRoleRestrictions(role);
-    const membersText = formatMemberList(role);
+    const membersText = formatRoleMembers(role, formatParticipantDisplay);
 
     return {
-      name: `${role.emoji || ICONS.whiteCircle} ${role.name} (${role.users.length}/${role.max})${lockIcon}`,
+      name: `${role.emoji || ICONS.whiteCircle} ${role.name} (${role.users.length}/${role.max})`,
       value: restrictionsText ? `${restrictionsText}\n${membersText}` : membersText,
       inline: true
     };
@@ -68,7 +71,7 @@ function buildWarEmbed(war) {
         return `${index + 1}. ${entry.userName}${roleLabel}`;
       })
       .join('\n')
-    : '-- vacio --';
+    : '-';
 
   embed.addFields({
     name: `${ICONS.waitlist} Waitlist (${war.waitlist.length})`,
@@ -204,11 +207,16 @@ function buildWarReadOnlyPayload(war) {
 }
 
 function buildWarListText(war) {
+  const formatParticipantDisplay = createParticipantDisplayFormatter({
+    guildId: war.guildId,
+    classIconSource: war.classIconSource,
+    participantDisplayStyle: war.participantDisplayStyle
+  });
   const roleText = war.roles
     .map(role => {
       const users = role.users.length
-        ? role.users.map(user => `- ${user.displayName}`).join('\n')
-        : '- (vacio)';
+        ? role.users.map(user => `${PARTICIPANT_PREFIX}${formatParticipantDisplay(user)}`).join('\n')
+        : '-';
 
       return `**${role.emoji || ICONS.whiteCircle} ${role.name} (${role.users.length}/${role.max})**\n${users}`;
     })
@@ -226,6 +234,10 @@ function buildWarListText(war) {
     `**Waitlist (${war.waitlist.length})**`,
     waitlistText
   ].join('\n');
+}
+function formatRoleMembers(role, formatParticipantDisplay) {
+  if (!role.users.length) return '-';
+  return role.users.map(user => `${PARTICIPANT_PREFIX}${formatParticipantDisplay(user)}`).join('\n');
 }
 
 module.exports = {
