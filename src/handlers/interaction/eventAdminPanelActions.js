@@ -9,6 +9,8 @@ const { loadWars, updateWar } = require('../../services/warService');
 const {
   buildCancelConfirmPayload,
   buildEventDataEditorPayload,
+  buildEventMentionsEditorPayload,
+  buildEventMentionsPickerPayload,
   buildEventPanelPayload,
   buildEventRolesEditorPayload,
   buildEventSelectorPayload,
@@ -602,13 +604,115 @@ async function handleEventDataEditMentions(interaction) {
   const ctx = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   await updateWithContext(
     interaction,
-    buildEventDataEditorPayload(
+    buildEventMentionsEditorPayload(war, ctx?.scope || null),
+    war.id,
+    { currentView: 'mentions' }
+  );
+}
+
+async function handleEventMentionsEdit(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const selected = Array.isArray(war.notifyRoles) ? war.notifyRoles : [];
+  await updateWithContext(
+    interaction,
+    buildEventMentionsPickerPayload(war, selected),
+    war.id,
+    { currentView: 'mentions_picker', pendingMentionRoleIds: selected }
+  );
+}
+
+async function handleEventMentionsSelect(interaction) {
+  if (!interaction.isRoleSelectMenu()) return;
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const selectedIds = (interaction.values || []).map(String);
+  await updateWithContext(
+    interaction,
+    buildEventMentionsPickerPayload(
       war,
-      ctx?.scope || null,
-      'La edicion de menciones/publicacion completa se mantiene en el flujo actual de publicacion. Esta vista queda integrada para mantener continuidad.'
+      selectedIds,
+      selectedIds.length ? `Seleccion temporal: ${selectedIds.map(id => `<@&${id}>`).join(', ')}` : 'Sin menciones seleccionadas.'
     ),
     war.id,
-    { currentView: 'data' }
+    { currentView: 'mentions_picker', pendingMentionRoleIds: selectedIds }
+  );
+}
+
+async function handleEventMentionsSave(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const selectedIds = Array.isArray(context?.pendingMentionRoleIds) ? context.pendingMentionRoleIds : [];
+  war.notifyRoles = selectedIds;
+
+  const updated = updateWar(war);
+  if (updated.messageId) {
+    await refreshWarMessage(interaction, updated);
+  }
+
+  await updateWithContext(
+    interaction,
+    buildEventMentionsEditorPayload(
+      updated,
+      context?.scope || null,
+      selectedIds.length
+        ? `Menciones guardadas: ${selectedIds.map(id => `<@&${id}>`).join(', ')}`
+        : 'Menciones limpiadas para este evento.'
+    ),
+    updated.id,
+    { currentView: 'mentions', pendingMentionRoleIds: null }
+  );
+}
+
+async function handleEventMentionsBack(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  await updateWithContext(
+    interaction,
+    buildEventMentionsEditorPayload(war, context?.scope || null),
+    war.id,
+    { currentView: 'mentions', pendingMentionRoleIds: null }
+  );
+}
+
+async function handleEventMentionsRecap(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.reply({ content: 'No hay evento seleccionado. Usa `/event edit`.', flags: 64 });
+  }
+
+  setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, war.id, {
+    currentView: 'mentions'
+  });
+  await showEditRecapModal(interaction, war);
+}
+
+async function handleEventMentionsToData(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  await updateWithContext(
+    interaction,
+    buildEventDataEditorPayload(war, context?.scope || null),
+    war.id,
+    { currentView: 'data', pendingMentionRoleIds: null }
   );
 }
 
@@ -828,7 +932,13 @@ const EVENT_ADMIN_PANEL_ACTIONS = {
   panel_event_data_edit_close: handleEventDataEditClose,
   panel_event_data_edit_recap: handleEventDataEditRecap,
   panel_event_data_edit_schedule: handleEventDataEditSchedule,
-  panel_event_data_edit_mentions: handleEventDataEditMentions
+  panel_event_data_edit_mentions: handleEventDataEditMentions,
+  panel_event_mentions_edit: handleEventMentionsEdit,
+  panel_event_mentions_select: handleEventMentionsSelect,
+  panel_event_mentions_save: handleEventMentionsSave,
+  panel_event_mentions_back: handleEventMentionsBack,
+  panel_event_mentions_recap: handleEventMentionsRecap,
+  panel_event_mentions_to_data: handleEventMentionsToData
 };
 
 module.exports = {

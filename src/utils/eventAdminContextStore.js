@@ -14,6 +14,9 @@ function setSelectedEventContext(userId, guildId, channelId, eventId, options = 
     pendingPermissionIds: Array.isArray(options.pendingPermissionIds)
       ? options.pendingPermissionIds
       : (Array.isArray(previous.pendingPermissionIds) ? previous.pendingPermissionIds : null),
+    pendingMentionRoleIds: Array.isArray(options.pendingMentionRoleIds)
+      ? options.pendingMentionRoleIds
+      : (Array.isArray(previous.pendingMentionRoleIds) ? previous.pendingMentionRoleIds : null),
     panelMessageId: options.panelMessageId || previous.panelMessageId || null,
     currentView: options.currentView || previous.currentView || 'panel',
     updatedAt: Date.now()

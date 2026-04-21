@@ -362,6 +362,77 @@ function buildEventDataEditorPayload(war, scope, notice = '') {
   };
 }
 
+function buildEventMentionsEditorPayload(war, scope, notice = '') {
+  const mentionIds = Array.isArray(war.notifyRoles) ? war.notifyRoles : [];
+  const mentionsText = mentionIds.length ? mentionIds.map(id => `<@&${id}>`).join(', ') : 'Sin menciones configuradas';
+  const threadEnabled = Boolean(war.recap?.enabled);
+  const threadMinutes = Number.isInteger(war.recap?.minutesBeforeExpire) ? war.recap.minutesBeforeExpire : 0;
+  const publishState = war.messageId ? 'Publicado (puede actualizarse)' : 'No publicado aun';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Menciones/publicacion: ${war.name || 'Evento'}`)
+    .setDescription([
+      `${getModeLabel(war)} • ${getStatusLabel(war)}`,
+      `Publicacion: ${publishState}`
+    ].join('\n'))
+    .setColor(0x5865f2)
+    .addFields(
+      { name: 'Menciones actuales', value: truncate(mentionsText, 1024), inline: false },
+      { name: 'Hilo final', value: threadEnabled ? `Activado (${threadMinutes} min)` : 'Desactivado', inline: false }
+    );
+
+  if (scope === 'series') embed.addFields({ name: 'Alcance', value: 'Toda la serie', inline: true });
+  if (scope === 'single') embed.addFields({ name: 'Alcance', value: 'Solo esta ocurrencia', inline: true });
+  if (notice) embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('panel_event_mentions_edit').setLabel('Editar menciones').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('panel_event_mentions_recap').setLabel('Configurar hilo final').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('panel_event_mentions_to_data').setLabel('Volver a datos').setStyle(ButtonStyle.Secondary)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('panel_event_back_to_panel').setLabel('Volver al panel').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
+      )
+    ]
+  };
+}
+
+function buildEventMentionsPickerPayload(war, selectedMentionRoleIds = [], notice = '') {
+  const selectedText = Array.isArray(selectedMentionRoleIds) && selectedMentionRoleIds.length
+    ? selectedMentionRoleIds.map(id => `<@&${id}>`).join(', ')
+    : 'Sin menciones seleccionadas';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Editar menciones: ${war.name || 'Evento'}`)
+    .setDescription('Selecciona uno o varios roles para mencionar al publicar/actualizar el evento.')
+    .setColor(0x5865f2)
+    .addFields({ name: 'Seleccion actual', value: truncate(selectedText, 1024), inline: false });
+
+  if (notice) embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
+
+  const picker = new RoleSelectMenuBuilder()
+    .setCustomId('panel_event_mentions_select')
+    .setPlaceholder('Selecciona roles a mencionar')
+    .setMinValues(0)
+    .setMaxValues(25);
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(picker),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('panel_event_mentions_save').setLabel('Guardar menciones').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('panel_event_mentions_back').setLabel('Volver').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
+      )
+    ]
+  };
+}
+
 function getModeLabel(war) {
   return war.schedule?.mode === 'once' ? 'Unico' : 'Recurrente';
 }
@@ -404,6 +475,8 @@ module.exports = {
   buildRolePermissionsPickerPayload,
   buildRoleIconPickerPayload,
   buildEventDataEditorPayload,
+  buildEventMentionsEditorPayload,
+  buildEventMentionsPickerPayload,
   buildScopePromptPayload,
   buildInfoPayload,
   buildCancelConfirmPayload,

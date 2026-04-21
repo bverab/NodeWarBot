@@ -3,7 +3,12 @@ const { loadWars, updateWar } = require('../../services/warService');
 const { getSelectedEventContext, setSelectedEventContext } = require('../../utils/eventAdminContextStore');
 const { refreshWarMessage } = require('../../commands/eventadminShared');
 const { isValidTime } = require('../../utils/cronHelper');
-const { buildEventDataEditorPayload, buildEventPanelPayload, buildEventRolesEditorPayload } = require('../../utils/eventAdminUi');
+const {
+  buildEventDataEditorPayload,
+  buildEventMentionsEditorPayload,
+  buildEventPanelPayload,
+  buildEventRolesEditorPayload
+} = require('../../utils/eventAdminUi');
 
 async function handleEventRoleAddModal(interaction) {
   const context = getSelectedWarContext(interaction);
@@ -183,6 +188,10 @@ async function handleEventEditRecapModal(interaction) {
 
   const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
   const scopeLabel = context.context.scope === 'series' ? 'toda la serie' : 'esta ocurrencia';
+  if (context.context.currentView === 'mentions' || context.context.currentView === 'mentions_picker') {
+    await replyWithMentionsEditor(interaction, refreshed, context.context.scope, `Configuracion de hilo final actualizada (${scopeLabel}).`);
+    return;
+  }
   await replyWithDataEditor(interaction, refreshed, context.context.scope, `Configuracion de hilo final actualizada (${scopeLabel}).`);
 }
 
@@ -256,6 +265,19 @@ async function replyWithDataEditor(interaction, war, scope, notice) {
     scope: scope || 'single',
     panelMessageId: messageId,
     currentView: 'data'
+  });
+}
+
+async function replyWithMentionsEditor(interaction, war, scope, notice) {
+  const payload = {
+    ...buildEventMentionsEditorPayload(war, scope, notice)
+  };
+  const messageId = await respondModalInFlow(interaction, payload);
+  setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, war.id, {
+    scope: scope || 'single',
+    panelMessageId: messageId,
+    currentView: 'mentions',
+    pendingMentionRoleIds: null
   });
 }
 
