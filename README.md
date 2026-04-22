@@ -1,116 +1,23 @@
 # NodeWarBot
 
-Bot de Discord para gestionar eventos tipo Node War (Black Desert Online), con flujo interactivo de creacion, publicacion programada, inscripcion por roles y herramientas de administracion.
+Bot de Discord para gestionar eventos tipo Node War (Black Desert Online), con flujo interactivo de creación, publicación programada, inscripción por roles y herramientas de administración.
 
 ## Estado actual (resumen)
 
 - Estable:
-  - Creacion y publicacion de eventos (`/event create`, alias `/createwar`)
-  - Eventos unicos y recurrentes (scheduler por dias)
-  - Inscripcion por botones con waitlist y promociones
-  - Edicion contextual de eventos publicados (`/event edit`)
-  - Integracion Garmoth (`link`, `view`, `unlink`, `refresh`)
+  - Creación y publicación de eventos (`/event create`, alias `/createwar`)
+  - Eventos únicos y recurrentes (scheduler por días)
+  - Inscripción por botones con waitlist y promociones
+  - Edición contextual de eventos publicados (`/event edit`)
+  - Integración Garmoth (`link`, `view`, `unlink`, `refresh`)
   - Render enriquecido de participantes con datos Garmoth (cuando existen)
-- En evolucion:
-  - UX del editor avanzado (iteraciones frecuentes en paneles)
-  - Configuracion visual por evento (fuente de iconos/estilo)
+  - Edición de recurrencias desde `/event edit` (agregar/editar/eliminar días en alcance serie)
+  - Publicación forzada administrativa con `/event publish`
 - Persistencia:
-  - Archivos JSON locales en `data/` (sin base de datos)
+  - SQLite + Prisma como única fuente de verdad
+  - JSON solo para importación legacy y export/backup manual
 
-## Funcionalidades principales
-
-### 1) Creacion y programacion de eventos
-
-- `/event create tipo:war|siege` abre modal de creacion.
-- Alias legacy: `/createwar` (equivale a crear evento tipo war).
-- Soporta:
-  - nombre, descripcion, timezone, hora de publicacion
-  - duracion y cierre de inscripcion antes del inicio (`duracion` o `duracion/cierreAntes`)
-- Flujo schedule:
-  - seleccion de modo y dias
-  - publicacion automatica por scheduler
-  - cancelacion de programaciones (`/event schedule cancel`)
-
-### 2) Inscripciones, roles y waitlist
-
-- Inscripcion por botones en mensaje del evento.
-- Un usuario no queda en dos roles del mismo evento.
-- Waitlist por rol con promocion automatica al liberarse un slot.
-- Soporte de restricciones por rol de Discord (permisos por rol del evento).
-
-### 3) Edicion contextual de eventos publicados
-
-- `/event edit` abre selector de eventos del canal y panel administrativo contextual.
-- Edicion de roles en flujo (nombre, slots, permisos, icono, eliminar).
-- Edicion de datos del evento y horario.
-- Publicar/actualizar mensaje del evento desde el panel.
-- Configuracion de menciones para publicacion.
-
-### 4) Iconos de rol y visual
-
-- Fuente de iconos configurable por evento: `bot` o `guild`.
-- Fuente `bot`:
-  - usa application emojis de la app del bot
-  - selector UI con emojis disponibles (sin limitarse solo a clases BDO)
-- Fuente `guild`:
-  - usa emojis del servidor actual
-- Fallback manual:
-  - escribir icono manualmente
-  - limpiar icono
-
-### 5) Render enriquecido de participantes
-
-Cuando hay datos Garmoth validos para el usuario inscrito, el listado muestra linea enriquecida con:
-
-- nickname de Discord (siempre como nombre principal)
-- icono de clase (segun fuente configurada)
-- gear score (si existe)
-- spec corta (`A` Awakening / `S` Succession, si existe)
-
-Si no hay datos o faltan campos, aplica fallback limpio sin romper el render.
-
-### 6) Integracion Garmoth
-
-Comando: `/garmoth`
-
-- `link <url>`: vincula perfil y ejecuta auto-refresh inmediato
-- `view`: muestra datos vinculados
-- `unlink`: desvincula perfil
-- `refresh`: sincronizacion manual
-
-Datos extraidos/parceados actualmente:
-
-- `characterName`
-- `className`
-- `spec`
-- `gearScore`
-
-Notas:
-
-- El parser intenta rutas semanticas y fallback de estructura HTML/estado embebido.
-- Si no hay confianza suficiente, el sistema marca parcial/fail y evita datos basura.
-
-### 7) Herramientas admin adicionales
-
-- `/eventadmin add/remove`: gestionar inscritos reales en evento publicado
-- `/eventadmin lock/unlock`: bloquear o abrir inscripciones por ID
-- `/eventadmin role_*`: operaciones administrativas sobre roles del evento
-- `/eventadmin recap`: configuracion de hilo final
-
-## Comandos disponibles
-
-- `/event create`
-- `/event edit`
-- `/event schedule view`
-- `/event schedule cancel`
-- `/createwar` (alias legacy)
-- `/editrole` (edicion de roles en draft)
-- `/eventadmin ...`
-- `/garmoth ...`
-- `/fakeuser` (pruebas)
-- `/ping`
-
-## Instalacion
+## Instalación
 
 ```bash
 git clone <tu-repo>
@@ -120,63 +27,249 @@ npm install
 
 ## Variables de entorno
 
-Crear `.env` en la raiz:
+Crea `.env` en la raíz (puedes copiar desde `.env.example`):
 
 ```env
 TOKEN=tu_token_discord
 CLIENT_ID=tu_client_id
 GUILD_ID=123456789012345678,987654321098765432
+DATABASE_URL="file:../data/nodewarbot.db"
 ```
 
 Notas:
 
 - `GUILD_ID` acepta uno o varios IDs separados por coma.
-- `register-commands` ignora IDs invalidos y reporta resumen.
+- `DATABASE_URL` apunta al archivo SQLite (ruta relativa a `prisma/schema.prisma`).
 
-## Registrar comandos
+## Persistencia (Prisma + SQLite)
 
-```bash
-node src/register-commands.js
-```
+- Schema: `prisma/schema.prisma`
+- Migraciones SQL: `prisma/migrations/`
+- Capa DB: `src/db/`
 
-## Ejecutar bot
+### Flujo recomendado de setup
 
-```bash
-node src/index.js
-```
-
-Tambien disponible:
+1. Generar cliente Prisma:
 
 ```bash
-npm run register
-npm start
+npm run db:generate
 ```
+
+2. Aplicar migraciones:
+
+```bash
+npm run db:migrate:deploy
+```
+
+Si en tu entorno falla `prisma migrate deploy` por un error de schema engine, aplica SQL explícito:
+
+```bash
+npx prisma db execute --file prisma/migrations/20260421160000_init_sqlite_persistence/migration.sql --schema prisma/schema.prisma
+npx prisma db execute --file prisma/migrations/20260421205000_hardening_constraints/migration.sql --schema prisma/schema.prisma
+```
+
+Si la DB ya existía y fue creada por `db execute`, marca baseline para que `migrate deploy` funcione:
+
+```bash
+npx prisma migrate resolve --applied 20260421160000_init_sqlite_persistence
+npx prisma migrate resolve --applied 20260421205000_hardening_constraints
+```
+
+## Migración legacy JSON -> SQLite
+
+Script de importación:
+
+```bash
+npm run db:import-json
+```
+
+Este script:
+
+- crea backup timestamped en `data/backups/<timestamp>/`
+- importa `data/wars.json` y `data/garmoth-links.json` a SQLite
+- no habilita fallback ni mirror JSON en runtime
+
+## Export/backup manual SQLite -> JSON
+
+Para respaldo manual fuera del flujo normal:
+
+```bash
+npm run db:export-json
+```
+
+Salida:
+
+- `data/exports/<timestamp>/wars.json`
+- `data/exports/<timestamp>/garmoth-links.json`
 
 ## Estructura resumida
 
 - `src/commands/`: slash commands
 - `src/handlers/`: handlers de interacciones, botones y modales
-- `src/services/`: persistencia, scheduler, integraciones (Garmoth, etc.)
+- `src/services/`: servicios de dominio
+- `src/db/`: cliente Prisma, repositorios y bootstrap de persistencia
 - `src/utils/`: builders, formatters, resolvers y helpers
-- `data/`: almacenamiento JSON (`wars.json`, links Garmoth, etc.)
+- `prisma/`: schema y migraciones SQL
+- `data/`: SQLite (`nodewarbot.db`), JSON legacy, backups y exports manuales
 
-## Configuracion opcional de iconos de clase por servidor
+## Comandos npm relevantes
 
-Existe soporte para mapping explicito por servidor en:
+- `npm start`
+- `npm run register`
+- `npm run db:generate`
+- `npm run db:migrate`
+- `npm run db:migrate:deploy`
+- `npm run db:import-json`
+- `npm run db:export-json`
+- `npm test`
+- `npm run test:unit`
+- `npm run test:integration`
+- `npm run test:watch`
+- `npm run test:coverage`
 
-- `data/server-class-emojis.json`
+## Flujos administrativos nuevos
 
-Si no existe mapping o no hay emoji resoluble, el render hace fallback limpio.
+### Edición de horario en series recurrentes
 
-## Limitaciones actuales
+Desde `/event edit`:
 
-- Persistencia local JSON (sin DB transaccional ni locking distribuido).
-- No hay suite de tests automatizados aun.
-- Parte de la UX del editor sigue en iteracion (aunque funcional en produccion).
-- Tipo `10v10` aparece como placeholder/roadmap en creacion, no como flujo completo.
+1. Abrir evento.
+2. `Editar horario`.
+3. Elegir alcance `Toda la serie`.
+4. Usar el gestor de recurrencia para:
+   - ver días/horarios actuales,
+   - agregar día,
+   - editar día seleccionado,
+   - eliminar día seleccionado (sin vaciar la serie).
 
-## Siguientes mejoras razonables (corto)
+Para alcance `Solo ocurrencia` y eventos no recurrentes, se mantiene el flujo modal anterior.
 
-- Migrar persistencia a DB.
-- Agregar tests de integracion para flujos criticos (`/event edit`, scheduler, garmoth refresh).
-- Endurecer observabilidad (logs estructurados y metricas de errores de scraping).
+### Publicación forzada
+
+Nuevo subcomando:
+
+```bash
+/event publish [id] [alcance]
+```
+
+- `id` opcional (si no se envía, intenta usar evento activo en el canal).
+- `alcance` opcional: `single` (default) o `series`.
+- Comportamiento:
+  - si la ocurrencia no tiene mensaje: publica uno nuevo,
+  - si ya tiene mensaje: lo actualiza.
+- Solo administradores (mismo criterio de permisos del editor/admin actual).
+
+## Notas de hardening
+
+- SQLite es la única persistencia activa durante operación normal.
+- No hay dual write SQLite->JSON.
+- No hay fallback automático desde JSON al iniciar.
+- `server-class-emojis.json` sigue como configuración JSON de solo lectura (no persistencia de dominio).
+
+## Testing
+
+La suite está separada por propósito:
+
+- `tests/unit`: lógica pura (sin DB).
+- `tests/integration`: repositorios/Prisma/flujo de persistencia real.
+- `tests/smoke`: chequeos mínimos de arranque de persistencia.
+
+### Ejecutar tests
+
+```bash
+npm test
+npm run test:unit
+npm run test:integration
+npm run test:watch
+npm run test:coverage
+```
+
+### DB de test
+
+- Los tests usan una SQLite separada: `data/test/nodewarbot.test.db`.
+- `DATABASE_URL` de tests se configura en `tests/setup/env.js`.
+- Antes de la suite de integración se aplican las migraciones SQL del proyecto directamente sobre la DB de test.
+- Cada test de integración limpia estado (eventos, perfiles Garmoth y guilds).
+
+### Reglas de la suite
+
+- No se usa la DB real de runtime.
+- No se usa JSON legacy en runtime de tests salvo en pruebas específicas de import/export.
+- Tests deterministas, sin dependencia de servicios externos.
+
+### Patrones para agregar nuevos tests
+
+1. Si es lógica pura, agrégalo en `tests/unit`.
+2. Si valida persistencia/reglas de datos, agrégalo en `tests/integration` con `setupIntegrationSuite()`.
+3. Usa factories en `tests/factories` para evitar duplicación de payloads.
+4. En integration, valida estado final en DB y errores esperados de constraints, no solo “happy path”.
+
+## Post-Edicion y Recurrencia (Actualizacion)
+
+### Decision explicita post-edicion (activar o no)
+
+En `/event edit`, despues de guardar cambios en un evento que quede no activo (cerrado, sin mensaje publicado o expirado), el bot muestra una decision explicita:
+
+- `Guardar cambios y activar`
+- `Guardar cambios sin activar`
+
+Semantica:
+
+- `Guardar cambios y activar` intenta publicar/actualizar y deja el evento en estado activo/publicable.
+- Si hay `messageId` stale o el mensaje no existe, crea una nueva publicacion.
+- `Guardar cambios sin activar` persiste cambios y no publica automaticamente.
+- Para activar luego, se puede usar `/event publish`.
+
+### Recurrencia semanal validada operativamente
+
+La recurrencia semanal se valida con tests de integracion de scheduler:
+
+- publica en el slot semanal esperado,
+- permite cierre/expiracion de la ocurrencia,
+- vuelve a publicar la semana siguiente,
+- mantiene la serie recurrente utilizable (`schedule.enabled` sigue activo en recurrentes).
+
+### Tests nuevos relevantes
+
+- `tests/integration/eventEditActivation.integration.test.js`
+- `tests/integration/schedulerRecurrence.integration.test.js`
+
+## Actualizacion UX: recurrencia y publicacion
+
+- En gestor de recurrencia, `Agregar dia` ahora acepta multiples dias con una sola hora.
+- Formato recomendado:
+  - Hora: `HH:mm`
+  - Dias: `0;2;4` donde `0=Domingo ... 6=Sabado`.
+- Se permiten espacios opcionales y se deduplican dias repetidos.
+- El sistema reporta que dias se agregaron, cuales ya existian y cuales fueron invalidos.
+- `Agregar dia(s)` solo agrega nuevos dias y no reemplaza la serie existente.
+- `Editar dia` modifica solo la ocurrencia seleccionada.
+
+Semantica de edicion/publicacion:
+
+- El panel principal de `/event edit` ya no tiene accion ambigua de `Publicar/actualizar` en un clic sin contexto.
+- Publicar/activar queda separado en:
+  - flujo post-edicion (`Guardar cambios y activar` / `Guardar cambios sin activar`),
+  - comando `/event publish`.
+- El panel principal incluye cierre explicito del proceso:
+  - `Guardar sin publicar`
+  - `Guardar y publicar`
+
+Semantica de cierre:
+
+- Cerrar un evento bloquea nuevas inscripciones, pero conserva participantes/slots/waitlist del estado final.
+- Reactivar/republicar una ocurrencia no limpia roster automaticamente.
+- El cleanup destructivo de roster no forma parte del cierre normal.
+
+## Reordenar roles en /event edit
+
+Dentro de `Editar roles`, ahora puedes cambiar el orden de slots sin borrar ni recrear roles:
+
+- Selecciona un rol.
+- Usa `Subir` / `Bajar` para ajustar posicion.
+
+Comportamiento:
+
+- Se mueve el rol completo (incluyendo sus usuarios/permisos/icono), sin reasignar usuarios a otros roles.
+- El orden queda persistido en SQLite y el render respeta ese orden.
+- Si el evento esta publicado, el mensaje se refresca automaticamente.
