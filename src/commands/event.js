@@ -3,8 +3,9 @@ const { showCreateEventModal } = require('../utils/createEventModal');
 const { normalizeEventType } = require('../constants/eventTypes');
 const warService = require('../services/warService');
 const { buildEventSelectorPayload } = require('../utils/eventAdminUi');
-const { isAdminExecutor } = require('./eventadminShared');
+const { isAdminExecutor, resolveTargetWar } = require('./eventadminShared');
 const { safeEphemeralReply } = require('../utils/interactionReply');
+const { publishOrRefreshWar } = require('../services/eventPublicationService');
 
 // Comando principal de eventos:
 // - crear evento por modal
@@ -33,6 +34,28 @@ module.exports = {
       subcommand
         .setName('edit')
         .setDescription('Selecciona un evento para reabrir su panel administrativo')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('publish')
+        .setDescription('Fuerza publicacion o actualizacion de un evento')
+        .addStringOption(option =>
+          option
+            .setName('id')
+            .setDescription('ID del evento (opcional, por defecto usa el activo del canal)')
+            .setRequired(false)
+            .setAutocomplete(true)
+        )
+        .addStringOption(option =>
+          option
+            .setName('alcance')
+            .setDescription('Alcance para eventos recurrentes')
+            .setRequired(false)
+            .addChoices(
+              { name: 'Solo ocurrencia', value: 'single' },
+              { name: 'Toda la serie', value: 'series' }
+            )
+        )
     )
     .addSubcommandGroup(group =>
       group
@@ -65,7 +88,9 @@ module.exports = {
 
       const group = interaction.options.getSubcommandGroup(false);
       const subcommand = interaction.options.getSubcommand();
-      const eventType = group ? null : normalizeEventType(interaction.options.getString('tipo', subcommand === 'edit' ? false : true));
+      const eventType = subcommand === 'create'
+        ? normalizeEventType(interaction.options.getString('tipo', true))
+        : null;
 
       if (subcommand === 'create') {
         if (eventType === '10v10') {
@@ -87,6 +112,51 @@ module.exports = {
         const wars = warService.loadWars().filter(war => war.channelId === interaction.channelId);
         const payload = buildEventSelectorPayload(wars);
         await interaction.reply({ flags: 64, ...payload });
+        return;
+      }
+
+      if (subcommand === 'publish') {
+        if (!isAdminExecutor(interaction)) {
+          return await safeEphemeralReply(interaction, 'Solo Admin puede gestionar eventos.');
+        }
+
+        await interaction.deferReply({ flags: 64 });
+        const explicitId = interaction.options.getString('id');
+        const scopeRaw = interaction.options.getString('alcance') || 'single';
+        const target = await resolveTargetWar(interaction, explicitId);
+        if (!target) {
+          await interaction.editReply('No se encontro evento activo en este canal. Usa la opcion `id` si hay varios.');
+          return;
+        }
+
+        const useSeries = scopeRaw === 'series' && target.schedule?.mode !== 'once' && target.groupId;
+        const targets = useSeries
+          ? warService.loadWars().filter(war => war.groupId === target.groupId && war.channelId === interaction.channelId)
+          : [target];
+
+        if (!targets.length) {
+          await interaction.editReply('No se encontraron ocurrencias para publicar.');
+          return;
+        }
+
+        let published = 0;
+        let updated = 0;
+        let failed = 0;
+
+        for (const war of targets) {
+          const result = await publishOrRefreshWar(interaction, war);
+          if (!result.ok) {
+            failed += 1;
+            continue;
+          }
+          if (result.status === 'published') published += 1;
+          if (result.status === 'updated') updated += 1;
+        }
+
+        const scopeLabel = useSeries ? 'toda la serie' : 'solo ocurrencia';
+        await interaction.editReply(
+          `Publicacion forzada completada (${scopeLabel}).\nPublicados: ${published}\nActualizados: ${updated}\nFallidos: ${failed}`
+        );
         return;
       }
 
@@ -121,7 +191,7 @@ module.exports = {
         }
 
         const filtered = wars.filter(war => !(war.id === id && war.channelId === interaction.channelId));
-        warService.saveWars(filtered);
+        await warService.saveWars(filtered);
 
         return await safeEphemeralReply(interaction, `Programacion cancelada: \`${id}\``);
       }
@@ -137,6 +207,20 @@ module.exports = {
 async function handleAutocomplete(interaction) {
   const group = interaction.options.getSubcommandGroup(false);
   const subcommand = interaction.options.getSubcommand();
+  if (group === null && subcommand === 'publish') {
+    const focused = interaction.options.getFocused().toLowerCase();
+    const wars = warService
+      .loadWars()
+      .filter(war => war.channelId === interaction.channelId)
+      .map(war => ({
+        name: `${war.name} | ${war.time || '--:--'} | ${war.id}`.slice(0, 100),
+        value: String(war.id)
+      }))
+      .filter(item => item.name.toLowerCase().includes(focused) || item.value.toLowerCase().includes(focused))
+      .slice(0, 25);
+    return await interaction.respond(wars);
+  }
+
   if (group !== 'schedule' || subcommand !== 'cancel') {
     return await interaction.respond([]);
   }
