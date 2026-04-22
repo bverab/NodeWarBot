@@ -182,7 +182,7 @@ async function executeWarPublication(war) {
     if (warForPublication.schedule?.mode === 'once') {
       warForPublication.schedule.enabled = false;
     }
-    warService.updateWar(warForPublication);
+    await warService.updateWar(warForPublication);
 
     console.log(`✅ Evento auto-publicado: ${war.id} en canal ${war.channelId}`);
   } catch (error) {
@@ -245,7 +245,7 @@ async function publishRecapThread(war) {
 
     war.recap.threadId = thread.id;
     war.recap.lastPostedAt = Date.now();
-    warService.updateWar(war);
+    await warService.updateWar(war);
   } catch (error) {
     console.error(`Error publicando hilo de resumen ${war.id}:`, error);
   }
@@ -269,7 +269,7 @@ async function closeWarSignups(war) {
       }
     }
 
-    warService.updateWar(war);
+    await warService.updateWar(war);
   } catch (error) {
     console.error(`Error al cerrar inscripciones de ${war.id}:`, error);
   }
@@ -284,7 +284,7 @@ async function expireWarMessage(war) {
       war.messageId = null;
       war.isClosed = true;
       war.schedule.lastMessageIdDeleted = Date.now();
-      warService.updateWar(war);
+      await warService.updateWar(war);
       return;
     }
 
@@ -300,7 +300,7 @@ async function expireWarMessage(war) {
     war.messageId = null;
     war.isClosed = true;
     war.schedule.lastMessageIdDeleted = Date.now();
-    warService.updateWar(war);
+    await warService.updateWar(war);
     console.log(`Evento expirado y eliminado: ${war.id}`);
   } catch (error) {
     console.error(`Error al expirar evento ${war.id}:`, error);
