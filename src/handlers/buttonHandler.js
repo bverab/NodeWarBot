@@ -62,7 +62,7 @@ async function handleToggleClose(interaction) {
     return await interaction.followUp({ content: 'Solo el creador puede gestionar el evento', flags: 64 });
   }
 
-  const { war } = updateWarByMessageId(interaction.message.id, state => {
+  const { war } = await updateWarByMessageId(interaction.message.id, state => {
     state.isClosed = !state.isClosed;
   });
 
@@ -87,7 +87,7 @@ async function handleDeleteWar(interaction) {
     return await interaction.followUp({ content: 'Solo el creador puede eliminar el evento', flags: 64 });
   }
 
-  deleteWarByMessageId(interaction.message.id);
+  await deleteWarByMessageId(interaction.message.id);
   await interaction.message.delete().catch(() => null);
   await interaction.followUp({ content: 'Evento eliminado', flags: 64 });
 }
@@ -154,7 +154,7 @@ async function handleJoinRole(interaction) {
     isFake: false
   };
 
-  const { war, result } = updateWarByMessageId(interaction.message.id, state => {
+  const { war, result } = await updateWarByMessageId(interaction.message.id, state => {
     const selectedRole = getRoleByName(state, roleName);
     if (!selectedRole) return { type: 'missing_role' };
 

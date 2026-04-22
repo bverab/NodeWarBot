@@ -364,7 +364,7 @@ async function handleAddMember(interaction) {
     isFake: false
   };
 
-  const { war: updatedWar, result } = updateWarByMessageId(war.messageId, state => {
+  const { war: updatedWar, result } = await updateWarByMessageId(war.messageId, state => {
     const selectedRole = getRoleByName(state, roleName);
     if (!selectedRole) return { type: 'missing_role' };
 
@@ -467,7 +467,7 @@ async function handleRemoveMember(interaction) {
   const user = interaction.options.getUser('usuario', true);
   const roleName = interaction.options.getString('rol', true).trim();
 
-  const { war: updatedWar, result } = updateWarByMessageId(war.messageId, state => {
+  const { war: updatedWar, result } = await updateWarByMessageId(war.messageId, state => {
     const selectedRole = getRoleByName(state, roleName);
     if (!selectedRole) return { type: 'missing_role' };
 
@@ -550,7 +550,7 @@ async function handleRoleAdd(interaction) {
     allowedRoles: []
   });
 
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Rol agregado: **${roleName}** (${slots})` });
 }
@@ -574,7 +574,7 @@ async function handleRoleRename(interaction) {
     entry.roleName === previousName ? { ...entry, roleName: newName } : entry
   ));
 
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Rol renombrado: **${previousName}** -> **${newName}**` });
 }
@@ -591,7 +591,7 @@ async function handleRoleRemove(interaction) {
   const [removed] = war.roles.splice(roleIndex, 1);
   war.waitlist = war.waitlist.filter(entry => entry.roleName !== removed.name);
 
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Rol eliminado: **${removed.name}**` });
 }
@@ -610,7 +610,7 @@ async function handleRoleSlots(interaction) {
   }
 
   role.max = slots;
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Slots actualizados para **${roleName}**: ${slots}` });
 }
@@ -631,7 +631,7 @@ async function handleRoleIcon(interaction) {
   role.emoji = parsed.emoji;
   role.emojiSource = parsed.emojiSource;
 
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Icono actualizado para **${roleName}**: ${parsed.emoji}` });
 }
@@ -647,7 +647,7 @@ async function handleRoleIconClear(interaction) {
 
   role.emoji = null;
   role.emojiSource = null;
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Icono removido para **${roleName}**` });
 }
@@ -667,7 +667,7 @@ async function handleRolePermAdd(interaction) {
   if (!role.allowedRoleIds.includes(allowedRole.id)) role.allowedRoleIds.push(allowedRole.id);
   if (!role.allowedRoles.includes(allowedRole.name)) role.allowedRoles.push(allowedRole.name);
 
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Permiso agregado en **${roleName}**: <@&${allowedRole.id}>` });
 }
@@ -685,7 +685,7 @@ async function handleRolePermRemove(interaction) {
   role.allowedRoleIds = (role.allowedRoleIds || []).filter(id => id !== allowedRole.id);
   role.allowedRoles = (role.allowedRoles || []).filter(name => name !== allowedRole.name);
 
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Permiso removido en **${roleName}**: <@&${allowedRole.id}>` });
 }
@@ -701,7 +701,7 @@ async function handleRolePermClear(interaction) {
 
   role.allowedRoleIds = [];
   role.allowedRoles = [];
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Permisos limpiados para **${roleName}**` });
 }
@@ -718,7 +718,7 @@ async function handleRecapConfig(interaction) {
   war.recap.minutesBeforeExpire = minutes;
   war.recap.messageText = text;
 
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   await interaction.editReply({
     content: `Hilo final ${updatedWar.recap.enabled ? 'configurado' : 'desactivado'}: ${minutes} min antes de borrar.`
   });
@@ -744,7 +744,7 @@ async function handleToggleLock(interaction, shouldLock) {
   }
 
   war.isClosed = shouldLock;
-  const updatedWar = updateWar(war);
+  const updatedWar = await updateWar(war);
   const refreshed = await refreshWarMessage(interaction, updatedWar);
 
   if (!refreshed) {

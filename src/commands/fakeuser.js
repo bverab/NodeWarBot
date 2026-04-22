@@ -105,7 +105,7 @@ async function handleAddFakeUser(interaction) {
   const roleName = interaction.options.getString('rol').trim();
   const fakeUserId = getFakeUserIdFromName(fakeName);
 
-  const { war: updatedWar, result } = updateWarByMessageId(war.messageId, state => {
+  const { war: updatedWar, result } = await updateWarByMessageId(war.messageId, state => {
     const targetRole = getRoleByName(state, roleName);
     if (!targetRole) return { type: 'missing_role' };
 
@@ -173,7 +173,7 @@ async function handleRemoveFakeUser(interaction) {
   const fakeName = interaction.options.getString('nombre').trim();
   const fakeUserId = getFakeUserIdFromName(fakeName);
 
-  const { war: updatedWar, result } = updateWarByMessageId(war.messageId, state => {
+  const { war: updatedWar, result } = await updateWarByMessageId(war.messageId, state => {
     const removedFromRoles = removeParticipantFromAllRoles(state, fakeUserId);
     const removedFromWaitlist = removeFromWaitlist(state, fakeUserId);
 

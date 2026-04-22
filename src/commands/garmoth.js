@@ -80,7 +80,7 @@ async function handleLink(interaction) {
     );
   }
 
-  const saved = upsertCharacterLink({
+  const saved = await upsertCharacterLink({
     discordUserId: interaction.user.id,
     guildId: interaction.guildId,
     garmothProfileUrl: validation.url
@@ -140,7 +140,7 @@ async function handleView(interaction) {
 }
 
 async function handleUnlink(interaction) {
-  const removed = removeCharacterLink(interaction.user.id, interaction.guildId);
+  const removed = await removeCharacterLink(interaction.user.id, interaction.guildId);
   if (!removed) {
     return await safeEphemeralReply(
       interaction,
@@ -257,7 +257,7 @@ function normalizeProfileUrl(value) {
 
 async function runRefreshAndPersist(interaction, link) {
   const refreshResult = await refreshGarmothLink(link);
-  const updatedLink = updateCharacterLink(
+  const updatedLink = await updateCharacterLink(
     interaction.user.id,
     interaction.guildId,
     refreshResult.patch

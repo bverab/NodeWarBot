@@ -6,6 +6,7 @@ const modalHandler = require('./handlers/modalHandler');
 const interactionHandler = require('./handlers/interactionHandler');
 const { initScheduler } = require('./services/schedulerService');
 const { primeApplicationEmojiCache } = require('./utils/applicationEmojiResolver');
+const { initializePersistence, shutdownPersistence } = require('./db/init');
 
 const SCHEDULE_CUSTOM_IDS = new Set(['schedule_war_mode', 'schedule_war_days', 'schedule_war_mentions']);
 const INTERACTION_HANDLER_CUSTOM_IDS = new Set([
@@ -45,78 +46,94 @@ const INTERACTION_HANDLER_CUSTOM_IDS = new Set([
 // - Carga comandos
 // - Enruta interacciones (slash, botones, modales, menus)
 // - Inicia scheduler de publicaciones automaticas
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
-global.discordClient = client;
+async function main() {
+  await initializePersistence();
 
-commandHandler(client);
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.DirectMessages,
+      GatewayIntentBits.MessageContent
+    ]
+  });
+  global.discordClient = client;
 
-client.once(Events.ClientReady, () => {
-  console.log(`Bot listo como ${client.user.tag}`);
-  console.log(`Comandos cargados: ${client.commands.size}`);
-  primeApplicationEmojiCache(client).catch(() => null);
+  commandHandler(client);
 
-  // Iniciar scheduler de eventos automaticos
-  initScheduler(client);
-});
+  client.once(Events.ClientReady, () => {
+    console.log(`Bot listo como ${client.user.tag}`);
+    console.log(`Comandos cargados: ${client.commands.size}`);
+    primeApplicationEmojiCache(client).catch(() => null);
 
-client.on(Events.InteractionCreate, async interaction => {
-  try {
-    if (interaction.isAutocomplete()) {
-      const command = client.commands.get(interaction.commandName);
-      if (command) await command.execute(interaction);
-      return;
-    }
+    // Iniciar scheduler de eventos automaticos
+    initScheduler(client);
+  });
 
-    if (interaction.isModalSubmit() || (interaction.isStringSelectMenu() && SCHEDULE_CUSTOM_IDS.has(interaction.customId))) {
-      return modalHandler(interaction);
-    }
-
-    if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu()) {
-      if (INTERACTION_HANDLER_CUSTOM_IDS.has(interaction.customId) || interaction.customId.startsWith('panel_')) {
-        return interactionHandler(interaction);
-      }
-
-      if (interaction.isButton() && (interaction.customId.startsWith('join_') || interaction.customId.startsWith('war_'))) {
-        return buttonHandler(interaction);
-      }
-    }
-
-    if (!interaction.isChatInputCommand()) {
-      return;
-    }
-
-    const command = client.commands.get(interaction.commandName);
-    if (!command) return;
-
-    await command.execute(interaction);
-  } catch (error) {
-    console.error('Error general:', error);
-
-    if (interaction.replied || interaction.deferred) {
-      return;
-    }
-
+  client.on(Events.InteractionCreate, async interaction => {
     try {
-      await interaction.reply({
-        content: 'Error ejecutando el comando',
-        flags: 64
-      });
-    } catch (replyError) {
-      if (replyError?.code === 40060 || replyError?.code === 10062) {
-        console.warn(`No se pudo responder error global (${replyError.code})`);
+      if (interaction.isAutocomplete()) {
+        const command = client.commands.get(interaction.commandName);
+        if (command) await command.execute(interaction);
         return;
       }
 
-      console.error('Error al responder:', replyError);
-    }
-  }
-});
+      if (interaction.isModalSubmit() || (interaction.isStringSelectMenu() && SCHEDULE_CUSTOM_IDS.has(interaction.customId))) {
+        return modalHandler(interaction);
+      }
 
-client.login(process.env.TOKEN);
+      if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu()) {
+        if (INTERACTION_HANDLER_CUSTOM_IDS.has(interaction.customId) || interaction.customId.startsWith('panel_')) {
+          return interactionHandler(interaction);
+        }
+
+        if (interaction.isButton() && (interaction.customId.startsWith('join_') || interaction.customId.startsWith('war_'))) {
+          return buttonHandler(interaction);
+        }
+      }
+
+      if (!interaction.isChatInputCommand()) {
+        return;
+      }
+
+      const command = client.commands.get(interaction.commandName);
+      if (!command) return;
+
+      await command.execute(interaction);
+    } catch (error) {
+      console.error('Error general:', error);
+
+      if (interaction.replied || interaction.deferred) {
+        return;
+      }
+
+      try {
+        await interaction.reply({
+          content: 'Error ejecutando el comando',
+          flags: 64
+        });
+      } catch (replyError) {
+        if (replyError?.code === 40060 || replyError?.code === 10062) {
+          console.warn(`No se pudo responder error global (${replyError.code})`);
+          return;
+        }
+
+        console.error('Error al responder:', replyError);
+      }
+    }
+  });
+
+  await client.login(process.env.TOKEN);
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    shutdownPersistence().finally(() => process.exit(0));
+  });
+}
+
+main().catch(async error => {
+  console.error('Error fatal iniciando el bot:', error);
+  await shutdownPersistence();
+  process.exit(1);
+});

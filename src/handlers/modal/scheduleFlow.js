@@ -303,7 +303,7 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
     };
 
     const normalized = normalizeWar(warToCreate);
-    warService.createWar(normalized);
+    await warService.createWar(normalized);
   }
 
   clearDraftSession(interaction.user.id);
