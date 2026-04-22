@@ -23,6 +23,18 @@ function setSelectedEventContext(userId, guildId, channelId, eventId, options = 
     pendingIconPage: Number.isInteger(options.pendingIconPage)
       ? options.pendingIconPage
       : (Number.isInteger(previous.pendingIconPage) ? previous.pendingIconPage : 0),
+    pendingScheduleTargetEventId: Object.prototype.hasOwnProperty.call(options, 'pendingScheduleTargetEventId')
+      ? options.pendingScheduleTargetEventId
+      : (previous.pendingScheduleTargetEventId || null),
+    pendingScheduleReturnView: Object.prototype.hasOwnProperty.call(options, 'pendingScheduleReturnView')
+      ? options.pendingScheduleReturnView
+      : (previous.pendingScheduleReturnView || null),
+    pendingActivationEventIds: Array.isArray(options.pendingActivationEventIds)
+      ? options.pendingActivationEventIds.map(String)
+      : (Array.isArray(previous.pendingActivationEventIds) ? previous.pendingActivationEventIds : null),
+    pendingActivationReturnView: Object.prototype.hasOwnProperty.call(options, 'pendingActivationReturnView')
+      ? options.pendingActivationReturnView
+      : (previous.pendingActivationReturnView || null),
     panelMessageId: options.panelMessageId || previous.panelMessageId || null,
     currentView: options.currentView || previous.currentView || 'panel',
     updatedAt: Date.now()

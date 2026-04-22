@@ -12,7 +12,9 @@ const {
   buildEventMentionsEditorPayload,
   buildEventMentionsPickerPayload,
   buildEventPanelPayload,
+  buildPostEditActivationPayload,
   buildEventRolesEditorPayload,
+  buildSeriesScheduleManagerPayload,
   buildEventSelectorPayload,
   buildRoleIconPickerPayload,
   buildRolePermissionsPickerPayload,
@@ -25,6 +27,9 @@ const {
 } = require('../../utils/eventAdminContextStore');
 const { refreshWarMessage, isAdminExecutor } = require('../../commands/eventadminShared');
 const { normalizeClassIconSource } = require('../../utils/participantDisplayFormatter');
+const { listSeriesWars, removeSeriesDay } = require('../../services/recurrenceSeriesService');
+const { publishOrRefreshWarWithOptions } = require('../../services/eventPublicationService');
+const { moveRoleIndex } = require('../../services/roleOrderService');
 
 async function handleEventSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
@@ -177,6 +182,10 @@ async function handleEventScopeSelect(interaction) {
   }
 
   if (action === 'schedule') {
+    if (scope === 'series' && war.schedule?.mode !== 'once') {
+      await openSeriesScheduleManager(interaction, war);
+      return;
+    }
     await showEditScheduleModal(interaction, war);
     return;
   }
@@ -190,20 +199,13 @@ async function handleEventPublishUpdate(interaction) {
     return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
-  let notice = '';
-  if (!war.messageId) {
-    notice = 'El evento no tiene mensaje publicado aun.';
-  } else {
-    const refreshed = await refreshWarMessage(interaction, war);
-    notice = refreshed
-      ? 'Mensaje del evento actualizado correctamente.'
-      : 'No se pudo actualizar el mensaje publicado, pero el evento sigue intacto.';
-  }
-
   const ctx = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   await updateWithContext(
     interaction,
-    { ...buildEventPanelPayload(war, { scope: ctx?.scope || null }), content: notice },
+    {
+      ...buildEventPanelPayload(war, { scope: ctx?.scope || null }),
+      content: 'La publicacion directa desde este panel fue desactivada. Usa `/event publish` o el flujo post-edicion (Guardar cambios y activar).'
+    },
     war.id,
     { currentView: 'panel' }
   );
@@ -218,6 +220,55 @@ async function handleEventCancel(interaction) {
   await updateWithContext(interaction, buildCancelConfirmPayload(war), war.id, { currentView: 'cancel_confirm' });
 }
 
+async function handleEventFinishKeep(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  clearSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  await interaction.update({
+    content: 'Cambios guardados sin publicar. Editor cerrado.',
+    embeds: [],
+    components: []
+  });
+}
+
+async function handleEventFinishPublish(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const useSeries = context?.scope === 'series' && war.schedule?.mode !== 'once' && war.groupId;
+  const targets = useSeries
+    ? loadWars().filter(entry => entry.groupId === war.groupId && entry.channelId === interaction.channelId)
+    : [war];
+
+  let published = 0;
+  let updated = 0;
+  let failed = 0;
+
+  for (const target of targets) {
+    const result = await publishOrRefreshWarWithOptions(interaction, target, { activate: true });
+    if (!result.ok) {
+      failed += 1;
+      continue;
+    }
+    if (result.status === 'published') published += 1;
+    if (result.status === 'updated') updated += 1;
+  }
+
+  clearSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const scopeLabel = useSeries ? 'toda la serie' : 'solo esta ocurrencia';
+  await interaction.update({
+    content: `Cambios guardados y publicacion ejecutada (${scopeLabel}). Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.`,
+    embeds: [],
+    components: []
+  });
+}
+
 async function handleEventCancelConfirm(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
@@ -228,7 +279,7 @@ async function handleEventCancelConfirm(interaction) {
   if (war.schedule) {
     war.schedule.enabled = false;
   }
-  const updated = updateWar(war);
+  const updated = await updateWar(war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -360,7 +411,7 @@ async function handleEventRoleIconSource(interaction) {
   const source = normalizeClassIconSource(interaction.values?.[0]);
   const sourceChanged = normalizeClassIconSource(context.war.classIconSource) !== source;
   context.war.classIconSource = source;
-  const updatedWar = sourceChanged ? updateWar(context.war) : context.war;
+  const updatedWar = sourceChanged ? await updateWar(context.war) : context.war;
   if (sourceChanged && updatedWar.messageId) {
     await refreshWarMessage(interaction, updatedWar);
   }
@@ -400,7 +451,7 @@ async function handleEventRoleIconPick(interaction) {
   const inline = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
   context.role.emoji = inline;
   context.role.emojiSource = 'guild';
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -440,7 +491,7 @@ async function handleEventRoleIconBotPick(interaction) {
 
   context.role.emoji = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
   context.role.emojiSource = 'application';
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -511,7 +562,7 @@ async function handleEventRoleIconClear(interaction) {
 
   context.role.emoji = null;
   context.role.emojiSource = null;
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -588,7 +639,7 @@ async function handleEventRolePermissionsConfirm(interaction) {
     .map(roleId => interaction.guild?.roles.cache?.get(roleId)?.name)
     .filter(Boolean);
 
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -609,7 +660,7 @@ async function handleEventRolePermissionsClear(interaction) {
 
   context.role.allowedRoleIds = [];
   context.role.allowedRoles = [];
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -647,7 +698,7 @@ async function handleEventRoleDelete(interaction) {
     ? Math.max(0, Math.min(context.roleIndex, context.war.roles.length - 1))
     : null;
 
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -658,6 +709,53 @@ async function handleEventRoleDelete(interaction) {
     updated.id,
     { selectedRoleIndex: nextIndex, currentView: 'roles' }
   );
+}
+
+async function handleEventRoleMove(interaction, direction) {
+  const context = getSelectedRoleContext(interaction);
+  if (!context.ok) {
+    return await interaction.update({ content: context.message, embeds: [], components: [] });
+  }
+
+  const result = moveRoleIndex(context.war.roles, context.roleIndex, direction);
+  if (!result.moved) {
+    const reason = direction === 'up'
+      ? 'Ese rol ya esta al inicio.'
+      : 'Ese rol ya esta al final.';
+    await updateWithContext(
+      interaction,
+      { ...buildEventRolesEditorPayload(context.war, context.roleIndex), content: reason },
+      context.war.id,
+      { selectedRoleIndex: context.roleIndex, currentView: 'roles' }
+    );
+    return;
+  }
+
+  context.war.roles = result.roles;
+  const updated = await updateWar(context.war);
+  if (updated.messageId) {
+    await refreshWarMessage(interaction, updated);
+  }
+
+  const movedRoleName = updated.roles[result.toIndex]?.name || 'rol';
+  const actionLabel = direction === 'up' ? 'arriba' : 'abajo';
+  await updateWithContext(
+    interaction,
+    {
+      ...buildEventRolesEditorPayload(updated, result.toIndex),
+      content: `Orden actualizado: **${movedRoleName}** movido hacia ${actionLabel}.`
+    },
+    updated.id,
+    { selectedRoleIndex: result.toIndex, currentView: 'roles' }
+  );
+}
+
+async function handleEventRoleMoveUp(interaction) {
+  return await handleEventRoleMove(interaction, 'up');
+}
+
+async function handleEventRoleMoveDown(interaction) {
+  return await handleEventRoleMove(interaction, 'down');
 }
 
 async function handleEventDataEditBasic(interaction) {
@@ -689,8 +787,340 @@ async function handleEventDataEditSchedule(interaction) {
   if (!war) {
     return await interaction.reply({ content: 'No hay evento seleccionado. Usa `/event edit`.', flags: 64 });
   }
-  setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, war.id, { currentView: 'data' });
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, war.id, {
+    currentView: 'data',
+    pendingScheduleReturnView: 'data'
+  });
+  if (context?.scope === 'series' && war.schedule?.mode !== 'once') {
+    await openSeriesScheduleManager(interaction, war);
+    return;
+  }
   await showEditScheduleModal(interaction, war);
+}
+
+async function openSeriesScheduleManager(interaction, war, notice = '') {
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const series = listSeriesWars(war, interaction.channelId);
+  const selectedEventId = context?.pendingScheduleTargetEventId || war.id;
+  await updateWithContext(
+    interaction,
+    buildSeriesScheduleManagerPayload(war, series, { selectedEventId, notice }),
+    war.id,
+    {
+      currentView: 'schedule_series',
+      pendingScheduleTargetEventId: selectedEventId,
+      pendingScheduleReturnView: context?.pendingScheduleReturnView || context?.currentView || 'panel'
+    }
+  );
+}
+
+async function handleEventScheduleSeriesSelect(interaction) {
+  if (!interaction.isStringSelectMenu()) return;
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const targetEventId = String(interaction.values?.[0] || '').trim();
+  const series = listSeriesWars(war, interaction.channelId);
+  const selected = series.find(entry => entry.id === targetEventId);
+  const notice = selected
+    ? `Seleccionado: ${['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'][selected.dayOfWeek] || '?'} ${selected.time || '--:--'}`
+    : 'No se pudo seleccionar esa ocurrencia.';
+
+  await updateWithContext(
+    interaction,
+    buildSeriesScheduleManagerPayload(war, series, { selectedEventId: targetEventId, notice }),
+    war.id,
+    {
+      currentView: 'schedule_series',
+      pendingScheduleTargetEventId: selected ? targetEventId : (series[0]?.id || null)
+    }
+  );
+}
+
+async function handleEventScheduleSeriesAdd(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.reply({ content: 'No hay evento seleccionado. Usa `/event edit`.', flags: 64 });
+  }
+
+  const modal = new ModalBuilder().setCustomId('panel_event_schedule_series_add_modal').setTitle(`Agregar dia: ${trimTitle(war.name)}`);
+  const timeInput = new TextInputBuilder()
+    .setCustomId('panel_event_schedule_series_time')
+    .setLabel('Hora (HH:mm)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(5)
+    .setValue(String(war.time || '22:00').slice(0, 5));
+
+  const daysInput = new TextInputBuilder()
+    .setCustomId('panel_event_schedule_series_days')
+    .setLabel('Dias de semana (0-6, separados por ;)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(50)
+    .setPlaceholder('Ej: 0;2;4')
+    .setValue(Number.isInteger(war.dayOfWeek) ? String(war.dayOfWeek) : '0');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(timeInput),
+    new ActionRowBuilder().addComponents(daysInput)
+  );
+  await interaction.showModal(modal);
+}
+
+async function handleEventScheduleSeriesEdit(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.reply({ content: 'No hay evento seleccionado. Usa `/event edit`.', flags: 64 });
+  }
+
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const series = listSeriesWars(war, interaction.channelId);
+  const target = series.find(entry => entry.id === context?.pendingScheduleTargetEventId) || null;
+  if (!target) {
+    return await openSeriesScheduleManager(interaction, war, 'Selecciona primero la ocurrencia que quieres editar.');
+  }
+
+  const modal = new ModalBuilder().setCustomId('panel_event_schedule_series_edit_modal').setTitle(`Editar dia: ${trimTitle(war.name)}`);
+  const timeInput = new TextInputBuilder()
+    .setCustomId('panel_event_schedule_series_time')
+    .setLabel('Hora (HH:mm)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(5)
+    .setValue(String(target.time || '22:00').slice(0, 5));
+
+  const dayInput = new TextInputBuilder()
+    .setCustomId('panel_event_schedule_series_day')
+    .setLabel('Dia de semana (0-6)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(1)
+    .setValue(Number.isInteger(target.dayOfWeek) ? String(target.dayOfWeek) : '0');
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(timeInput),
+    new ActionRowBuilder().addComponents(dayInput)
+  );
+  await interaction.showModal(modal);
+}
+
+async function handleEventScheduleSeriesDelete(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const series = listSeriesWars(war, interaction.channelId);
+  const target = series.find(entry => entry.id === context?.pendingScheduleTargetEventId) || null;
+  if (!target) {
+    return await openSeriesScheduleManager(interaction, war, 'Selecciona primero la ocurrencia que quieres eliminar.');
+  }
+
+  if (series.length <= 1) {
+    return await openSeriesScheduleManager(interaction, war, 'No puedes eliminar el ultimo dia de la serie.');
+  }
+
+  try {
+    const removed = await removeSeriesDay(war, interaction.channelId, target.id);
+    if (removed.messageId) {
+      const channel = await interaction.guild?.channels?.fetch(removed.channelId).catch(() => null);
+      if (channel?.messages?.fetch) {
+        const message = await channel.messages.fetch(removed.messageId).catch(() => null);
+        if (message) {
+          await message.delete().catch(() => null);
+        }
+      }
+    }
+
+    const updatedSeries = listSeriesWars(war, interaction.channelId);
+    const nextSelected = updatedSeries[0];
+    const nextWar = nextSelected || war;
+
+    await updateWithContext(
+      interaction,
+      buildSeriesScheduleManagerPayload(nextWar, updatedSeries, {
+        selectedEventId: nextSelected?.id || null,
+        notice: 'Dia eliminado de la serie.'
+      }),
+      nextWar.id,
+      {
+        currentView: 'schedule_series',
+        pendingScheduleTargetEventId: nextSelected?.id || null
+      }
+    );
+  } catch (error) {
+    await openSeriesScheduleManager(interaction, war, error?.message || 'No se pudo eliminar el dia de la serie.');
+  }
+}
+
+async function handleEventScheduleSeriesBack(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const returnView = context?.pendingScheduleReturnView;
+  if (returnView === 'data') {
+    await updateWithContext(interaction, buildEventDataEditorPayload(war, context?.scope || null), war.id, {
+      currentView: 'data',
+      pendingScheduleTargetEventId: null,
+      pendingScheduleReturnView: null
+    });
+    return;
+  }
+
+  await updateWithContext(interaction, buildEventPanelPayload(war, { scope: context?.scope || null }), war.id, {
+    currentView: 'panel',
+    pendingScheduleTargetEventId: null,
+    pendingScheduleReturnView: null
+  });
+}
+
+async function handleEventPostEditActivate(interaction) {
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const eventIds = Array.isArray(context?.pendingActivationEventIds)
+    ? context.pendingActivationEventIds.map(String).filter(Boolean)
+    : [];
+  if (!eventIds.length) {
+    const war = getSelectedWar(interaction);
+    if (!war) {
+      return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    }
+    await updateWithContext(interaction, buildEventPanelPayload(war, { scope: context?.scope || null }), war.id, { currentView: 'panel' });
+    return;
+  }
+
+  let published = 0;
+  let updated = 0;
+  let failed = 0;
+  let lastWar = null;
+
+  for (const eventId of eventIds) {
+    const war = findWarByIdAndChannel(eventId, interaction.channelId);
+    if (!war) {
+      failed += 1;
+      continue;
+    }
+
+    const result = await publishOrRefreshWarWithOptions(interaction, war, { activate: true });
+    if (!result.ok) {
+      failed += 1;
+      continue;
+    }
+    if (result.status === 'published') published += 1;
+    if (result.status === 'updated') updated += 1;
+    lastWar = result.war || war;
+  }
+
+  const fallbackWarId = eventIds[0];
+  const fallbackWar = findWarByIdAndChannel(fallbackWarId, interaction.channelId);
+  const viewWar = lastWar || fallbackWar;
+  if (!viewWar) {
+    return await interaction.update({
+      content: `Cambios aplicados. Activacion finalizada. Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.`,
+      embeds: [],
+      components: []
+    });
+  }
+
+  const scope = context?.scope || null;
+  const notice = `Cambios aplicados y activacion completada. Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.`;
+  const returnView = context?.pendingActivationReturnView;
+  if (returnView === 'mentions') {
+    await updateWithContext(
+      interaction,
+      { ...buildEventMentionsEditorPayload(viewWar, scope), content: notice },
+      viewWar.id,
+      {
+        currentView: 'mentions',
+        pendingActivationEventIds: null,
+        pendingActivationReturnView: null
+      }
+    );
+    return;
+  }
+
+  if (returnView === 'panel') {
+    await updateWithContext(
+      interaction,
+      { ...buildEventPanelPayload(viewWar, { scope }), content: notice },
+      viewWar.id,
+      {
+        currentView: 'panel',
+        pendingActivationEventIds: null,
+        pendingActivationReturnView: null
+      }
+    );
+    return;
+  }
+
+  await updateWithContext(
+    interaction,
+    { ...buildEventDataEditorPayload(viewWar, scope, notice) },
+    viewWar.id,
+    {
+      currentView: 'data',
+      pendingActivationEventIds: null,
+      pendingActivationReturnView: null
+    }
+  );
+}
+
+async function handleEventPostEditKeep(interaction) {
+  const war = getSelectedWar(interaction);
+  if (!war) {
+    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
+
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const scope = context?.scope || null;
+  const returnView = context?.pendingActivationReturnView;
+  const notice = 'Cambios guardados sin activar/publicar.';
+
+  if (returnView === 'mentions') {
+    await updateWithContext(
+      interaction,
+      { ...buildEventMentionsEditorPayload(war, scope), content: notice },
+      war.id,
+      {
+        currentView: 'mentions',
+        pendingActivationEventIds: null,
+        pendingActivationReturnView: null
+      }
+    );
+    return;
+  }
+
+  if (returnView === 'panel') {
+    await updateWithContext(
+      interaction,
+      { ...buildEventPanelPayload(war, { scope }), content: notice },
+      war.id,
+      {
+        currentView: 'panel',
+        pendingActivationEventIds: null,
+        pendingActivationReturnView: null
+      }
+    );
+    return;
+  }
+
+  await updateWithContext(
+    interaction,
+    buildEventDataEditorPayload(war, scope, notice),
+    war.id,
+    {
+      currentView: 'data',
+      pendingActivationEventIds: null,
+      pendingActivationReturnView: null
+    }
+  );
 }
 
 async function handleEventDataEditMentions(interaction) {
@@ -752,7 +1182,7 @@ async function handleEventMentionsSave(interaction) {
   const selectedIds = Array.isArray(context?.pendingMentionRoleIds) ? context.pendingMentionRoleIds : [];
   war.notifyRoles = selectedIds;
 
-  const updated = updateWar(war);
+  const updated = await updateWar(war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -862,6 +1292,34 @@ function setPendingAction(interaction, eventId, action) {
     selectedRoleIndex: current?.selectedRoleIndex,
     pendingAction: action
   });
+}
+
+function shouldOfferPostEditDecision(wars) {
+  if (!Array.isArray(wars) || wars.length === 0) return false;
+  const nowMs = Date.now();
+  return wars.some(war => {
+    const expired = Number.isFinite(war.expiresAt) && war.expiresAt > 0 && nowMs >= war.expiresAt;
+    return Boolean(war.isClosed || !war.messageId || expired);
+  });
+}
+
+async function showPostEditActivationDecision(interaction, baseWar, options = {}) {
+  const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
+  const scope = context?.scope || 'single';
+  const eventIds = Array.isArray(options.eventIds) ? options.eventIds.map(String).filter(Boolean) : [baseWar.id];
+  const returnView = options.returnView || 'data';
+  const notice = options.notice || 'Cambios guardados.';
+
+  await updateWithContext(
+    interaction,
+    buildPostEditActivationPayload(baseWar, { scope, notice }),
+    baseWar.id,
+    {
+      currentView: 'post_edit_activation',
+      pendingActivationEventIds: eventIds,
+      pendingActivationReturnView: returnView
+    }
+  );
 }
 
 async function showEditDataBasicModal(interaction, war) {
@@ -1094,6 +1552,8 @@ const EVENT_ADMIN_PANEL_ACTIONS = {
   panel_event_edit_data: handleEventEditData,
   panel_event_edit_schedule: handleEventEditSchedule,
   panel_event_scope_select: handleEventScopeSelect,
+  panel_event_finish_keep: handleEventFinishKeep,
+  panel_event_finish_publish: handleEventFinishPublish,
   panel_event_publish_update: handleEventPublishUpdate,
   panel_event_cancel: handleEventCancel,
   panel_event_cancel_confirm: handleEventCancelConfirm,
@@ -1115,11 +1575,20 @@ const EVENT_ADMIN_PANEL_ACTIONS = {
   panel_event_role_permissions_confirm: handleEventRolePermissionsConfirm,
   panel_event_role_permissions_clear: handleEventRolePermissionsClear,
   panel_event_role_permissions_back: handleEventRolePermissionsBack,
+  panel_event_role_move_up: handleEventRoleMoveUp,
+  panel_event_role_move_down: handleEventRoleMoveDown,
   panel_event_role_delete: handleEventRoleDelete,
   panel_event_data_edit_basic: handleEventDataEditBasic,
   panel_event_data_edit_close: handleEventDataEditClose,
   panel_event_data_edit_recap: handleEventDataEditRecap,
   panel_event_data_edit_schedule: handleEventDataEditSchedule,
+  panel_event_schedule_series_select: handleEventScheduleSeriesSelect,
+  panel_event_schedule_series_add: handleEventScheduleSeriesAdd,
+  panel_event_schedule_series_edit: handleEventScheduleSeriesEdit,
+  panel_event_schedule_series_delete: handleEventScheduleSeriesDelete,
+  panel_event_schedule_series_back: handleEventScheduleSeriesBack,
+  panel_event_post_edit_activate: handleEventPostEditActivate,
+  panel_event_post_edit_keep: handleEventPostEditKeep,
   panel_event_data_edit_mentions: handleEventDataEditMentions,
   panel_event_mentions_edit: handleEventMentionsEdit,
   panel_event_mentions_select: handleEventMentionsSelect,
@@ -1130,5 +1599,7 @@ const EVENT_ADMIN_PANEL_ACTIONS = {
 };
 
 module.exports = {
-  EVENT_ADMIN_PANEL_ACTIONS
+  EVENT_ADMIN_PANEL_ACTIONS,
+  shouldOfferPostEditDecision,
+  showPostEditActivationDecision
 };

@@ -90,8 +90,9 @@ function buildEventPanelPayload(war, options = {}) {
   );
 
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('panel_event_publish_update').setLabel('Publicar/actualizar').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('panel_event_cancel').setLabel('Cancelar').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panel_event_finish_keep').setLabel('Guardar sin publicar').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_event_finish_publish').setLabel('Guardar y publicar').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('panel_event_cancel').setLabel('Cancelar evento').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId('panel_event_back_to_list').setLabel('Volver a lista').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
   );
@@ -102,6 +103,8 @@ function buildEventPanelPayload(war, options = {}) {
 function buildEventRolesEditorPayload(war, selectedRoleIndex = null, notice = '') {
   const roles = Array.isArray(war.roles) ? war.roles : [];
   const selectedRole = Number.isInteger(selectedRoleIndex) ? roles[selectedRoleIndex] : null;
+  const canMoveUp = Number.isInteger(selectedRoleIndex) && selectedRoleIndex > 0;
+  const canMoveDown = Number.isInteger(selectedRoleIndex) && selectedRoleIndex < roles.length - 1;
 
   const descriptionLines = roles.length
     ? roles.map((role, index) => {
@@ -146,6 +149,18 @@ function buildEventRolesEditorPayload(war, selectedRoleIndex = null, notice = ''
       new ButtonBuilder().setCustomId('panel_event_role_slots').setLabel('Slots').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('panel_event_role_icon').setLabel('Icono').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('panel_event_role_permissions').setLabel('Permisos').setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('panel_event_role_move_up')
+        .setLabel('Subir')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!canMoveUp),
+      new ButtonBuilder()
+        .setCustomId('panel_event_role_move_down')
+        .setLabel('Bajar')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!canMoveDown)
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('panel_event_role_delete').setLabel('Eliminar').setStyle(ButtonStyle.Danger),
@@ -504,6 +519,135 @@ function buildEventMentionsPickerPayload(war, selectedMentionRoleIds = [], notic
   };
 }
 
+function buildSeriesScheduleManagerPayload(baseWar, seriesWars = [], options = {}) {
+  const selectedEventId = options.selectedEventId ? String(options.selectedEventId) : null;
+  const notice = String(options.notice || '');
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+
+  const ordered = [...seriesWars].sort((a, b) => (a.dayOfWeek - b.dayOfWeek) || String(a.time).localeCompare(String(b.time)));
+  const selected = ordered.find(war => String(war.id) === selectedEventId) || ordered[0] || null;
+
+  const lines = ordered.length
+    ? ordered.map(war => {
+      const marker = selected && selected.id === war.id ? '-> ' : '';
+      const dayLabel = Number.isInteger(war.dayOfWeek) ? dayNames[war.dayOfWeek] : 'Sin dia';
+      const published = war.messageId ? 'publicado' : 'sin publicar';
+      return `${marker}${dayLabel} ${war.time || '--:--'} (${published})`;
+    })
+    : ['Sin ocurrencias en la serie.'];
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Gestionar recurrencia: ${baseWar.name || 'Evento'}`)
+    .setDescription(lines.join('\n'))
+    .setColor(0x5865f2)
+    .addFields(
+      { name: 'Serie', value: `\`${String(baseWar.groupId || 'sin-group')}\``, inline: false },
+      { name: 'Total de dias', value: String(ordered.length), inline: true },
+      {
+        name: 'Seleccion actual',
+        value: selected
+          ? `${dayNames[selected.dayOfWeek] || '?'} ${selected.time || '--:--'}`
+          : '(ninguna)',
+        inline: true
+      },
+      {
+        name: 'Agregar multiples',
+        value: 'Usa `Hora` + `Dias` en formato `0;2;4` (0=Dom ... 6=Sab).',
+        inline: false
+      }
+    );
+
+  if (notice) {
+    embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
+  }
+
+  const components = [];
+  if (ordered.length > 0) {
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId('panel_event_schedule_series_select')
+      .setPlaceholder('Selecciona una ocurrencia de la serie')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(
+        ordered.slice(0, 25).map(war => ({
+          label: truncate(`${dayNames[war.dayOfWeek] || '?'} ${war.time || '--:--'}`, 100),
+          description: truncate(`${war.messageId ? 'Publicado' : 'Sin publicar'} | ${war.id}`, 100),
+          value: String(war.id),
+          default: selected ? selected.id === war.id : false
+        }))
+      );
+    components.push(new ActionRowBuilder().addComponents(menu));
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('panel_event_schedule_series_add').setLabel('Agregar dia').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('panel_event_schedule_series_edit').setLabel('Editar dia').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('panel_event_schedule_series_delete').setLabel('Eliminar dia').setStyle(ButtonStyle.Danger)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('panel_event_schedule_series_back').setLabel('Volver').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
+    )
+  );
+
+  return {
+    embeds: [embed],
+    components
+  };
+}
+
+function buildPostEditActivationPayload(war, options = {}) {
+  const scope = options.scope === 'series' ? 'series' : 'single';
+  const notice = String(options.notice || '');
+  const inactiveReasons = [];
+  const nowMs = Date.now();
+  const isExpired = Number.isFinite(war.expiresAt) && war.expiresAt > 0 && nowMs >= war.expiresAt;
+
+  if (war.isClosed) inactiveReasons.push('inscripciones cerradas');
+  if (!war.messageId) inactiveReasons.push('sin mensaje publicado');
+  if (isExpired) inactiveReasons.push('evento expirado');
+
+  const reasonText = inactiveReasons.length > 0 ? inactiveReasons.join(', ') : 'estado no activo';
+  const scopeLabel = scope === 'series' ? 'toda la serie' : 'esta ocurrencia';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Cambios guardados: ${war.name || 'Evento'}`)
+    .setDescription(
+      [
+        `El evento quedo en estado no activo (${reasonText}).`,
+        `Alcance editado: **${scopeLabel}**.`,
+        '',
+        'Elige como continuar:'
+      ].join('\n')
+    )
+    .setColor(0xf1c40f);
+
+  if (notice) {
+    embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
+  }
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('panel_event_post_edit_activate')
+          .setLabel('Guardar cambios y activar')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('panel_event_post_edit_keep')
+          .setLabel('Guardar cambios sin activar')
+          .setStyle(ButtonStyle.Secondary)
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('panel_event_back_to_panel').setLabel('Volver al panel').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
+      )
+    ]
+  };
+}
+
 function getModeLabel(war) {
   return war.schedule?.mode === 'once' ? 'Unico' : 'Recurrente';
 }
@@ -548,6 +692,8 @@ module.exports = {
   buildEventDataEditorPayload,
   buildEventMentionsEditorPayload,
   buildEventMentionsPickerPayload,
+  buildSeriesScheduleManagerPayload,
+  buildPostEditActivationPayload,
   buildScopePromptPayload,
   buildInfoPayload,
   buildCancelConfirmPayload,

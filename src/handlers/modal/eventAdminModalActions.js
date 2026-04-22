@@ -6,9 +6,15 @@ const { isValidTime } = require('../../utils/cronHelper');
 const {
   buildEventDataEditorPayload,
   buildEventMentionsEditorPayload,
+  buildSeriesScheduleManagerPayload,
   buildEventPanelPayload,
   buildEventRolesEditorPayload
 } = require('../../utils/eventAdminUi');
+const { addSeriesDays, editSeriesDay, listSeriesWars } = require('../../services/recurrenceSeriesService');
+const {
+  shouldOfferPostEditDecision,
+  showPostEditActivationDecision
+} = require('../interaction/eventAdminPanelActions');
 
 async function handleEventRoleAddModal(interaction) {
   const context = getSelectedWarContext(interaction);
@@ -45,7 +51,7 @@ async function handleEventRoleAddModal(interaction) {
     allowedRoles: []
   });
 
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) await refreshWarMessage(interaction, updated);
   const selectedRoleIndex = updated.roles.length - 1;
 
@@ -71,7 +77,7 @@ async function handleEventRoleRenameModal(interaction) {
     entry.roleName === previousName ? { ...entry, roleName: newName } : entry
   ));
 
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) await refreshWarMessage(interaction, updated);
   await replyWithRolesEditor(interaction, updated, context.roleIndex, `Rol renombrado: **${previousName}** -> **${newName}**`);
 }
@@ -92,7 +98,7 @@ async function handleEventRoleSlotsModal(interaction) {
   }
 
   context.role.max = slots;
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) await refreshWarMessage(interaction, updated);
   await replyWithRolesEditor(interaction, updated, context.roleIndex, `Slots actualizados para **${context.role.name}**: ${slots}`);
 }
@@ -114,7 +120,7 @@ async function handleEventRoleIconModal(interaction) {
     context.role.emojiSource = parsed.emojiSource;
   }
 
-  const updated = updateWar(context.war);
+  const updated = await updateWar(context.war);
   if (updated.messageId) await refreshWarMessage(interaction, updated);
   await replyWithRolesEditor(interaction, updated, context.roleIndex, `Icono actualizado para **${context.role.name}**.`);
 }
@@ -128,16 +134,27 @@ async function handleEventEditDataBasicModal(interaction) {
   if (!name) return await safeModalReply(interaction, { content: 'Nombre invalido.' });
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
+  const targetIds = targets.map(war => war.id);
   for (const war of targets) {
     war.name = name;
     war.type = type || war.type;
-    const updated = updateWar(war);
+    const updated = await updateWar(war);
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
 
-  const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+  const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
+  const refreshed = refreshedWars.find(war => war.id === context.war.id) || context.war;
   const scopeLabel = context.context.scope === 'series' ? 'toda la serie' : 'esta ocurrencia';
-  await replyWithDataEditor(interaction, refreshed, context.context.scope, `Nombre y descripcion actualizados (${scopeLabel}).`);
+  const notice = `Nombre y descripcion actualizados (${scopeLabel}).`;
+  if (shouldOfferPostEditDecision(refreshedWars)) {
+    await showPostEditActivationDecision(interaction, refreshed, {
+      eventIds: refreshedWars.map(war => war.id),
+      returnView: 'data',
+      notice
+    });
+    return;
+  }
+  await replyWithDataEditor(interaction, refreshed, context.context.scope, notice);
 }
 
 async function handleEventEditCloseModal(interaction) {
@@ -152,15 +169,26 @@ async function handleEventEditCloseModal(interaction) {
   }
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
+  const targetIds = targets.map(war => war.id);
   for (const war of targets) {
     war.closeBeforeMinutes = closeBefore;
-    const updated = updateWar(war);
+    const updated = await updateWar(war);
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
 
-  const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+  const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
+  const refreshed = refreshedWars.find(war => war.id === context.war.id) || context.war;
   const scopeLabel = context.context.scope === 'series' ? 'toda la serie' : 'esta ocurrencia';
-  await replyWithDataEditor(interaction, refreshed, context.context.scope, `Cierre de inscripciones actualizado (${scopeLabel}).`);
+  const notice = `Cierre de inscripciones actualizado (${scopeLabel}).`;
+  if (shouldOfferPostEditDecision(refreshedWars)) {
+    await showPostEditActivationDecision(interaction, refreshed, {
+      eventIds: refreshedWars.map(war => war.id),
+      returnView: 'data',
+      notice
+    });
+    return;
+  }
+  await replyWithDataEditor(interaction, refreshed, context.context.scope, notice);
 }
 
 async function handleEventEditRecapModal(interaction) {
@@ -175,6 +203,7 @@ async function handleEventEditRecapModal(interaction) {
   }
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
+  const targetIds = targets.map(war => war.id);
   for (const war of targets) {
     if (!war.recap || typeof war.recap !== 'object') {
       war.recap = { enabled: false, minutesBeforeExpire: 0, messageText: '', threadId: null, lastPostedAt: null };
@@ -182,17 +211,27 @@ async function handleEventEditRecapModal(interaction) {
     war.recap.minutesBeforeExpire = minutesBeforeExpire;
     war.recap.messageText = messageText;
     war.recap.enabled = minutesBeforeExpire > 0;
-    const updated = updateWar(war);
+    const updated = await updateWar(war);
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
 
-  const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+  const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
+  const refreshed = refreshedWars.find(war => war.id === context.war.id) || context.war;
   const scopeLabel = context.context.scope === 'series' ? 'toda la serie' : 'esta ocurrencia';
-  if (context.context.currentView === 'mentions' || context.context.currentView === 'mentions_picker') {
-    await replyWithMentionsEditor(interaction, refreshed, context.context.scope, `Configuracion de hilo final actualizada (${scopeLabel}).`);
+  const notice = `Configuracion de hilo final actualizada (${scopeLabel}).`;
+  if (shouldOfferPostEditDecision(refreshedWars)) {
+    await showPostEditActivationDecision(interaction, refreshed, {
+      eventIds: refreshedWars.map(war => war.id),
+      returnView: context.context.currentView === 'mentions' || context.context.currentView === 'mentions_picker' ? 'mentions' : 'data',
+      notice
+    });
     return;
   }
-  await replyWithDataEditor(interaction, refreshed, context.context.scope, `Configuracion de hilo final actualizada (${scopeLabel}).`);
+  if (context.context.currentView === 'mentions' || context.context.currentView === 'mentions_picker') {
+    await replyWithMentionsEditor(interaction, refreshed, context.context.scope, notice);
+    return;
+  }
+  await replyWithDataEditor(interaction, refreshed, context.context.scope, notice);
 }
 
 async function handleEventEditScheduleModal(interaction) {
@@ -211,23 +250,94 @@ async function handleEventEditScheduleModal(interaction) {
   }
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
+  const targetIds = targets.map(war => war.id);
   for (const war of targets) {
     war.time = time;
     war.dayOfWeek = day;
     if (!war.schedule) {
       war.schedule = { enabled: false, mode: 'recurring' };
     }
-    const updated = updateWar(war);
+    const updated = await updateWar(war);
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
 
-  const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+  const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
+  const refreshed = refreshedWars.find(war => war.id === context.war.id) || context.war;
   const scopeLabel = context.context.scope === 'series' ? 'toda la serie' : 'esta ocurrencia';
-  if (context.context.currentView === 'data') {
-    await replyWithDataEditor(interaction, refreshed, context.context.scope, `Horario actualizado (${scopeLabel}): dia ${day}, ${time}.`);
+  const notice = `Horario actualizado (${scopeLabel}): dia ${day}, ${time}.`;
+  if (shouldOfferPostEditDecision(refreshedWars)) {
+    await showPostEditActivationDecision(interaction, refreshed, {
+      eventIds: refreshedWars.map(war => war.id),
+      returnView: context.context.currentView === 'data' ? 'data' : 'panel',
+      notice
+    });
     return;
   }
-  await replyWithEventPanel(interaction, refreshed, context.context.scope, `Horario actualizado (${scopeLabel}): dia ${day}, ${time}.`);
+  if (context.context.currentView === 'data') {
+    await replyWithDataEditor(interaction, refreshed, context.context.scope, notice);
+    return;
+  }
+  await replyWithEventPanel(interaction, refreshed, context.context.scope, notice);
+}
+
+async function handleEventScheduleSeriesAddModal(interaction) {
+  const context = getSelectedWarContext(interaction);
+  if (!context.ok) return await safeModalReply(interaction, { content: context.message });
+
+  const time = interaction.fields.getTextInputValue('panel_event_schedule_series_time')?.trim();
+  const daysRaw = interaction.fields.getTextInputValue('panel_event_schedule_series_days')?.trim();
+
+  try {
+    const result = await addSeriesDays(context.war, interaction.channelId, time, daysRaw);
+    const targetWar = result.createdWars[0] || context.war;
+    const series = listSeriesWars(targetWar, interaction.channelId);
+    const selectedEventId = result.createdWars[0]?.id || context.context.pendingScheduleTargetEventId || context.war.id;
+
+    const summary = [];
+    if (result.addedDays.length > 0) summary.push(`Agregados: ${result.addedDays.join(', ')}`);
+    if (result.ignoredExistingDays.length > 0) summary.push(`Ya existian: ${result.ignoredExistingDays.join(', ')}`);
+    if (result.duplicateInputDays.length > 0) summary.push(`Repetidos en input: ${result.duplicateInputDays.join(', ')}`);
+    if (result.invalidTokens.length > 0) summary.push(`Invalidos: ${result.invalidTokens.join(', ')}`);
+    if (summary.length === 0) summary.push('No se agregaron dias.');
+
+    await replyWithSeriesScheduleManager(interaction, targetWar, series, selectedEventId, summary.join(' | '));
+  } catch (error) {
+    const series = listSeriesWars(context.war, interaction.channelId);
+    await replyWithSeriesScheduleManager(
+      interaction,
+      context.war,
+      series,
+      context.context.pendingScheduleTargetEventId || context.war.id,
+      error?.message || 'No se pudieron agregar dias.'
+    );
+  }
+}
+
+async function handleEventScheduleSeriesEditModal(interaction) {
+  const context = getSelectedWarContext(interaction);
+  if (!context.ok) return await safeModalReply(interaction, { content: context.message });
+
+  const targetEventId = String(context.context.pendingScheduleTargetEventId || '').trim();
+  if (!targetEventId) {
+    const series = listSeriesWars(context.war, interaction.channelId);
+    return await replyWithSeriesScheduleManager(interaction, context.war, series, context.war.id, 'Selecciona primero la ocurrencia a editar.');
+  }
+
+  const time = interaction.fields.getTextInputValue('panel_event_schedule_series_time')?.trim();
+  const dayRaw = interaction.fields.getTextInputValue('panel_event_schedule_series_day')?.trim();
+  const day = Number.parseInt(dayRaw, 10);
+
+  try {
+    const updated = await editSeriesDay(context.war, interaction.channelId, targetEventId, time, day);
+    if (updated.messageId) {
+      await refreshWarMessage(interaction, updated);
+    }
+    const series = listSeriesWars(updated, interaction.channelId);
+    await replyWithSeriesScheduleManager(interaction, updated, series, updated.id, 'Dia de la serie actualizado.');
+  } catch (error) {
+    const series = listSeriesWars(context.war, interaction.channelId);
+    await replyWithSeriesScheduleManager(interaction, context.war, series, targetEventId, error?.message || 'No se pudo editar el dia.');
+  }
 }
 
 async function replyWithRolesEditor(interaction, war, selectedRoleIndex, notice) {
@@ -278,6 +388,21 @@ async function replyWithMentionsEditor(interaction, war, scope, notice) {
     panelMessageId: messageId,
     currentView: 'mentions',
     pendingMentionRoleIds: null
+  });
+}
+
+async function replyWithSeriesScheduleManager(interaction, war, series, selectedEventId, notice) {
+  const payload = {
+    ...buildSeriesScheduleManagerPayload(war, series, {
+      selectedEventId,
+      notice
+    })
+  };
+  const messageId = await respondModalInFlow(interaction, payload);
+  setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, war.id, {
+    panelMessageId: messageId,
+    currentView: 'schedule_series',
+    pendingScheduleTargetEventId: selectedEventId || null
   });
 }
 
@@ -367,7 +492,9 @@ const EVENT_ADMIN_MODAL_ACTIONS = {
   panel_event_edit_data_basic_modal: handleEventEditDataBasicModal,
   panel_event_edit_close_modal: handleEventEditCloseModal,
   panel_event_edit_recap_modal: handleEventEditRecapModal,
-  panel_event_edit_schedule_modal: handleEventEditScheduleModal
+  panel_event_edit_schedule_modal: handleEventEditScheduleModal,
+  panel_event_schedule_series_add_modal: handleEventScheduleSeriesAddModal,
+  panel_event_schedule_series_edit_modal: handleEventScheduleSeriesEditModal
 };
 
 module.exports = {
