@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Guild {
+  id          String           @id
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  events      Event[]
+  garmothData GarmothProfile[]
+}
+
+model Event {
+  id                      String             @id
+  groupId                 String?
+  eventType               String             @default("war")
+  name                    String
+  type                    String
+  classIconSource         String             @default("bot")
+  participantDisplayStyle String             @default("modern")
+  creatorId               String?
+  guildId                 String?
+  channelId               String?
+  messageId               String?            @unique
+  dayOfWeek               Int?
+  time                    String?
+  timezone                String             @default("America/Bogota")
+  duration                Int                @default(70)
+  closeBeforeMinutes      Int                @default(0)
+  createdAt               DateTime
+  expiresAt               DateTime
+  closesAt                DateTime
+  isClosed                Boolean            @default(false)
+  guild                   Guild?             @relation(fields: [guildId], references: [id])
+  roleSlots               EventRoleSlot[]
+  participants            EventParticipant[]
+  waitlist                EventWaitlistEntry[]
+  notifyTargets           EventNotifyTarget[]
+  schedule                EventSchedule?
+  recap                   EventRecapConfig?
+
+  @@index([channelId])
+  @@index([messageId])
+  @@index([groupId])
+  @@index([createdAt])
+  @@index([channelId, createdAt])
+}
+
+model EventRoleSlot {
+  id          String                @id @default(cuid())
+  eventId     String
+  position    Int
+  name        String
+  max         Int
+  emoji       String?
+  emojiSource String?
+  event       Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  users       EventParticipant[]
+  permissions EventRolePermission[]
+
+  @@unique([eventId, name])
+  @@unique([eventId, position])
+  @@index([eventId, position])
+}
+
+model EventParticipant {
+  id          String        @id @default(cuid())
+  eventId     String
+  roleSlotId  String
+  userId      String
+  displayName String
+  isFake      Boolean       @default(false)
+  joinedAt    DateTime      @default(now())
+  event       Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  roleSlot    EventRoleSlot @relation(fields: [roleSlotId], references: [id], onDelete: Cascade)
+
+  @@unique([roleSlotId, userId])
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+model EventRolePermission {
+  id              String        @id @default(cuid())
+  roleSlotId      String
+  discordRoleId   String?
+  discordRoleName String?
+  roleSlot        EventRoleSlot @relation(fields: [roleSlotId], references: [id], onDelete: Cascade)
+
+  @@index([roleSlotId])
+}
+
+model EventWaitlistEntry {
+  id       String   @id @default(cuid())
+  eventId  String
+  position Int
+  userId   String
+  userName String
+  roleName String?
+  joinedAt DateTime @default(now())
+  isFake   Boolean  @default(false)
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@unique([eventId, position])
+  @@index([eventId, position])
+}
+
+model EventNotifyTarget {
+  id       String @id @default(cuid())
+  eventId  String
+  targetId String
+  position Int
+  event    Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, targetId])
+  @@index([eventId, position])
+}
+
+model EventSchedule {
+  eventId              String   @id
+  enabled              Boolean  @default(false)
+  mode                 String   @default("recurring")
+  lastCreatedAt        DateTime?
+  lastMessageIdDeleted DateTime?
+  event                Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+model EventRecapConfig {
+  eventId              String   @id
+  enabled              Boolean  @default(false)
+  minutesBeforeExpire  Int      @default(0)
+  messageText          String   @default("")
+  threadId             String?
+  lastPostedAt         DateTime?
+  event                Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+model GarmothProfile {
+  id               String    @id @default(cuid())
+  discordUserId    String
+  guildId          String
+  garmothProfileUrl String
+  linkedAt         DateTime
+  updatedAt        DateTime
+  characterName    String?
+  classId          Int?
+  className        String?
+  specRaw          String?
+  spec             String?
+  gearScore        Int?
+  lastSyncAt       DateTime?
+  syncStatus       String    @default("not_synced")
+  syncErrorMessage String?
+  guild            Guild     @relation(fields: [guildId], references: [id], onDelete: Restrict)
+
+  @@unique([guildId, discordUserId])
+  @@index([discordUserId])
+  @@index([guildId])
+}
