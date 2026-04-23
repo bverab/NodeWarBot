@@ -38,7 +38,14 @@ const INTERACTION_HANDLER_CUSTOM_IDS = new Set([
   'panel_confirm_icon',
   'panel_open_icon_modal',
   'panel_clear_icon',
-  'panel_delete_role'
+  'panel_delete_role',
+  'configure_pve_slots',
+  'configure_pve_access',
+  'pve_access_mode_select',
+  'pve_access_users_select',
+  'pve_access_roles_select',
+  'pve_access_save',
+  'pve_access_back'
 ]);
 
 // Punto de entrada del bot:
@@ -82,12 +89,19 @@ async function main() {
         return modalHandler(interaction);
       }
 
-      if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu()) {
+      if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isRoleSelectMenu() || interaction.isUserSelectMenu()) {
         if (INTERACTION_HANDLER_CUSTOM_IDS.has(interaction.customId) || interaction.customId.startsWith('panel_')) {
           return interactionHandler(interaction);
         }
 
-        if (interaction.isButton() && (interaction.customId.startsWith('join_') || interaction.customId.startsWith('war_'))) {
+        if (
+          interaction.isButton() &&
+          (
+            interaction.customId.startsWith('join_') ||
+            interaction.customId.startsWith('war_') ||
+            interaction.customId.startsWith('pve_')
+          )
+        ) {
           return buttonHandler(interaction);
         }
       }

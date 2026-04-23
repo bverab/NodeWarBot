@@ -1,5 +1,6 @@
 const { parseEmojiInput } = require('../../utils/emojiHelper');
 const { loadWars, updateWar } = require('../../services/warService');
+const pveService = require('../../services/pveService');
 const { getSelectedEventContext, setSelectedEventContext } = require('../../utils/eventAdminContextStore');
 const { refreshWarMessage } = require('../../commands/eventadminShared');
 const { isValidTime } = require('../../utils/cronHelper');
@@ -8,13 +9,16 @@ const {
   buildEventMentionsEditorPayload,
   buildSeriesScheduleManagerPayload,
   buildEventPanelPayload,
-  buildEventRolesEditorPayload
+  buildEventRolesEditorPayload,
+  buildPveSlotsEditorPayload,
+  buildPveEnrollmentsEditorPayload
 } = require('../../utils/eventAdminUi');
 const { addSeriesDays, editSeriesDay, listSeriesWars } = require('../../services/recurrenceSeriesService');
 const {
   shouldOfferPostEditDecision,
   showPostEditActivationDecision
 } = require('../interaction/eventAdminPanelActions');
+const { getSelectedPveContext } = require('../interaction/pveEventAdminPanelActions');
 
 async function handleEventRoleAddModal(interaction) {
   const context = getSelectedWarContext(interaction);
@@ -131,13 +135,19 @@ async function handleEventEditDataBasicModal(interaction) {
 
   const name = interaction.fields.getTextInputValue('panel_event_edit_data_name')?.trim();
   const type = interaction.fields.getTextInputValue('panel_event_edit_data_type')?.trim() || '';
+  const durationRaw = interaction.fields.getTextInputValue('panel_event_edit_data_duration')?.trim();
+  const duration = Number.parseInt(durationRaw, 10);
   if (!name) return await safeModalReply(interaction, { content: 'Nombre invalido.' });
+  if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
+    return await safeModalReply(interaction, { content: 'Duracion invalida. Debe estar entre 1 y 1440.' });
+  }
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
   for (const war of targets) {
     war.name = name;
     war.type = type || war.type;
+    war.duration = duration;
     const updated = await updateWar(war);
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
@@ -340,6 +350,150 @@ async function handleEventScheduleSeriesEditModal(interaction) {
   }
 }
 
+async function handlePveSlotAddModal(interaction) {
+  const context = getSelectedPveContext(interaction);
+  if (!context.ok) return await safeModalReply(interaction, { content: context.message });
+
+  const time = interaction.fields.getTextInputValue('panel_pve_slot_time')?.trim();
+  const capacity = interaction.fields.getTextInputValue('panel_pve_slot_capacity')?.trim();
+
+  try {
+    await pveService.addSlot(context.war.id, time, capacity);
+    const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+    if (refreshed.messageId) await refreshWarMessage(interaction, refreshed);
+    const view = await pveService.getEventPveView(refreshed);
+    const selectedOptionId = view.options[view.options.length - 1]?.id || null;
+    const payload = buildPveSlotsEditorPayload(refreshed, view, {
+      selectedOptionId,
+      notice: 'Horario agregado correctamente.'
+    });
+    const messageId = await respondModalInFlow(interaction, payload);
+    setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, refreshed.id, {
+      panelMessageId: messageId,
+      currentView: 'pve_slots',
+      pendingPveOptionId: selectedOptionId
+    });
+  } catch (error) {
+    await safeModalReply(interaction, { content: error?.message || 'No se pudo agregar el horario.' });
+  }
+}
+
+async function handlePveSlotEditModal(interaction) {
+  const context = getSelectedPveContext(interaction);
+  if (!context.ok) return await safeModalReply(interaction, { content: context.message });
+
+  const optionId = context.context.pendingPveOptionId;
+  if (!optionId) return await safeModalReply(interaction, { content: 'Selecciona un horario primero.' });
+
+  const time = interaction.fields.getTextInputValue('panel_pve_slot_time')?.trim();
+  const capacity = interaction.fields.getTextInputValue('panel_pve_slot_capacity')?.trim();
+
+  try {
+    await pveService.editSlot(optionId, { time, capacity });
+    const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+    if (refreshed.messageId) await refreshWarMessage(interaction, refreshed);
+    const view = await pveService.getEventPveView(refreshed);
+    const payload = buildPveSlotsEditorPayload(refreshed, view, {
+      selectedOptionId: optionId,
+      notice: 'Horario actualizado correctamente.'
+    });
+    const messageId = await respondModalInFlow(interaction, payload);
+    setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, refreshed.id, {
+      panelMessageId: messageId,
+      currentView: 'pve_slots',
+      pendingPveOptionId: optionId
+    });
+  } catch (error) {
+    await safeModalReply(interaction, { content: error?.message || 'No se pudo editar el horario.' });
+  }
+}
+
+function findSlotByTime(options, time) {
+  return options.find(slot => String(slot.time) === String(time));
+}
+
+async function handlePveEnrollMoveModal(interaction) {
+  const context = getSelectedPveContext(interaction);
+  if (!context.ok) return await safeModalReply(interaction, { content: context.message });
+
+  const selectedOptionId = context.context.pendingPveOptionId;
+  const selectedKey = String(context.context.pendingPveEnrollmentKey || '');
+  const [typeRaw, userIdRaw] = selectedKey.split(':');
+  const userId = String(userIdRaw || '').trim();
+  if (!selectedOptionId || !userId) {
+    return await safeModalReply(interaction, { content: 'Selecciona un inscrito/filler primero.' });
+  }
+
+  const targetTime = interaction.fields.getTextInputValue('panel_pve_enroll_target_time')?.trim();
+  const view = await pveService.getEventPveView(context.war);
+  const targetSlot = findSlotByTime(view.options, targetTime);
+  if (!targetSlot) {
+    return await safeModalReply(interaction, { content: 'No existe un horario con ese HH:mm en este evento.' });
+  }
+
+  const moved = await pveService.moveEnrollment(context.war.id, selectedOptionId, targetSlot.id, userId);
+  const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+  if (refreshed.messageId) await refreshWarMessage(interaction, refreshed);
+
+  const updatedView = await pveService.getEventPveView(refreshed);
+  const payload = buildPveEnrollmentsEditorPayload(refreshed, updatedView, {
+    selectedOptionId: targetSlot.id,
+    notice: moved.ok ? 'Inscripcion movida correctamente.' : `No se pudo mover (${moved.reason}).`
+  });
+  const messageId = await respondModalInFlow(interaction, payload);
+  setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, refreshed.id, {
+    panelMessageId: messageId,
+    currentView: 'pve_enrollments',
+    pendingPveOptionId: targetSlot.id,
+    pendingPveEnrollmentKey: null
+  });
+}
+
+async function handlePveEnrollAddModal(interaction) {
+  const context = getSelectedPveContext(interaction);
+  if (!context.ok) return await safeModalReply(interaction, { content: context.message });
+
+  const userId = interaction.fields.getTextInputValue('panel_pve_enroll_add_user_id')?.trim();
+  const displayName = interaction.fields.getTextInputValue('panel_pve_enroll_add_display')?.trim();
+  const typeRaw = interaction.fields.getTextInputValue('panel_pve_enroll_add_type')?.trim();
+  const targetTime = interaction.fields.getTextInputValue('panel_pve_enroll_add_time')?.trim();
+
+  if (!userId || !displayName) {
+    return await safeModalReply(interaction, { content: 'userId y nickname son requeridos.' });
+  }
+
+  const enrollmentType = String(typeRaw || 'PRIMARY').toUpperCase() === 'FILLER' ? 'FILLER' : 'PRIMARY';
+  const view = await pveService.getEventPveView(context.war);
+  const fallbackSlotId = context.context.pendingPveOptionId || view.options[0]?.id || null;
+  const targetSlot = targetTime ? findSlotByTime(view.options, targetTime) : null;
+  const optionId = targetSlot?.id || fallbackSlotId;
+  if (!optionId) {
+    return await safeModalReply(interaction, { content: 'No hay horarios disponibles para agregar inscripcion.' });
+  }
+
+  const created = await pveService.adminAddEnrollment(context.war.id, optionId, {
+    userId,
+    displayName,
+    isFake: false
+  }, enrollmentType);
+
+  const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+  if (refreshed.messageId) await refreshWarMessage(interaction, refreshed);
+
+  const updatedView = await pveService.getEventPveView(refreshed);
+  const payload = buildPveEnrollmentsEditorPayload(refreshed, updatedView, {
+    selectedOptionId: optionId,
+    notice: created.ok ? `Inscripcion agregada (${enrollmentType}).` : `No se pudo agregar (${created.reason}).`
+  });
+  const messageId = await respondModalInFlow(interaction, payload);
+  setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, refreshed.id, {
+    panelMessageId: messageId,
+    currentView: 'pve_enrollments',
+    pendingPveOptionId: optionId,
+    pendingPveEnrollmentKey: null
+  });
+}
+
 async function replyWithRolesEditor(interaction, war, selectedRoleIndex, notice) {
   const payload = {
     ...buildEventRolesEditorPayload(war, selectedRoleIndex),
@@ -494,7 +648,11 @@ const EVENT_ADMIN_MODAL_ACTIONS = {
   panel_event_edit_recap_modal: handleEventEditRecapModal,
   panel_event_edit_schedule_modal: handleEventEditScheduleModal,
   panel_event_schedule_series_add_modal: handleEventScheduleSeriesAddModal,
-  panel_event_schedule_series_edit_modal: handleEventScheduleSeriesEditModal
+  panel_event_schedule_series_edit_modal: handleEventScheduleSeriesEditModal,
+  panel_pve_slot_add_modal: handlePveSlotAddModal,
+  panel_pve_slot_edit_modal: handlePveSlotEditModal,
+  panel_pve_enroll_move_modal: handlePveEnrollMoveModal,
+  panel_pve_enroll_add_modal: handlePveEnrollAddModal
 };
 
 module.exports = {

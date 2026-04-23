@@ -17,6 +17,15 @@ function setSelectedEventContext(userId, guildId, channelId, eventId, options = 
     pendingMentionRoleIds: Array.isArray(options.pendingMentionRoleIds)
       ? options.pendingMentionRoleIds
       : (Array.isArray(previous.pendingMentionRoleIds) ? previous.pendingMentionRoleIds : null),
+    pendingAllowedUserIds: Array.isArray(options.pendingAllowedUserIds)
+      ? options.pendingAllowedUserIds
+      : (Array.isArray(previous.pendingAllowedUserIds) ? previous.pendingAllowedUserIds : null),
+    pendingPveOptionId: Object.prototype.hasOwnProperty.call(options, 'pendingPveOptionId')
+      ? options.pendingPveOptionId
+      : (previous.pendingPveOptionId || null),
+    pendingPveEnrollmentKey: Object.prototype.hasOwnProperty.call(options, 'pendingPveEnrollmentKey')
+      ? options.pendingPveEnrollmentKey
+      : (previous.pendingPveEnrollmentKey || null),
     pendingIconSource: Object.prototype.hasOwnProperty.call(options, 'pendingIconSource')
       ? options.pendingIconSource
       : (previous.pendingIconSource || null),

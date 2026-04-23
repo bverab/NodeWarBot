@@ -4,8 +4,10 @@
   ButtonStyle,
   EmbedBuilder,
   RoleSelectMenuBuilder,
-  StringSelectMenuBuilder
+  StringSelectMenuBuilder,
+  UserSelectMenuBuilder
 } = require('discord.js');
+const { normalizeEventType } = require('../constants/eventTypes');
 
 const DAY_NAMES_SHORT = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
 
@@ -65,6 +67,10 @@ function buildEventSelectorPayload(wars) {
 }
 
 function buildEventPanelPayload(war, options = {}) {
+  if (normalizeEventType(war.eventType) === 'pve') {
+    return buildPveEventPanelPayload(war, options);
+  }
+
   const embed = new EmbedBuilder()
     .setTitle(war.name || 'Evento')
     .setDescription(buildPanelDescription(war, options.scope))
@@ -98,6 +104,223 @@ function buildEventPanelPayload(war, options = {}) {
   );
 
   return { embeds: [embed], components: [row1, row2] };
+}
+
+function buildPveEventPanelPayload(war, options = {}) {
+  const embed = new EmbedBuilder()
+    .setTitle(`${war.name || 'Evento PvE'} (PvE)`)
+    .setDescription(buildPanelDescription(war, options.scope))
+    .setColor(0x2ecc71);
+
+  if (options.details) {
+    embed.addFields(
+      { name: 'Horarios', value: String(Array.isArray(war.timeSlots) ? war.timeSlots.length : 0), inline: true },
+      { name: 'Acceso', value: String(war.accessMode || 'OPEN'), inline: true },
+      { name: 'ID interno', value: `\`${war.id}\``, inline: true }
+    );
+  }
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_event_view_details').setLabel('Ver detalles').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_pve_edit_slots').setLabel('Editar horarios').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_pve_edit_access').setLabel('Editar acceso').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_pve_manage_enrollments').setLabel('Gestionar inscritos').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('panel_event_edit_data').setLabel('Editar datos').setStyle(ButtonStyle.Secondary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('panel_event_finish_keep').setLabel('Guardar sin publicar').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_event_finish_publish').setLabel('Guardar y publicar').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('panel_event_cancel').setLabel('Cancelar evento').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('panel_event_back_to_list').setLabel('Volver a lista').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
+  );
+
+  return { embeds: [embed], components: [row1, row2] };
+}
+
+function buildPveAccessEditorPayload(war, options = {}) {
+  const notice = String(options.notice || '');
+  const accessMode = String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
+  const allowedUserIds = Array.isArray(war.allowedUserIds) ? war.allowedUserIds : [];
+  const allowedText = allowedUserIds.length > 0 ? allowedUserIds.map(id => `<@${id}>`).join(', ') : 'Sin usuarios permitidos';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Acceso PvE: ${war.name}`)
+    .setDescription(`Modo actual: **${accessMode}**`)
+    .setColor(0x2ecc71)
+    .addFields({ name: 'Usuarios permitidos', value: truncate(allowedText, 1024), inline: false });
+
+  if (notice) embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
+
+  const modeMenu = new StringSelectMenuBuilder()
+    .setCustomId('panel_pve_access_mode_select')
+    .setPlaceholder('Selecciona modo de acceso')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions([
+      { label: 'Open', value: 'OPEN', default: accessMode === 'OPEN' },
+      { label: 'Restricted', value: 'RESTRICTED', default: accessMode === 'RESTRICTED' }
+    ]);
+
+  const usersPicker = new UserSelectMenuBuilder()
+    .setCustomId('panel_pve_access_users_select')
+    .setPlaceholder('Selecciona usuarios permitidos')
+    .setMinValues(0)
+    .setMaxValues(25);
+
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(modeMenu),
+      new ActionRowBuilder().addComponents(usersPicker),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('panel_pve_access_back').setLabel('Volver').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
+      )
+    ]
+  };
+}
+
+function buildPveSlotsEditorPayload(war, view = {}, options = {}) {
+  const notice = String(options.notice || '');
+  const selectedOptionId = options.selectedOptionId ? String(options.selectedOptionId) : null;
+  const slotOptions = Array.isArray(view.options) ? view.options : [];
+  const selected = slotOptions.find(slot => String(slot.id) === selectedOptionId) || slotOptions[0] || null;
+  const selectedText = selected
+    ? `⏰ ${selected.time} (${selected.enrollments.length}/${selected.capacity})`
+    : 'Sin horario seleccionado';
+
+  const lines = slotOptions.length > 0
+    ? slotOptions.map((slot, index) => {
+      const marker = selected && selected.id === slot.id ? '-> ' : '';
+      return `${marker}${index + 1}. ⏰ ${slot.time} (${slot.enrollments.length}/${slot.capacity})`;
+    })
+    : ['Sin horarios configurados.'];
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Horarios PvE: ${war.name}`)
+    .setDescription(lines.join('\n'))
+    .setColor(0x2ecc71)
+    .addFields({ name: 'Seleccion actual', value: selectedText, inline: false });
+
+  if (notice) embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
+
+  const components = [];
+  if (slotOptions.length > 0) {
+    const slotMenu = new StringSelectMenuBuilder()
+      .setCustomId('panel_pve_slots_select')
+      .setPlaceholder('Selecciona horario')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(slotOptions.slice(0, 25).map(slot => ({
+        label: truncate(`${slot.time} (${slot.enrollments.length}/${slot.capacity})`, 100),
+        description: truncate(`ID ${slot.id}`, 100),
+        value: String(slot.id),
+        default: selected ? selected.id === slot.id : false
+      })));
+    components.push(new ActionRowBuilder().addComponents(slotMenu));
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('panel_pve_slot_add').setLabel('Agregar').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('panel_pve_slot_edit').setLabel('Editar').setStyle(ButtonStyle.Secondary).setDisabled(!selected),
+      new ButtonBuilder().setCustomId('panel_pve_slot_delete').setLabel('Eliminar').setStyle(ButtonStyle.Danger).setDisabled(!selected),
+      new ButtonBuilder().setCustomId('panel_pve_slot_up').setLabel('Subir').setStyle(ButtonStyle.Primary).setDisabled(!selected),
+      new ButtonBuilder().setCustomId('panel_pve_slot_down').setLabel('Bajar').setStyle(ButtonStyle.Primary).setDisabled(!selected)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('panel_pve_slots_back').setLabel('Volver').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
+    )
+  );
+
+  return {
+    embeds: [embed],
+    components
+  };
+}
+
+function buildPveEnrollmentsEditorPayload(war, view = {}, options = {}) {
+  const notice = String(options.notice || '');
+  const selectedOptionId = options.selectedOptionId ? String(options.selectedOptionId) : null;
+  const selectedEnrollmentKey = options.selectedEnrollmentKey ? String(options.selectedEnrollmentKey) : null;
+  const slotOptions = Array.isArray(view.options) ? view.options : [];
+  const selectedSlot = slotOptions.find(slot => String(slot.id) === selectedOptionId) || slotOptions[0] || null;
+
+  const entries = selectedSlot
+    ? [
+      ...(Array.isArray(selectedSlot.enrollments) ? selectedSlot.enrollments.map(entry => ({ ...entry, enrollmentType: 'PRIMARY' })) : []),
+      ...(Array.isArray(selectedSlot.fillers) ? selectedSlot.fillers.map(entry => ({ ...entry, enrollmentType: 'FILLER' })) : [])
+    ]
+    : [];
+
+  const selectedEntry = entries.find(entry => `${entry.enrollmentType}:${entry.userId}` === selectedEnrollmentKey) || null;
+  const selectedEntryText = selectedEntry
+    ? `${selectedEntry.enrollmentType === 'FILLER' ? 'Filler' : 'Inscrito'}: ${selectedEntry.displayName} (${selectedEntry.userId})`
+    : 'Sin participante seleccionado';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Inscripciones PvE: ${war.name}`)
+    .setDescription(
+      selectedSlot
+        ? `Horario: ⏰ ${selectedSlot.time}\nInscritos: ${selectedSlot.enrollments.length}/${selectedSlot.capacity}\nFillers: ${selectedSlot.fillers.length}`
+        : 'Sin horarios disponibles.'
+    )
+    .setColor(0x2ecc71)
+    .addFields({ name: 'Participante seleccionado', value: truncate(selectedEntryText, 1024), inline: false });
+
+  if (notice) embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
+
+  const components = [];
+  if (slotOptions.length > 0) {
+    const slotMenu = new StringSelectMenuBuilder()
+      .setCustomId('panel_pve_enroll_slot_select')
+      .setPlaceholder('Selecciona horario')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(slotOptions.slice(0, 25).map(slot => ({
+        label: truncate(`${slot.time} (${slot.enrollments.length}/${slot.capacity})`, 100),
+        value: String(slot.id),
+        default: selectedSlot ? slot.id === selectedSlot.id : false
+      })));
+    components.push(new ActionRowBuilder().addComponents(slotMenu));
+  }
+
+  if (entries.length > 0) {
+    const enrollmentMenu = new StringSelectMenuBuilder()
+      .setCustomId('panel_pve_enroll_user_select')
+      .setPlaceholder('Selecciona inscrito/filler')
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(entries.slice(0, 25).map(entry => ({
+        label: truncate(`${entry.enrollmentType === 'FILLER' ? '[F]' : '[I]'} ${entry.displayName}`, 100),
+        description: truncate(entry.userId, 100),
+        value: `${entry.enrollmentType}:${entry.userId}`,
+        default: selectedEntry ? `${entry.enrollmentType}:${entry.userId}` === selectedEnrollmentKey : false
+      })));
+    components.push(new ActionRowBuilder().addComponents(enrollmentMenu));
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('panel_pve_enroll_add').setLabel('Agregar manual').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('panel_pve_enroll_remove').setLabel('Quitar').setStyle(ButtonStyle.Danger).setDisabled(!selectedEntry),
+      new ButtonBuilder().setCustomId('panel_pve_enroll_move').setLabel('Mover').setStyle(ButtonStyle.Primary).setDisabled(!selectedEntry),
+      new ButtonBuilder().setCustomId('panel_pve_enroll_promote').setLabel('Promover filler').setStyle(ButtonStyle.Secondary)
+        .setDisabled(!selectedEntry || selectedEntry.enrollmentType !== 'FILLER')
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('panel_pve_enrollments_back').setLabel('Volver').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
+    )
+  );
+
+  return {
+    embeds: [embed],
+    components
+  };
 }
 
 function buildEventRolesEditorPayload(war, selectedRoleIndex = null, notice = '') {
@@ -686,6 +909,10 @@ function truncate(text, max) {
 module.exports = {
   buildEventSelectorPayload,
   buildEventPanelPayload,
+  buildPveEventPanelPayload,
+  buildPveAccessEditorPayload,
+  buildPveSlotsEditorPayload,
+  buildPveEnrollmentsEditorPayload,
   buildEventRolesEditorPayload,
   buildRolePermissionsPickerPayload,
   buildRoleIconPickerPayload,

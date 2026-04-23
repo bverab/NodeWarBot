@@ -1,9 +1,14 @@
 const {
   ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ModalBuilder,
+  UserSelectMenuBuilder,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle
 } = require('discord.js');
+const { normalizeEventType } = require('../constants/eventTypes');
 const {
   getDraftWar,
   getScheduleTemp,
@@ -11,6 +16,7 @@ const {
 } = require('../utils/draftSessionStore');
 const { ROLE_PANEL_ACTIONS } = require('./interaction/rolePanelActions');
 const { EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/eventAdminPanelActions');
+const { PVE_EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/pveEventAdminPanelActions');
 
 module.exports = async interaction => {
   const { customId } = interaction;
@@ -28,6 +34,12 @@ module.exports = async interaction => {
     if (customId === 'edit_schedule_mode') return await handleEditScheduleMode(interaction);
     if (customId === 'edit_schedule_days') return await handleEditScheduleDays(interaction);
     if (customId === 'edit_schedule_mentions') return await handleEditScheduleMentions(interaction);
+    if (customId === 'configure_pve_slots') return await handleConfigurePveSlots(interaction);
+    if (customId === 'configure_pve_access') return await handleConfigurePveAccess(interaction);
+    if (customId === 'pve_access_mode_select') return await handlePveAccessModeSelect(interaction);
+    if (customId === 'pve_access_users_select' || customId === 'pve_access_roles_select') return await handlePveAccessUsersSelect(interaction);
+    if (customId === 'pve_access_save') return await handlePveAccessSave(interaction);
+    if (customId === 'pve_access_back') return await handlePveAccessBack(interaction);
 
     const rolePanelHandler = ROLE_PANEL_ACTIONS[customId];
     if (rolePanelHandler) {
@@ -37,6 +49,11 @@ module.exports = async interaction => {
     const eventPanelHandler = EVENT_ADMIN_PANEL_ACTIONS[customId];
     if (eventPanelHandler) {
       return await eventPanelHandler(interaction);
+    }
+
+    const pveEventPanelHandler = PVE_EVENT_ADMIN_PANEL_ACTIONS[customId];
+    if (pveEventPanelHandler) {
+      return await pveEventPanelHandler(interaction);
     }
   } catch (error) {
     console.error('Error en interactionHandler:', error);
@@ -76,14 +93,152 @@ async function handlePublishWar(interaction) {
     return await interaction.reply({ content: '❌ Solo el creador puede publicar', flags: 64 });
   }
 
-  if (warData.roles.length === 0) {
-    return await interaction.reply({ content: '❌ Agrega al menos 1 rol antes de publicar', flags: 64 });
+  if (normalizeEventType(warData.eventType) === 'pve') {
+    if (!Array.isArray(warData.timeSlots) || warData.timeSlots.length === 0) {
+      return await interaction.reply({ content: '? Configura al menos 1 horario PvE antes de publicar', flags: 64 });
+    }
+  } else if (warData.roles.length === 0) {
+    return await interaction.reply({ content: '? Agrega al menos 1 rol antes de publicar', flags: 64 });
   }
 
   await interaction.deferUpdate();
 
   const { showScheduleModeSelector } = require('./modalHandler');
   await showScheduleModeSelector(interaction, warData);
+}
+
+async function handleConfigurePveSlots(interaction) {
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData) {
+    return await interaction.reply({ content: 'Sesion expirada', flags: 64 });
+  }
+  if (normalizeEventType(warData.eventType) !== 'pve') {
+    return await interaction.reply({ content: 'Esta accion solo aplica a eventos PvE.', flags: 64 });
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId('configure_pve_slots_modal')
+    .setTitle(`Configurar horarios PvE: ${warData.name}`);
+
+  const timesInput = new TextInputBuilder()
+    .setCustomId('pve_slots_times_input')
+    .setLabel('Horarios (HH:mm separados por ;)')
+    .setPlaceholder('20:00;21:30;23:00')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(300);
+
+  const currentTimes = Array.isArray(warData.timeSlots)
+    ? warData.timeSlots.map(slot => slot.time).filter(Boolean).join(';')
+    : '';
+  if (currentTimes) {
+    timesInput.setValue(currentTimes.slice(0, 300));
+  }
+
+  const capacityInput = new TextInputBuilder()
+    .setCustomId('pve_slots_capacity_input')
+    .setLabel('Cupo por horario')
+    .setPlaceholder('Ej: 5')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(3)
+    .setValue(String(Number.isInteger(warData.slotCapacity) ? warData.slotCapacity : 5));
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(timesInput),
+    new ActionRowBuilder().addComponents(capacityInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+async function handleConfigurePveAccess(interaction) {
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData) {
+    return await interaction.reply({ content: 'Sesion expirada', flags: 64 });
+  }
+  if (normalizeEventType(warData.eventType) !== 'pve') {
+    return await interaction.reply({ content: 'Esta accion solo aplica a eventos PvE.', flags: 64 });
+  }
+
+  const accessMode = String(warData.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
+  const allowedUserIds = Array.isArray(warData.allowedUserIds) ? warData.allowedUserIds : [];
+  const selectedText = allowedUserIds.length
+    ? allowedUserIds.map(id => `<@${id}>`).join(', ')
+    : 'Sin usuarios seleccionados';
+
+  const modeMenu = new StringSelectMenuBuilder()
+    .setCustomId('pve_access_mode_select')
+    .setPlaceholder('Selecciona el modo de acceso')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions([
+      { label: 'Open', value: 'OPEN', default: accessMode === 'OPEN' },
+      { label: 'Restricted', value: 'RESTRICTED', default: accessMode === 'RESTRICTED' }
+    ]);
+
+  const userPicker = new UserSelectMenuBuilder()
+    .setCustomId('pve_access_users_select')
+    .setPlaceholder('Usuarios permitidos (solo para Restricted)')
+    .setMinValues(0)
+    .setMaxValues(25);
+
+  await interaction.update({
+    content: `Configurar acceso PvE\nModo actual: **${accessMode}**\nUsuarios permitidos: ${selectedText}`,
+    embeds: [],
+    components: [
+      new ActionRowBuilder().addComponents(modeMenu),
+      new ActionRowBuilder().addComponents(userPicker),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('pve_access_save')
+          .setLabel('Guardar acceso')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('pve_access_back')
+          .setLabel('Volver')
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ]
+  });
+}
+
+async function handlePveAccessModeSelect(interaction) {
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData) {
+    return await interaction.update({ content: 'Sesion expirada', components: [] });
+  }
+  warData.accessMode = interaction.values?.[0] === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
+  await handleConfigurePveAccess(interaction);
+}
+
+async function handlePveAccessUsersSelect(interaction) {
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData) {
+    return await interaction.update({ content: 'Sesion expirada', components: [] });
+  }
+  warData.allowedUserIds = (interaction.values || []).map(String);
+  await handleConfigurePveAccess(interaction);
+}
+
+async function handlePveAccessSave(interaction) {
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData) {
+    return await interaction.update({ content: 'Sesion expirada', components: [] });
+  }
+  const { showDraftEditor } = require('./modalHandler');
+  await interaction.deferUpdate();
+  await showDraftEditor(interaction, warData, 'Acceso PvE actualizado.');
+}
+
+async function handlePveAccessBack(interaction) {
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData) {
+    return await interaction.update({ content: 'Sesion expirada', components: [] });
+  }
+  const { showDraftEditor } = require('./modalHandler');
+  await interaction.deferUpdate();
+  await showDraftEditor(interaction, warData);
 }
 
 async function handleCancelWar(interaction) {
@@ -261,3 +416,4 @@ async function safeInteractionErrorResponse(interaction) {
     if (error?.code === 10062 || error?.code === 40060) return;
   }
 }
+

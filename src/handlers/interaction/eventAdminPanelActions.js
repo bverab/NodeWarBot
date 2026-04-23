@@ -1341,9 +1341,18 @@ async function showEditDataBasicModal(interaction, war) {
     .setMaxLength(100)
     .setValue(String(war.type || '').slice(0, 100));
 
+  const durationInput = new TextInputBuilder()
+    .setCustomId('panel_event_edit_data_duration')
+    .setLabel('Duracion en minutos (1-1440)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(4)
+    .setValue(String(Number.isInteger(war.duration) ? war.duration : 70));
+
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(typeInput)
+    new ActionRowBuilder().addComponents(typeInput),
+    new ActionRowBuilder().addComponents(durationInput)
   );
 
   await interaction.showModal(modal);
