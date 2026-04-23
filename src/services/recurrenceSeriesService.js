@@ -1,6 +1,8 @@
 const warService = require('./warService');
 const { normalizeWar } = require('../utils/warState');
 const { isValidTime } = require('../utils/cronHelper');
+const { normalizeEventType } = require('../constants/eventTypes');
+const pveService = require('./pveService');
 
 function listSeriesWars(baseWar, channelId) {
   if (!baseWar?.groupId) return [baseWar].filter(Boolean);
@@ -135,6 +137,9 @@ async function addSeriesDays(baseWar, channelId, time, daysInputRaw) {
     }
     const newWar = createSeriesWarFromSource(source, dayOfWeek, time);
     await warService.createWar(newWar);
+    if (normalizeEventType(source.eventType) === 'pve') {
+      await pveService.cloneSlots(source.id, newWar.id);
+    }
     createdWars.push(newWar);
     existingDays.add(dayOfWeek);
   }
@@ -182,6 +187,11 @@ async function editSeriesDay(baseWar, channelId, targetEventId, time, dayOfWeek)
     return updated;
   }
 
+  let clonedSlots = null;
+  if (normalizeEventType(target.eventType) === 'pve') {
+    clonedSlots = await pveService.getEventSlots(target.id);
+  }
+
   const index = wars.findIndex(war => war.id === target.id);
   const updated = normalizeWar({
     ...target,
@@ -191,6 +201,17 @@ async function editSeriesDay(baseWar, channelId, targetEventId, time, dayOfWeek)
   });
   wars[index] = updated;
   await warService.saveWars(wars);
+  if (clonedSlots) {
+    await pveService.saveEventSlots(
+      updated.id,
+      clonedSlots.map((slot, position) => ({
+        position,
+        label: slot.label,
+        time: slot.time,
+        capacity: slot.capacity
+      }))
+    );
+  }
   return updated;
 }
 

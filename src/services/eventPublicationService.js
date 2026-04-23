@@ -1,14 +1,50 @@
-const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
+const { normalizeEventType } = require('../constants/eventTypes');
+const { buildEventMessagePayload } = require('./eventRenderService');
 const warService = require('./warService');
+const pveService = require('./pveService');
 
 function normalizeNotifyRoles(war) {
+  if (normalizeEventType(war.eventType) === 'pve' && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED') {
+    return Array.from(new Set((Array.isArray(war.allowedUserIds) ? war.allowedUserIds : []).map(String).filter(Boolean)));
+  }
   return Array.from(new Set((Array.isArray(war.notifyRoles) ? war.notifyRoles : []).map(String).filter(Boolean)));
 }
 
-function buildPublicationContent(notifyRoles) {
-  return notifyRoles.length > 0
-    ? notifyRoles.map(roleId => `<@&${roleId}>`).join(' ')
-    : 'Evento publicado manualmente';
+function buildPublicationContent(notifyTargets, targetType = 'roles') {
+  if (notifyTargets.length <= 0) {
+    return 'Evento publicado manualmente';
+  }
+  if (targetType === 'users') {
+    return notifyTargets.map(userId => `<@${userId}>`).join(' ');
+  }
+  return notifyTargets.map(roleId => `<@&${roleId}>`).join(' ');
+}
+
+function buildAllowedMentions(notifyTargets, targetType = 'roles') {
+  if (notifyTargets.length <= 0) {
+    return { parse: [] };
+  }
+  if (targetType === 'users') {
+    return { parse: [], users: notifyTargets };
+  }
+  return { parse: [], roles: notifyTargets };
+}
+
+function getNotifyTargetType(war) {
+  const isRestrictedPve = normalizeEventType(war.eventType) === 'pve'
+    && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
+  return isRestrictedPve ? 'users' : 'roles';
+}
+
+function buildPublicationMentions(war) {
+  const notifyTargets = normalizeNotifyRoles(war);
+  const targetType = getNotifyTargetType(war);
+  return {
+    notifyTargets,
+    targetType,
+    content: buildPublicationContent(notifyTargets, targetType),
+    allowedMentions: buildAllowedMentions(notifyTargets, targetType)
+  };
 }
 
 async function publishOrRefreshWar(interaction, war) {
@@ -37,19 +73,18 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
       : war.schedule
   };
 
-  const notifyRoles = normalizeNotifyRoles(war);
-  const content = buildPublicationContent(notifyRoles);
-  const allowedMentions = notifyRoles.length > 0 ? { parse: [], roles: notifyRoles } : { parse: [] };
+  const { content, allowedMentions } = buildPublicationMentions(war);
   const isExpired = Number.isFinite(normalizedWar.expiresAt) && normalizedWar.expiresAt > 0 && nowMs >= normalizedWar.expiresAt;
   const mustRepublish = shouldActivate && (isExpired || !normalizedWar.messageId);
 
   if (normalizedWar.messageId && !mustRepublish) {
     const existing = await channel.messages.fetch(normalizedWar.messageId).catch(() => null);
     if (existing) {
+      const payload = await buildEventMessagePayload(normalizedWar);
       await existing.edit({
         content,
         allowedMentions,
-        ...buildWarMessagePayload(normalizedWar)
+        ...payload
       });
       const persisted = shouldActivate ? await warService.updateWar(normalizedWar) : normalizedWar;
       return { ok: true, status: 'updated', war: persisted };
@@ -90,10 +125,15 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
     }
   };
 
+  if (normalizeEventType(war.eventType) === 'pve' && shouldResetRoster) {
+    await pveService.resetEventEnrollments(war.id);
+  }
+
+  const payload = await buildEventMessagePayload(warForPublish);
   const message = await channel.send({
     content,
     allowedMentions,
-    ...buildWarMessagePayload(warForPublish)
+    ...payload
   });
 
   warForPublish.messageId = message.id;

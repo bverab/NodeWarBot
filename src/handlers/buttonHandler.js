@@ -3,6 +3,9 @@ const {
   updateWarByMessageId,
   deleteWarByMessageId
 } = require('../services/warService');
+const { normalizeEventType } = require('../constants/eventTypes');
+const { buildEventMessagePayload, buildEventListText } = require('../services/eventRenderService');
+const pveService = require('../services/pveService');
 const {
   getRoleByName,
   findParticipantRole,
@@ -12,7 +15,6 @@ const {
   removeFromWaitlist,
   pickWaitlistForRole
 } = require('../utils/warState');
-const { buildWarMessagePayload, buildWarListText } = require('../utils/warMessageBuilder');
 const { notifyPromotion } = require('../utils/promotionNotifier');
 
 // Maneja botones del mensaje publico del evento:
@@ -40,6 +42,14 @@ module.exports = async interaction => {
 
     if (interaction.customId.startsWith('join_')) {
       return await handleJoinRole(interaction);
+    }
+
+    if (interaction.customId.startsWith('pve_join_')) {
+      return await handleJoinPveSlot(interaction);
+    }
+
+    if (interaction.customId === 'pve_leave') {
+      return await handleLeavePveSlot(interaction);
     }
   } catch (error) {
     console.error('Error en buttonHandler:', error);
@@ -70,7 +80,7 @@ async function handleToggleClose(interaction) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
 
-  await interaction.message.edit(buildWarMessagePayload(war));
+  await interaction.message.edit(await buildEventMessagePayload(war));
   await interaction.followUp({
     content: war.isClosed ? 'Inscripciones cerradas' : 'Inscripciones abiertas',
     flags: 64
@@ -99,7 +109,7 @@ async function handleViewList(interaction) {
   }
 
   await interaction.followUp({
-    content: buildWarListText(war),
+    content: await buildEventListText(war),
     flags: 64
   });
 }
@@ -151,7 +161,10 @@ async function handleJoinRole(interaction) {
   const participant = {
     userId: interaction.user.id,
     displayName: interaction.member?.displayName || interaction.user.username,
-    isFake: false
+    isFake: false,
+    userRoleIds: interaction.member?.roles?.cache
+      ? Array.from(interaction.member.roles.cache.keys()).map(String)
+      : []
   };
 
   const { war, result } = await updateWarByMessageId(interaction.message.id, state => {
@@ -232,7 +245,7 @@ async function handleJoinRole(interaction) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
 
-  await interaction.message.edit(buildWarMessagePayload(war));
+  await interaction.message.edit(await buildEventMessagePayload(war));
 
   const responseByType = {
     missing_role: 'El rol no existe',
@@ -252,6 +265,78 @@ async function handleJoinRole(interaction) {
   for (const promotedUser of result.promotedUsers || []) {
     await notifyPromotion(interaction, war, promotedUser);
   }
+}
+
+async function handleJoinPveSlot(interaction) {
+  const event = getWarByMessageId(interaction.message.id);
+  if (!event) {
+    return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
+  }
+  if (normalizeEventType(event.eventType) !== 'pve') {
+    return await interaction.followUp({ content: 'Este evento no usa horarios PvE.', flags: 64 });
+  }
+
+  const optionId = String(interaction.customId || '').replace('pve_join_', '').trim();
+  if (!optionId) {
+    return await interaction.followUp({ content: 'Horario invalido.', flags: 64 });
+  }
+
+  const participant = {
+    userId: interaction.user.id,
+    displayName: interaction.member?.displayName || interaction.user.username,
+    isFake: false
+  };
+
+  const result = await pveService.joinSlot(event.id, optionId, participant);
+
+  if (result.ok) {
+    const refreshed = getWarByMessageId(interaction.message.id);
+    if (refreshed) {
+      await interaction.message.edit(await buildEventMessagePayload(refreshed));
+    }
+    return await interaction.followUp({
+      content: result.reason === 'joined_as_filler'
+        ? 'No estas en la lista permitida. Te agregue como Filler en este horario.'
+        : 'Inscripcion confirmada.',
+      flags: 64
+    });
+  }
+
+  const responseByReason = {
+    event_missing: 'No se encontro el evento.',
+    option_missing: 'Ese horario ya no existe.',
+    closed: 'Las inscripciones estan cerradas.',
+    full: 'Ese horario ya esta lleno.',
+    already_joined_same_option: 'Ya estabas inscrito en ese horario.',
+    already_filler_same_option: 'Ya estabas registrado como Filler en ese horario.',
+    already_registered_other_state_same_option: 'Ya estabas registrado en ese horario con otro estado.'
+  };
+
+  return await interaction.followUp({
+    content: responseByReason[result.reason] || 'No se pudo completar la inscripcion.',
+    flags: 64
+  });
+}
+
+async function handleLeavePveSlot(interaction) {
+  const event = getWarByMessageId(interaction.message.id);
+  if (!event) {
+    return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
+  }
+  if (normalizeEventType(event.eventType) !== 'pve') {
+    return await interaction.followUp({ content: 'Este evento no usa horarios PvE.', flags: 64 });
+  }
+
+  const left = await pveService.leaveSlot(event.id, interaction.user.id);
+  const refreshed = getWarByMessageId(interaction.message.id);
+  if (refreshed) {
+    await interaction.message.edit(await buildEventMessagePayload(refreshed));
+  }
+
+  return await interaction.followUp({
+    content: left ? 'Saliste de tus inscripciones en este evento.' : 'No estabas inscrito en este evento.',
+    flags: 64
+  });
 }
 
 function promoteFromWaitlist(state, roleName) {

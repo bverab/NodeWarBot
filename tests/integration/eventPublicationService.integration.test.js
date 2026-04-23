@@ -71,4 +71,38 @@ describe('eventPublicationService integration', () => {
     expect(result.status).toBe('updated');
     expect(edited.length).toBe(1);
   });
+
+  it('en pve restricted menciona usuarios permitidos al publicar', async () => {
+    const sentMessages = [];
+    const channel = {
+      send: async payload => {
+        sentMessages.push(payload);
+        return { id: 'msg_pve_restricted' };
+      },
+      messages: {
+        fetch: async () => null
+      }
+    };
+    const interaction = createInteractionMock(channel);
+    const event = buildWar({
+      id: 'publish_pve_restricted_1',
+      eventType: 'pve',
+      messageId: null,
+      roles: [],
+      waitlist: [],
+      accessMode: 'RESTRICTED',
+      allowedUserIds: ['user_allowed_1', 'user_allowed_2'],
+      notifyRoles: ['role_notify_should_not_be_used']
+    });
+    await warService.createWar(event);
+
+    const result = await publishOrRefreshWar(interaction, event);
+
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe('published');
+    expect(sentMessages.length).toBe(1);
+    expect(sentMessages[0].content).toContain('<@user_allowed_1>');
+    expect(sentMessages[0].content).toContain('<@user_allowed_2>');
+    expect(sentMessages[0].content).not.toContain('role_notify_should_not_be_used');
+  });
 });

@@ -1,6 +1,8 @@
-const { buildWarMessagePayload, buildWarReadOnlyPayload } = require('../utils/warMessageBuilder');
+const { normalizeEventType } = require('../constants/eventTypes');
+const { buildEventMessagePayload, buildEventReadOnlyPayload, getEventMentionableUserIds } = require('./eventRenderService');
 const warService = require('./warService');
 const { shouldExecute } = require('../utils/cronHelper');
+const pveService = require('./pveService');
 
 let schedulerInstance = null;
 let checkInterval = null;
@@ -141,9 +143,15 @@ async function executeWarPublication(war) {
     const closeBeforeMinutes = Number.isFinite(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0
       ? Math.floor(war.closeBeforeMinutes)
       : 0;
-    const notifyRoles = Array.isArray(war.notifyRoles) ? war.notifyRoles.map(String).filter(Boolean) : [];
-    const publishContent = notifyRoles.length > 0
-      ? notifyRoles.map(roleId => `<@&${roleId}>`).join(' ')
+    const isRestrictedPve = normalizeEventType(war.eventType) === 'pve'
+      && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
+    const notifyTargets = isRestrictedPve
+      ? Array.from(new Set((Array.isArray(war.allowedUserIds) ? war.allowedUserIds : []).map(String).filter(Boolean)))
+      : (Array.isArray(war.notifyRoles) ? war.notifyRoles.map(String).filter(Boolean) : []);
+    const publishContent = notifyTargets.length > 0
+      ? (isRestrictedPve
+        ? notifyTargets.map(userId => `<@${userId}>`).join(' ')
+        : notifyTargets.map(roleId => `<@&${roleId}>`).join(' '))
       : 'Evento creado automaticamente';
 
     const expiresAt = publicationTimestamp + durationMinutes * 60 * 1000;
@@ -170,10 +178,17 @@ async function executeWarPublication(war) {
         : []
     };
 
+    if (normalizeEventType(war.eventType) === 'pve') {
+      await pveService.resetEventEnrollments(war.id);
+    }
+
+    const payload = await buildEventMessagePayload(warForPublication);
     const message = await channel.send({
       content: publishContent,
-      allowedMentions: notifyRoles.length > 0 ? { parse: [], roles: notifyRoles } : { parse: [] },
-      ...buildWarMessagePayload(warForPublication)
+      allowedMentions: notifyTargets.length > 0
+        ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
+        : { parse: [] },
+      ...payload
     });
 
     // Actualizar registro del evento
@@ -225,12 +240,7 @@ async function publishRecapThread(war) {
     }).catch(() => null);
     if (!thread) return;
 
-    const uniqueUserIds = Array.from(new Set(
-      war.roles
-        .flatMap(role => Array.isArray(role.users) ? role.users : [])
-        .filter(user => user && !user.isFake && user.userId)
-        .map(user => String(user.userId))
-    ));
+    const uniqueUserIds = await getEventMentionableUserIds(war);
     const mentionsLine = uniqueUserIds.length > 0
       ? uniqueUserIds.map(userId => `<@${userId}>`).join(' ')
       : '(sin inscritos para avisar)';
@@ -241,7 +251,7 @@ async function publishRecapThread(war) {
       allowedMentions: { parse: ['users'] }
     });
 
-    await thread.send(buildWarReadOnlyPayload({ ...war, isClosed: true }));
+    await thread.send(await buildEventReadOnlyPayload({ ...war, isClosed: true }));
 
     war.recap.threadId = thread.id;
     war.recap.lastPostedAt = Date.now();
@@ -261,7 +271,7 @@ async function closeWarSignups(war) {
     if (channel && channel.messages?.fetch && war.messageId) {
       try {
         const message = await channel.messages.fetch(war.messageId);
-        await message.edit(buildWarMessagePayload(war));
+        await message.edit(await buildEventMessagePayload(war));
       } catch (error) {
         if (error?.code !== 10008) {
           console.warn(`No se pudo actualizar cierre de inscripciones para ${war.id}:`, error?.message || error);

@@ -5,7 +5,7 @@ const {
   setSelectedEventContext
 } = require('../utils/eventAdminContextStore');
 const { getRoleByName, addParticipantToRole, pickWaitlistForRole } = require('../utils/warState');
-const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
+const { buildEventMessagePayload } = require('../services/eventRenderService');
 
 async function resolveTargetWar(interaction, eventId) {
   if (eventId) {
@@ -63,7 +63,7 @@ async function refreshWarMessage(interaction, war) {
     if (!channel || !channel.messages?.fetch) return false;
 
     const message = await channel.messages.fetch(war.messageId);
-    await message.edit(buildWarMessagePayload(war));
+    await message.edit(await buildEventMessagePayload(war));
     return true;
   } catch (error) {
     if (error?.code === 10008) return false;
