@@ -12,6 +12,7 @@ model Guild {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   events      Event[]
+  templates   EventTemplate[]
   garmothData GarmothProfile[]
 }
 
@@ -19,6 +20,7 @@ model Event {
   id                      String             @id
   groupId                 String?
   eventType               String             @default("war")
+  accessMode              String             @default("OPEN")
   name                    String
   type                    String
   classIconSource         String             @default("bot")
@@ -43,12 +45,84 @@ model Event {
   notifyTargets           EventNotifyTarget[]
   schedule                EventSchedule?
   recap                   EventRecapConfig?
+  options                 EventOption[]
+  enrollments             EventEnrollment[]
+  accessUsers             EventAccessUser[]
+  accessRoles             EventAccessRole[]
+  fillers                 EventFillerEntry[]
 
   @@index([channelId])
   @@index([messageId])
   @@index([groupId])
   @@index([createdAt])
   @@index([channelId, createdAt])
+}
+
+model EventOption {
+  id            String            @id @default(cuid())
+  eventId       String
+  position      Int
+  label         String
+  time          String
+  capacity      Int
+  event         Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  enrollments   EventEnrollment[]
+
+  @@unique([eventId, position])
+  @@index([eventId, time])
+}
+
+model EventEnrollment {
+  id          String      @id @default(cuid())
+  eventId     String
+  optionId    String
+  userId      String
+  displayName String
+  isFake      Boolean     @default(false)
+  enrollmentType String   @default("PRIMARY")
+  joinedAt    DateTime    @default(now())
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  option      EventOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, userId])
+  @@index([eventId, joinedAt])
+  @@index([eventId, optionId, enrollmentType])
+  @@index([eventId, userId])
+}
+
+model EventAccessUser {
+  id        String @id @default(cuid())
+  eventId   String
+  userId    String
+  position  Int
+  event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId, position])
+}
+
+model EventAccessRole {
+  id        String @id @default(cuid())
+  eventId   String
+  roleId    String
+  position  Int
+  event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, roleId])
+  @@index([eventId, position])
+}
+
+model EventFillerEntry {
+  id          String   @id @default(cuid())
+  eventId     String
+  userId      String
+  displayName String
+  isFake      Boolean  @default(false)
+  joinedAt    DateTime @default(now())
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId, joinedAt])
 }
 
 model EventRoleSlot {
@@ -162,4 +236,65 @@ model GarmothProfile {
   @@unique([guildId, discordUserId])
   @@index([discordUserId])
   @@index([guildId])
+}
+
+model EventTemplate {
+  id                      String                    @id @default(cuid())
+  guildId                 String
+  name                    String
+  eventType               String                    @default("war")
+  typeDefault             String                    @default("Evento")
+  classIconSource         String                    @default("bot")
+  participantDisplayStyle String                    @default("modern")
+  timezone                String                    @default("America/Bogota")
+  time                    String?
+  duration                Int                       @default(70)
+  closeBeforeMinutes      Int                       @default(0)
+  isArchived              Boolean                   @default(false)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  guild                   Guild                     @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  roleSlots               EventTemplateRoleSlot[]
+  notifyTargets           EventTemplateNotifyTarget[]
+
+  @@unique([guildId, eventType, name])
+  @@index([guildId, eventType, isArchived])
+  @@index([guildId, isArchived])
+}
+
+model EventTemplateRoleSlot {
+  id          String                        @id @default(cuid())
+  templateId  String
+  position    Int
+  name        String
+  max         Int
+  emoji       String?
+  emojiSource String?
+  template    EventTemplate                 @relation(fields: [templateId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  permissions EventTemplateRolePermission[]
+
+  @@unique([templateId, name])
+  @@unique([templateId, position])
+  @@index([templateId, position])
+}
+
+model EventTemplateRolePermission {
+  id              String                @id @default(cuid())
+  roleSlotId      String
+  discordRoleId   String?
+  discordRoleName String?
+  roleSlot        EventTemplateRoleSlot @relation(fields: [roleSlotId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([roleSlotId])
+}
+
+model EventTemplateNotifyTarget {
+  id         String        @id @default(cuid())
+  templateId String
+  targetId   String
+  position   Int
+  template   EventTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([templateId, targetId])
+  @@index([templateId, position])
 }

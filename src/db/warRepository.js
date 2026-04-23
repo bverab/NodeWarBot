@@ -57,6 +57,15 @@ async function replaceWarChildren(tx, eventId) {
   await tx.eventRecapConfig.deleteMany({
     where: { eventId }
   });
+  await tx.eventAccessRole.deleteMany({
+    where: { eventId }
+  });
+  await tx.eventAccessUser.deleteMany({
+    where: { eventId }
+  });
+  await tx.eventFillerEntry.deleteMany({
+    where: { eventId }
+  });
 }
 
 async function upsertWarTx(tx, warInput) {
@@ -69,6 +78,7 @@ async function upsertWarTx(tx, warInput) {
       id: war.id,
       groupId: war.groupId,
       eventType: war.eventType,
+      accessMode: war.accessMode,
       name: war.name,
       type: war.type,
       classIconSource: war.classIconSource,
@@ -90,6 +100,7 @@ async function upsertWarTx(tx, warInput) {
     update: {
       groupId: war.groupId,
       eventType: war.eventType,
+      accessMode: war.accessMode,
       name: war.name,
       type: war.type,
       classIconSource: war.classIconSource,
@@ -188,6 +199,41 @@ async function upsertWarTx(tx, warInput) {
     });
   }
 
+  const allowedRoleIds = Array.from(new Set((war.allowedRoleIds || []).map(String).filter(Boolean)));
+  for (let index = 0; index < allowedRoleIds.length; index += 1) {
+    await tx.eventAccessRole.create({
+      data: {
+        eventId: war.id,
+        roleId: allowedRoleIds[index],
+        position: index
+      }
+    });
+  }
+
+  const allowedUserIds = Array.from(new Set((war.allowedUserIds || []).map(String).filter(Boolean)));
+  for (let index = 0; index < allowedUserIds.length; index += 1) {
+    await tx.eventAccessUser.create({
+      data: {
+        eventId: war.id,
+        userId: allowedUserIds[index],
+        position: index
+      }
+    });
+  }
+
+  for (const filler of war.fillers || []) {
+    if (!filler?.userId) continue;
+    await tx.eventFillerEntry.create({
+      data: {
+        eventId: war.id,
+        userId: String(filler.userId),
+        displayName: String(filler.displayName || filler.userName || 'Usuario'),
+        isFake: Boolean(filler.isFake),
+        joinedAt: filler.joinedAt ? toDate(filler.joinedAt) : new Date()
+      }
+    });
+  }
+
   await tx.eventSchedule.create({
     data: {
       eventId: war.id,
@@ -229,6 +275,7 @@ function mapDbEventToDomain(event) {
     id: event.id,
     groupId: event.groupId,
     eventType: event.eventType,
+    accessMode: event.accessMode,
     name: event.name,
     type: event.type,
     classIconSource: event.classIconSource,
@@ -251,6 +298,14 @@ function mapDbEventToDomain(event) {
     duration: event.duration,
     closeBeforeMinutes: event.closeBeforeMinutes,
     notifyRoles: event.notifyTargets.map(target => target.targetId),
+    allowedUserIds: event.accessUsers.map(user => user.userId),
+    allowedRoleIds: event.accessRoles.map(role => role.roleId),
+    fillers: event.fillers.map(entry => ({
+      userId: entry.userId,
+      displayName: entry.displayName,
+      isFake: Boolean(entry.isFake),
+      joinedAt: toNumber(entry.joinedAt)
+    })),
     schedule: {
       enabled: Boolean(event.schedule?.enabled),
       mode: event.schedule?.mode === 'once' ? 'once' : 'recurring',
@@ -287,6 +342,15 @@ async function readWarsFromSqlite() {
       notifyTargets: {
         orderBy: { position: 'asc' }
       },
+      accessRoles: {
+        orderBy: { position: 'asc' }
+      },
+      accessUsers: {
+        orderBy: { position: 'asc' }
+      },
+      fillers: {
+        orderBy: { joinedAt: 'asc' }
+      },
       schedule: true,
       recap: true
     },
@@ -304,6 +368,9 @@ async function replaceAllWarsInSqlite(warsInput) {
     await tx.eventRoleSlot.deleteMany();
     await tx.eventWaitlistEntry.deleteMany();
     await tx.eventNotifyTarget.deleteMany();
+    await tx.eventAccessRole.deleteMany();
+    await tx.eventAccessUser.deleteMany();
+    await tx.eventFillerEntry.deleteMany();
     await tx.eventSchedule.deleteMany();
     await tx.eventRecapConfig.deleteMany();
     await tx.event.deleteMany();

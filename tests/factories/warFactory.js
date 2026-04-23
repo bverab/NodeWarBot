@@ -51,6 +51,10 @@ function buildWar(overrides = {}) {
     duration: Number.isInteger(overrides.duration) ? overrides.duration : 70,
     closeBeforeMinutes: Number.isInteger(overrides.closeBeforeMinutes) ? overrides.closeBeforeMinutes : 10,
     notifyRoles: Array.isArray(overrides.notifyRoles) ? overrides.notifyRoles : ['role_notify_1'],
+    accessMode: overrides.accessMode || 'OPEN',
+    allowedUserIds: Array.isArray(overrides.allowedUserIds) ? overrides.allowedUserIds : [],
+    allowedRoleIds: Array.isArray(overrides.allowedRoleIds) ? overrides.allowedRoleIds : [],
+    fillers: Array.isArray(overrides.fillers) ? overrides.fillers : [],
     schedule: overrides.schedule || {
       enabled: true,
       mode: 'recurring',

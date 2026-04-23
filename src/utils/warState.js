@@ -77,6 +77,16 @@ function normalizeWaitlistEntry(entry = {}) {
   };
 }
 
+function normalizeFillerEntry(entry = {}) {
+  if (!entry.userId) return null;
+  return {
+    userId: String(entry.userId),
+    displayName: String(entry.displayName || entry.userName || 'Usuario'),
+    isFake: Boolean(entry.isFake) || String(entry.userId).startsWith('fake_'),
+    joinedAt: Number.isFinite(entry.joinedAt) ? entry.joinedAt : Date.now()
+  };
+}
+
 function normalizeWar(war = {}) {
   // Estandariza estructura del evento para evitar estados incompletos al leer JSON.
   const createdAt = Number.isFinite(war.createdAt) ? war.createdAt : deriveCreatedAt(war.id);
@@ -116,6 +126,10 @@ function normalizeWar(war = {}) {
     duration,                                       // minutos
     closeBeforeMinutes,
     notifyRoles: Array.isArray(war.notifyRoles) ? war.notifyRoles : [],  // Array de role IDs o user IDs
+    accessMode: String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN',
+    allowedUserIds: Array.isArray(war.allowedUserIds) ? war.allowedUserIds.map(String).filter(Boolean) : [],
+    allowedRoleIds: Array.isArray(war.allowedRoleIds) ? war.allowedRoleIds.map(String).filter(Boolean) : [],
+    fillers: Array.isArray(war.fillers) ? war.fillers.map(normalizeFillerEntry).filter(Boolean) : [],
     
     // Control de automatización (NUEVO)
     schedule: normalizeSchedule(war.schedule),
