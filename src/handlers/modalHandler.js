@@ -7,6 +7,8 @@ const {
 const { isValidTime, normalizeTimeZone, normalizeTimeZoneInfo } = require('../utils/cronHelper');
 const { normalizeEventType, getEventTypeMeta } = require('../constants/eventTypes');
 const { extractEmojiAndName, parseEmojiInput } = require('../utils/emojiHelper');
+const templateService = require('../services/templateService');
+const pveService = require('../services/pveService');
 const {
   getDraftWar,
   setDraftWar
@@ -56,6 +58,10 @@ module.exports = async interaction => {
     if (interaction.customId === 'schedule_recap_modal') {
       return await scheduleFlow.handleScheduleRecapModal(interaction);
     }
+
+    if (interaction.customId === 'configure_pve_slots_modal') {
+      return await handleConfigurePveSlotsModal(interaction);
+    }
   } catch (error) {
     console.error('Error en modalHandler:', error);
     await safeRespond(interaction, 'Error procesando el modal');
@@ -66,12 +72,23 @@ async function handleWarCreation(interaction) {
   const acknowledged = await safeDefer(interaction);
   if (!acknowledged) return;
 
-  const eventType = extractEventTypeFromCustomId(interaction.customId);
+  const createContext = extractCreateEventContextFromCustomId(interaction.customId);
+  const eventType = createContext.eventType;
   const eventMeta = getEventTypeMeta(eventType);
+  const template = createContext.templateId
+    ? await templateService.getTemplateById(interaction.guildId, createContext.templateId)
+    : null;
+  if (createContext.templateId && (!template || template.isArchived || template.eventType !== eventType)) {
+    return await safeRespond(
+      interaction,
+      '❌ La plantilla seleccionada no esta disponible para este tipo. Vuelve a ejecutar /event create.'
+    );
+  }
+  const templateDraft = template ? templateService.buildTemplateDraft(template) : null;
 
   const name = interaction.fields.getTextInputValue('war_name_input');
-  const type = interaction.fields.getTextInputValue('war_type_input') || eventMeta.defaultDescription;
-  const timezoneRaw = interaction.fields.getTextInputValue('war_timezone_input') || 'America/Bogota';
+  const type = interaction.fields.getTextInputValue('war_type_input') || templateDraft?.type || eventMeta.defaultDescription;
+  const timezoneRaw = interaction.fields.getTextInputValue('war_timezone_input') || templateDraft?.timezone || 'America/Bogota';
   const timezoneInfo = normalizeTimeZoneInfo(timezoneRaw);
   if (timezoneInfo.source === 'fallback' && timezoneRaw?.trim()) {
     return await safeRespond(
@@ -109,32 +126,44 @@ async function handleWarCreation(interaction) {
     eventType,
     name,
     type,
-    classIconSource: 'bot',
-    participantDisplayStyle: 'modern',
+    classIconSource: templateDraft?.classIconSource || 'bot',
+    participantDisplayStyle: templateDraft?.participantDisplayStyle || 'modern',
     timezone,
     time: timeStr,
     duration,
     closeBeforeMinutes,
-    roles: [],
+    roles: templateDraft?.roles ? templateDraft.roles.map(role => ({ ...role })) : [],
     waitlist: [],
     creatorId: interaction.user.id,
     guildId: interaction.guildId,
     createdAt: Date.now(),
     channelId: interaction.channelId,
     dayOfWeek: null,
-    notifyRoles: [],
+    notifyRoles: templateDraft?.notifyRoles ? [...templateDraft.notifyRoles] : [],
     schedule: { enabled: true, lastCreatedAt: null },
     recap: { enabled: false, minutesBeforeExpire: 0, messageText: '', threadId: null, lastPostedAt: null },
-    isClosed: false
+    isClosed: false,
+    timeSlots: [],
+    slotCapacity: 5,
+    accessMode: 'OPEN',
+    allowedUserIds: []
   };
 
   setDraftWar(interaction.user.id, warData);
 
   await interaction.editReply({ content: '\u2705 Evento iniciado' });
-  await showRolesEditor(interaction, warData);
+  await showDraftEditor(interaction, warData);
 }
 
-async function showRolesEditor(interaction, warData) {
+async function showDraftEditor(interaction, warData, notice = '') {
+  if (normalizeEventType(warData.eventType) === 'pve') {
+    await showPveEditor(interaction, warData, notice);
+    return;
+  }
+  await showRolesEditor(interaction, warData, notice);
+}
+
+async function showRolesEditor(interaction, warData, notice = '') {
   const eventMeta = getEventTypeMeta(warData.eventType);
   const rolesDisplay = warData.roles.length > 0
     ? warData.roles.map(r => `${r.emoji || '\u25CB'} ${r.name} (${r.max})`).join('\n')
@@ -150,6 +179,9 @@ async function showRolesEditor(interaction, warData) {
       { name: '\u{1F465} Roles', value: rolesDisplay, inline: false },
       { name: '\u{1F4DD} Pasos', value: '1. Agrega roles aqui\n2. Haz click en **Publicar** para elegir dias y @mentions', inline: false }
     );
+  if (notice) {
+    embed.addFields({ name: 'Info', value: notice, inline: false });
+  }
 
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -168,6 +200,60 @@ async function showRolesEditor(interaction, warData) {
       .setCustomId('panel_visual_settings')
       .setLabel('Visual')
       .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('cancel_war')
+      .setLabel('Cancelar')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  if (interaction.deferred) {
+    await interaction.editReply({ embeds: [embed], components: [buttons] });
+  } else {
+    await interaction.update({ embeds: [embed], components: [buttons] });
+  }
+}
+
+async function showPveEditor(interaction, warData, notice = '') {
+  const eventMeta = getEventTypeMeta(warData.eventType);
+  const slots = Array.isArray(warData.timeSlots) ? warData.timeSlots : [];
+  const accessMode = String(warData.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
+  const allowedUserIds = Array.isArray(warData.allowedUserIds) ? warData.allowedUserIds : [];
+  const accessText = accessMode === 'RESTRICTED'
+    ? (allowedUserIds.length ? allowedUserIds.map(id => `<@${id}>`).join(', ') : 'Restringido (sin usuarios)')
+    : 'Open';
+  const slotDisplay = slots.length
+    ? slots.map(slot => `⏰ ${slot.time} (${slot.capacity})`).join('\n')
+    : '*(ninguno)*';
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🧭 ${warData.name} (${eventMeta.label})`)
+    .setDescription(warData.type || 'Evento PvE')
+    .setColor(0x2ecc71)
+    .addFields(
+      { name: '🌍 Zona Horaria', value: warData.timezone, inline: true },
+      { name: '🕒 Publicacion', value: `${warData.time} (${warData.duration} min)`, inline: true },
+      { name: '🔐 Acceso', value: accessText, inline: false },
+      { name: '⏰ Horarios', value: slotDisplay, inline: false },
+      { name: '📝 Pasos', value: '1. Configura horarios y cupo\n2. Haz click en **Publicar** para elegir dias y @mentions', inline: false }
+    );
+
+  if (notice) {
+    embed.addFields({ name: 'Info', value: notice, inline: false });
+  }
+
+  const buttons = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('configure_pve_slots')
+      .setLabel('Configurar Horarios')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('configure_pve_access')
+      .setLabel('Configurar Acceso')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('publish_war')
+      .setLabel('Publicar')
+      .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('cancel_war')
       .setLabel('Cancelar')
@@ -205,6 +291,35 @@ async function handleAddRolesBulkModal(interaction) {
 
   await interaction.deferReply({ flags: 64 });
   await showRolesEditor(interaction, warData);
+}
+
+async function handleConfigurePveSlotsModal(interaction) {
+  const acknowledged = await safeDefer(interaction);
+  if (!acknowledged) return;
+
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData || warData.creatorId !== interaction.user.id) {
+    return await safeRespond(interaction, 'Sesion expirada');
+  }
+
+  if (normalizeEventType(warData.eventType) !== 'pve') {
+    return await safeRespond(interaction, 'Esta accion solo aplica a eventos PvE.');
+  }
+
+  const rawTimes = interaction.fields.getTextInputValue('pve_slots_times_input') || '';
+  const rawCapacity = interaction.fields.getTextInputValue('pve_slots_capacity_input') || '';
+
+  let parsed;
+  try {
+    parsed = pveService.parsePveSlotsInput(rawTimes, rawCapacity);
+  } catch (error) {
+    return await safeRespond(interaction, `❌ ${error.message}`);
+  }
+
+  warData.timeSlots = parsed.timeSlots;
+  warData.slotCapacity = parsed.slotCapacity;
+
+  await showPveEditor(interaction, warData, `Horarios configurados: ${warData.timeSlots.length}`);
 }
 
 function parseRoleLine(line, interaction) {
@@ -338,15 +453,27 @@ async function safeRespond(interaction, content) {
   }
 }
 
-function extractEventTypeFromCustomId(customId) {
-  if (!customId || typeof customId !== 'string') return 'war';
-  if (customId === 'create_war_initial') return 'war';
-  const [prefix, rawType] = customId.split(':');
-  if (prefix !== 'create_event_initial') return 'war';
-  return normalizeEventType(rawType);
+function extractCreateEventContextFromCustomId(customId) {
+  if (!customId || typeof customId !== 'string') {
+    return { eventType: 'war', templateId: null };
+  }
+  if (customId === 'create_war_initial') {
+    return { eventType: 'war', templateId: null };
+  }
+
+  const [prefix, rawType, rawTemplateId] = customId.split(':');
+  if (prefix !== 'create_event_initial') {
+    return { eventType: 'war', templateId: null };
+  }
+
+  return {
+    eventType: normalizeEventType(rawType),
+    templateId: rawTemplateId ? String(rawTemplateId).trim() : null
+  };
 }
 
 module.exports.showRolesEditor = showRolesEditor;
+module.exports.showDraftEditor = showDraftEditor;
 module.exports.showScheduleModeSelector = scheduleFlow.showScheduleModeSelector;
 module.exports.showScheduleDaysSelector = scheduleFlow.showScheduleDaysSelector;
 module.exports.showScheduleMentionsSelector = scheduleFlow.showScheduleMentionsSelector;

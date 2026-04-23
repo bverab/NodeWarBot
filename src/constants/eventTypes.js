@@ -9,6 +9,11 @@ const EVENT_TYPES = {
     label: 'Siege War',
     defaultDescription: 'Evento de asedio'
   },
+  pve: {
+    key: 'pve',
+    label: 'PvE',
+    defaultDescription: 'Evento PvE'
+  },
   '10v10': {
     key: '10v10',
     label: '10v10',

@@ -6,17 +6,26 @@ const {
 } = require('discord.js');
 const { getEventTypeMeta, normalizeEventType } = require('../constants/eventTypes');
 
-function getCreateEventModalCustomId(eventType) {
+function getCreateEventModalCustomId(eventType, templateId = null) {
   const normalized = normalizeEventType(eventType);
-  return `create_event_initial:${normalized}`;
+  const suffix = templateId ? `:${String(templateId).trim()}` : '';
+  return `create_event_initial:${normalized}${suffix}`;
 }
 
-async function showCreateEventModal(interaction, eventType = 'war') {
+function setOptionalValue(input, value) {
+  const text = String(value || '').trim();
+  if (text) {
+    input.setValue(text);
+  }
+}
+
+async function showCreateEventModal(interaction, eventType = 'war', options = {}) {
   const normalized = normalizeEventType(eventType);
   const meta = getEventTypeMeta(normalized);
+  const template = options.template || null;
 
   const modal = new ModalBuilder()
-    .setCustomId(getCreateEventModalCustomId(normalized))
+    .setCustomId(getCreateEventModalCustomId(normalized, template?.id))
     .setTitle(`Crear Evento: ${meta.label}`);
 
   const nameInput = new TextInputBuilder()
@@ -26,6 +35,7 @@ async function showCreateEventModal(interaction, eventType = 'war') {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(50);
+  setOptionalValue(nameInput, options.name || '');
 
   const typeInput = new TextInputBuilder()
     .setCustomId('war_type_input')
@@ -34,6 +44,7 @@ async function showCreateEventModal(interaction, eventType = 'war') {
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(80);
+  setOptionalValue(typeInput, template?.typeDefault);
 
   const timezoneInput = new TextInputBuilder()
     .setCustomId('war_timezone_input')
@@ -42,6 +53,7 @@ async function showCreateEventModal(interaction, eventType = 'war') {
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(50);
+  setOptionalValue(timezoneInput, template?.timezone);
 
   const timeInput = new TextInputBuilder()
     .setCustomId('war_time_input')
@@ -50,6 +62,7 @@ async function showCreateEventModal(interaction, eventType = 'war') {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(5);
+  setOptionalValue(timeInput, template?.time);
 
   const durationInput = new TextInputBuilder()
     .setCustomId('war_duration_input')
@@ -58,6 +71,14 @@ async function showCreateEventModal(interaction, eventType = 'war') {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(9);
+  const templateDuration = Number.isFinite(template?.duration) ? template.duration : null;
+  const templateCloseBefore = Number.isFinite(template?.closeBeforeMinutes) ? template.closeBeforeMinutes : null;
+  if (templateDuration && templateDuration > 0) {
+    const durationValue = templateCloseBefore && templateCloseBefore > 0
+      ? `${templateDuration}/${templateCloseBefore}`
+      : String(templateDuration);
+    setOptionalValue(durationInput, durationValue);
+  }
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
