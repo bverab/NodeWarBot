@@ -2,6 +2,7 @@
 
 NodeWarBot is a Discord bot focused on organizing **Black Desert Online** group activities.
 It was originally built for Node War / Siege coordination and now also supports PvE slot-based planning.
+Status: MVP stable – actively evolving
 
 The project emphasizes practical event operations in Discord:
 - create and publish events quickly,
