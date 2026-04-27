@@ -53,7 +53,13 @@ async function resolveActiveWar(interaction) {
       return active;
     }
   } catch (error) {
-    logWarn('No se pudieron leer mensajes recientes para resolver evento activo', { channelId: interaction.channelId });
+    logWarn('No se pudieron leer mensajes recientes para resolver evento activo', {
+      action: 'resolve_active_event',
+      guildId: interaction.guildId,
+      userId: interaction.user?.id,
+      channelId: interaction.channelId,
+      reason: error?.message || 'unknown'
+    });
   }
 
   return null;
@@ -61,15 +67,41 @@ async function resolveActiveWar(interaction) {
 
 async function refreshWarMessage(interaction, war) {
   try {
-    const channel = await interaction.guild.channels.fetch(war.channelId).catch(() => null);
-    if (!channel || !channel.messages?.fetch) return false;
+    const channel = await interaction.guild.channels.fetch(war.channelId).catch(error => {
+      logWarn('No se pudo obtener canal para refrescar evento', {
+        action: 'refresh_event_message',
+        guildId: interaction.guildId,
+        userId: interaction.user?.id,
+        eventId: war.id,
+        channelId: war.channelId,
+        reason: error?.message || 'unknown'
+      });
+      return null;
+    });
+    if (!channel || !channel.messages?.fetch) {
+      logWarn('Canal no disponible para refrescar evento', {
+        action: 'refresh_event_message',
+        guildId: interaction.guildId,
+        userId: interaction.user?.id,
+        eventId: war.id,
+        channelId: war.channelId
+      });
+      return false;
+    }
 
     const message = await channel.messages.fetch(war.messageId);
     await message.edit(await buildEventMessagePayload(war));
     return true;
   } catch (error) {
     if (error?.code === 10008) return false;
-    logError('Error actualizando mensaje del evento', error, { warId: war.id, messageId: war.messageId });
+    logError('Error actualizando mensaje del evento', error, {
+      action: 'refresh_event_message',
+      guildId: interaction.guildId,
+      userId: interaction.user?.id,
+      eventId: war.id,
+      warId: war.id,
+      messageId: war.messageId
+    });
     return false;
   }
 }

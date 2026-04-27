@@ -68,8 +68,11 @@ module.exports = async interaction => {
     }
   } catch (error) {
     logError('Error en buttonHandler', error, {
+      action: 'public_event_button',
+      guildId: interaction.guildId,
       customId: interaction.customId,
       userId: interaction.user?.id,
+      eventId: interaction.message?.id || null,
       messageId: interaction.message?.id
     });
 
@@ -77,8 +80,11 @@ module.exports = async interaction => {
       await interaction.followUp({ content: 'Error interno', flags: 64 });
     } catch (replyError) {
       logError('Error enviando follow-up desde buttonHandler', replyError, {
+        action: 'public_event_button_error_reply',
+        guildId: interaction.guildId,
         customId: interaction.customId,
-        userId: interaction.user?.id
+        userId: interaction.user?.id,
+        eventId: interaction.message?.id || null
       });
     }
   }

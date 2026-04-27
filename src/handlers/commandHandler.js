@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { logInfo, logWarn, logError } = require('../utils/appLogger');
 
 module.exports = client => {
   client.commands = new Map();
@@ -7,8 +8,11 @@ module.exports = client => {
   const commandsPath = path.join(__dirname, '../commands');
   const commandEntries = fs.readdirSync(commandsPath, { withFileTypes: true });
 
-  console.log(`Buscando comandos en: ${commandsPath}`);
-  console.log(`Archivos encontrados: ${commandEntries.map(entry => entry.name).join(', ')}`);
+  logInfo('Cargando comandos', {
+    action: 'command_bootstrap',
+    commandsPath,
+    fileCount: commandEntries.length
+  });
 
   for (const entry of commandEntries) {
     if (!entry.isFile()) continue;
@@ -17,15 +21,24 @@ module.exports = client => {
     try {
       const command = require(`../commands/${entry.name}`);
       if (!command?.data || typeof command.data.name !== 'string' || typeof command.execute !== 'function') {
+        logWarn('Archivo de comando omitido por estructura invalida', {
+          action: 'command_bootstrap',
+          file: entry.name
+        });
         continue;
       }
 
       client.commands.set(command.data.name, command);
-      console.log(`Comando cargado: ${command.data.name}`);
     } catch (error) {
-      console.error(`Error cargando comando ${entry.name}:`, error);
+      logError('Error cargando comando', error, {
+        action: 'command_bootstrap',
+        file: entry.name
+      });
     }
   }
 
-  console.log(`Total de comandos cargados: ${client.commands.size}`);
+  logInfo('Comandos cargados', {
+    action: 'command_bootstrap',
+    loaded: client.commands.size
+  });
 };

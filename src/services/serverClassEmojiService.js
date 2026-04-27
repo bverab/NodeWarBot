@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { logWarn } = require('../utils/appLogger');
 
 const filePath = path.join(__dirname, '../../data/server-class-emojis.json');
 const CACHE_TTL_MS = 60 * 1000;
@@ -58,7 +59,11 @@ function readConfigFile() {
     const parsed = JSON.parse(raw);
     return normalizeConfig(parsed);
   } catch (error) {
-    console.warn('No se pudo leer server-class-emojis.json:', error?.message || error);
+    logWarn('No se pudo leer server-class-emojis.json', {
+      action: 'load_server_class_emoji_config',
+      filePath,
+      reason: error?.message || 'unknown'
+    });
     return {};
   }
 }

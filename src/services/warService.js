@@ -6,7 +6,9 @@ function withDbLog(operationName, fn) {
     try {
       return await fn(...args);
     } catch (error) {
-      logError(`Fallo DB en warService.${operationName}`, error);
+      logError(`Fallo DB en warService.${operationName}`, error, {
+        action: `war_service_${operationName}`
+      });
       throw error;
     }
   };
@@ -17,7 +19,7 @@ module.exports = {
     try {
       return repository.loadWars(...args);
     } catch (error) {
-      logError('Fallo DB en warService.loadWars', error);
+      logError('Fallo DB en warService.loadWars', error, { action: 'war_service_loadWars' });
       throw error;
     }
   },
@@ -27,7 +29,7 @@ module.exports = {
     try {
       return repository.getWarByMessageId(...args);
     } catch (error) {
-      logError('Fallo DB en warService.getWarByMessageId', error);
+      logError('Fallo DB en warService.getWarByMessageId', error, { action: 'war_service_getWarByMessageId' });
       throw error;
     }
   },
@@ -35,7 +37,7 @@ module.exports = {
     try {
       return repository.getLatestWarByChannelId(...args);
     } catch (error) {
-      logError('Fallo DB en warService.getLatestWarByChannelId', error);
+      logError('Fallo DB en warService.getLatestWarByChannelId', error, { action: 'war_service_getLatestWarByChannelId' });
       throw error;
     }
   },
@@ -46,7 +48,7 @@ module.exports = {
     try {
       return repository.getWarsByGroupId(...args);
     } catch (error) {
-      logError('Fallo DB en warService.getWarsByGroupId', error);
+      logError('Fallo DB en warService.getWarsByGroupId', error, { action: 'war_service_getWarsByGroupId' });
       throw error;
     }
   },
@@ -54,7 +56,7 @@ module.exports = {
     try {
       return repository.getWarByGroupAndDay(...args);
     } catch (error) {
-      logError('Fallo DB en warService.getWarByGroupAndDay', error);
+      logError('Fallo DB en warService.getWarByGroupAndDay', error, { action: 'war_service_getWarByGroupAndDay' });
       throw error;
     }
   },
@@ -62,7 +64,7 @@ module.exports = {
     try {
       return repository.searchWarsByName(...args);
     } catch (error) {
-      logError('Fallo DB en warService.searchWarsByName', error);
+      logError('Fallo DB en warService.searchWarsByName', error, { action: 'war_service_searchWarsByName' });
       throw error;
     }
   },
@@ -70,7 +72,7 @@ module.exports = {
     try {
       return repository.getEditableWarsForAutocomplete(...args);
     } catch (error) {
-      logError('Fallo DB en warService.getEditableWarsForAutocomplete', error);
+      logError('Fallo DB en warService.getEditableWarsForAutocomplete', error, { action: 'war_service_getEditableWarsForAutocomplete' });
       throw error;
     }
   }

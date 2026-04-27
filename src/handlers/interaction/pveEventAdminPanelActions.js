@@ -4,8 +4,8 @@ const {
   TextInputBuilder,
   TextInputStyle
 } = require('discord.js');
-const { loadWars, updateWar } = require('../../services/warService');
 const pveService = require('../../services/pveService');
+const eventManagementService = require('../../services/eventManagementService');
 const { normalizeEventType } = require('../../constants/eventTypes');
 const {
   buildPveAccessEditorPayload,
@@ -19,7 +19,7 @@ const { getSelectedEventContext, setSelectedEventContext } = require('../../util
 function getSelectedPveContext(interaction) {
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   if (!context?.eventId) return { ok: false, message: 'No hay evento seleccionado. Usa `/event edit`.' };
-  const war = loadWars().find(entry => entry.id === String(context.eventId) && entry.channelId === interaction.channelId) || null;
+  const war = eventManagementService.getEventById(context.eventId, { channelId: interaction.channelId }) || null;
   if (!war) return { ok: false, message: 'El evento seleccionado ya no existe.' };
   if (normalizeEventType(war.eventType) !== 'pve') return { ok: false, message: 'Este flujo solo aplica a eventos PvE.' };
   return { ok: true, war, context };
@@ -55,8 +55,9 @@ async function handlePveToggleClose(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
 
-  context.war.isClosed = !context.war.isClosed;
-  const updated = await updateWar(context.war);
+  const result = await eventManagementService.toggleEventClosed(context.war.id, { channelId: interaction.channelId });
+  if (!result.ok) return await interaction.update({ content: 'El evento seleccionado ya no existe.', embeds: [], components: [] });
+  const updated = result.event;
   await refreshIfPublished(interaction, updated);
 
   const notice = updated.isClosed
@@ -80,8 +81,14 @@ async function handlePveAccessModeSelect(interaction) {
   if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
 
   const mode = interaction.values?.[0] === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-  context.war.accessMode = mode;
-  const updated = await updateWar(context.war);
+  const result = await eventManagementService.updatePveAllowedUsers(
+    context.war.id,
+    mode,
+    context.war.allowedUserIds || [],
+    { channelId: interaction.channelId }
+  );
+  if (!result.ok) return await interaction.update({ content: 'No se pudo actualizar acceso PvE.', embeds: [], components: [] });
+  const updated = result.event;
   await refreshIfPublished(interaction, updated);
 
   await updateWithContext(
@@ -98,8 +105,14 @@ async function handlePveAccessUsersSelect(interaction) {
   if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
 
   const userIds = Array.from(new Set((interaction.values || []).map(String).filter(Boolean)));
-  context.war.allowedUserIds = userIds;
-  const updated = await updateWar(context.war);
+  const result = await eventManagementService.updatePveAllowedUsers(
+    context.war.id,
+    context.war.accessMode || 'OPEN',
+    userIds,
+    { channelId: interaction.channelId }
+  );
+  if (!result.ok) return await interaction.update({ content: 'No se pudo actualizar usuarios permitidos PvE.', embeds: [], components: [] });
+  const updated = result.event;
   await refreshIfPublished(interaction, updated);
 
   await updateWithContext(
@@ -221,8 +234,8 @@ async function handlePveSlotDelete(interaction) {
   const optionId = context.context.pendingPveOptionId;
   if (!optionId) return await interaction.reply({ content: 'Selecciona un horario primero.', flags: 64 });
 
-  await pveService.deleteSlot(context.war.id, optionId);
-  const updated = loadWars().find(entry => entry.id === context.war.id && entry.channelId === interaction.channelId) || context.war;
+  const result = await eventManagementService.deletePveSlot(context.war.id, optionId, { channelId: interaction.channelId });
+  const updated = result.event || context.war;
   await refreshIfPublished(interaction, updated);
   await renderSlotsEditor(interaction, updated, { ...context.context, pendingPveOptionId: null }, 'Horario eliminado.');
 }
@@ -234,8 +247,8 @@ async function handlePveSlotMove(interaction, direction) {
   const optionId = context.context.pendingPveOptionId;
   if (!optionId) return await interaction.reply({ content: 'Selecciona un horario primero.', flags: 64 });
 
-  await pveService.moveSlot(context.war.id, optionId, direction);
-  const updated = loadWars().find(entry => entry.id === context.war.id && entry.channelId === interaction.channelId) || context.war;
+  const result = await eventManagementService.movePveSlot(context.war.id, optionId, direction, { channelId: interaction.channelId });
+  const updated = result.event || context.war;
   await refreshIfPublished(interaction, updated);
   await renderSlotsEditor(interaction, updated, context.context, `Horario movido ${direction === 'up' ? 'hacia arriba' : 'hacia abajo'}.`);
 }
@@ -324,8 +337,8 @@ async function handlePveEnrollRemove(interaction) {
     return await interaction.reply({ content: 'Selecciona un inscrito/filler primero.', flags: 64 });
   }
 
-  await pveService.removeEnrollment(context.war.id, optionId, parsed.userId);
-  const updated = loadWars().find(entry => entry.id === context.war.id && entry.channelId === interaction.channelId) || context.war;
+  const result = await eventManagementService.removePveEnrollment(context.war.id, optionId, parsed.userId, { channelId: interaction.channelId });
+  const updated = result.event || context.war;
   await refreshIfPublished(interaction, updated);
   await renderEnrollmentsEditor(interaction, updated, { ...context.context, pendingPveEnrollmentKey: null }, 'Participante removido del horario.');
 }
@@ -340,10 +353,10 @@ async function handlePveEnrollPromote(interaction) {
     return await interaction.reply({ content: 'Selecciona un filler primero.', flags: 64 });
   }
 
-  const result = await pveService.promoteFiller(context.war.id, optionId, parsed.userId);
-  const updated = loadWars().find(entry => entry.id === context.war.id && entry.channelId === interaction.channelId) || context.war;
+  const result = await eventManagementService.promotePveFiller(context.war.id, optionId, parsed.userId, { channelId: interaction.channelId });
+  const updated = result.event || context.war;
   await refreshIfPublished(interaction, updated);
-  const notice = result.ok ? 'Filler promovido a inscrito normal.' : `No se pudo promover (${result.reason}).`;
+  const notice = result.result?.ok ? 'Filler promovido a inscrito normal.' : `No se pudo promover (${result.result?.reason || result.reason}).`;
   await renderEnrollmentsEditor(interaction, updated, context.context, notice);
 }
 

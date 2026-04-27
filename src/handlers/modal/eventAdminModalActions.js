@@ -1,6 +1,7 @@
 const { parseEmojiInput } = require('../../utils/emojiHelper');
 const { loadWars, updateWar } = require('../../services/warService');
 const pveService = require('../../services/pveService');
+const eventManagementService = require('../../services/eventManagementService');
 const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../../utils/textSafety');
 const { logWarn } = require('../../utils/appLogger');
 const { getSelectedEventContext, setSelectedEventContext } = require('../../utils/eventAdminContextStore');
@@ -430,8 +431,8 @@ async function handlePveSlotAddModal(interaction) {
   }).value;
 
   try {
-    await pveService.addSlot(context.war.id, time, capacity);
-    const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+    const result = await eventManagementService.addPveSlot(context.war.id, time, capacity, { channelId: interaction.channelId });
+    const refreshed = result.event || context.war;
     if (refreshed.messageId) await refreshWarMessage(interaction, refreshed);
     const view = await pveService.getEventPveView(refreshed);
     const selectedOptionId = view.options[view.options.length - 1]?.id || null;
@@ -467,8 +468,8 @@ async function handlePveSlotEditModal(interaction) {
   }).value;
 
   try {
-    await pveService.editSlot(optionId, { time, capacity });
-    const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+    const result = await eventManagementService.updatePveSlot(context.war.id, optionId, { time, capacity }, { channelId: interaction.channelId });
+    const refreshed = result.event || context.war;
     if (refreshed.messageId) await refreshWarMessage(interaction, refreshed);
     const view = await pveService.getEventPveView(refreshed);
     const payload = buildPveSlotsEditorPayload(refreshed, view, {
@@ -512,8 +513,15 @@ async function handlePveEnrollMoveModal(interaction) {
     return await safeModalReply(interaction, { content: 'No existe un horario con ese HH:mm en este evento.' });
   }
 
-  const moved = await pveService.moveEnrollment(context.war.id, selectedOptionId, targetSlot.id, userId);
-  const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+  const movedView = await eventManagementService.movePveEnrollment(
+    context.war.id,
+    selectedOptionId,
+    targetSlot.id,
+    userId,
+    { channelId: interaction.channelId }
+  );
+  const moved = movedView.result || { ok: false, reason: movedView.reason };
+  const refreshed = movedView.event || context.war;
   if (refreshed.messageId) await refreshWarMessage(interaction, refreshed);
 
   const updatedView = await pveService.getEventPveView(refreshed);
@@ -565,13 +573,14 @@ async function handlePveEnrollAddModal(interaction) {
     return await safeModalReply(interaction, { content: 'No hay horarios disponibles para agregar inscripcion.' });
   }
 
-  const created = await pveService.adminAddEnrollment(context.war.id, optionId, {
+  const createdView = await eventManagementService.addPveEnrollment(context.war.id, optionId, {
     userId,
     displayName,
     isFake: false
-  }, enrollmentType);
+  }, enrollmentType, { channelId: interaction.channelId });
+  const created = createdView.result || { ok: false, reason: createdView.reason };
 
-  const refreshed = loadWars().find(war => war.id === context.war.id && war.channelId === interaction.channelId) || context.war;
+  const refreshed = createdView.event || context.war;
   if (refreshed.messageId) await refreshWarMessage(interaction, refreshed);
 
   const updatedView = await pveService.getEventPveView(refreshed);

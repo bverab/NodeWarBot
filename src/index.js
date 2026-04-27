@@ -7,6 +7,7 @@ const interactionHandler = require('./handlers/interactionHandler');
 const { initScheduler } = require('./services/schedulerService');
 const { primeApplicationEmojiCache } = require('./utils/applicationEmojiResolver');
 const { initializePersistence, shutdownPersistence } = require('./db/init');
+const { logInfo, logWarn, logError } = require('./utils/appLogger');
 
 const SCHEDULE_CUSTOM_IDS = new Set(['schedule_war_mode', 'schedule_war_days', 'schedule_war_mentions']);
 const INTERACTION_HANDLER_CUSTOM_IDS = new Set([
@@ -69,9 +70,17 @@ async function main() {
   commandHandler(client);
 
   client.once(Events.ClientReady, () => {
-    console.log(`Bot listo como ${client.user.tag}`);
-    console.log(`Comandos cargados: ${client.commands.size}`);
-    primeApplicationEmojiCache(client).catch(() => null);
+    logInfo('Cliente Discord listo', {
+      action: 'client_ready',
+      userTag: client.user?.tag,
+      commandsLoaded: client.commands.size
+    });
+    primeApplicationEmojiCache(client).catch(error => {
+      logWarn('No se pudo precargar cache de emojis de aplicacion', {
+        action: 'prime_application_emoji_cache',
+        reason: error?.message || 'unknown'
+      });
+    });
 
     // Iniciar scheduler de eventos automaticos
     initScheduler(client);
@@ -115,7 +124,15 @@ async function main() {
 
       await command.execute(interaction);
     } catch (error) {
-      console.error('Error general:', error);
+      logError('Error general en InteractionCreate', error, {
+        action: 'interaction_dispatch',
+        guildId: interaction.guildId,
+        userId: interaction.user?.id,
+        eventId: interaction.message?.id || null,
+        interactionType: interaction.type,
+        customId: interaction.customId || null,
+        commandName: interaction.commandName || null
+      });
 
       if (interaction.replied || interaction.deferred) {
         return;
@@ -129,11 +146,22 @@ async function main() {
         });
       } catch (replyError) {
         if (replyError?.code === 40060 || replyError?.code === 10062) {
-          console.warn(`No se pudo responder error global (${replyError.code})`);
+          logWarn('No se pudo responder error global de interaccion', {
+            action: 'interaction_error_reply',
+            guildId: interaction.guildId,
+            userId: interaction.user?.id,
+            eventId: interaction.message?.id || null,
+            code: replyError.code
+          });
           return;
         }
 
-        console.error('Error al responder:', replyError);
+        logError('Error al responder fallback global de interaccion', replyError, {
+          action: 'interaction_error_reply',
+          guildId: interaction.guildId,
+          userId: interaction.user?.id,
+          eventId: interaction.message?.id || null
+        });
       }
     }
   });
@@ -148,7 +176,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 
 main().catch(async error => {
-  console.error('Error fatal iniciando el bot:', error);
+  logError('Error fatal iniciando el bot', error, { action: 'startup' });
   await shutdownPersistence();
   process.exit(1);
 });

@@ -71,8 +71,11 @@ module.exports = async interaction => {
     }
   } catch (error) {
     logError('Error en interactionHandler', error, {
+      action: 'panel_interaction',
+      guildId: interaction.guildId,
       customId,
       userId: interaction.user?.id,
+      eventId: interaction.message?.id || null,
       channelId: interaction.channelId
     });
     await safeInteractionErrorResponse(interaction);
@@ -423,7 +426,17 @@ async function safeInteractionErrorResponse(interaction) {
     try {
       await interaction.editReply({ content: 'Error', embeds: [], components: [] });
     } catch (error) {
-      if (error?.code === 10062 || error?.code === 40060) return;
+      if (error?.code === 10062 || error?.code === 40060) {
+        logSuppressedInteractionErrorReply(interaction, error);
+        return;
+      }
+      logError('No se pudo editar reply de error en interactionHandler', error, {
+        action: 'panel_error_reply',
+        guildId: interaction.guildId,
+        userId: interaction.user?.id,
+        eventId: interaction.message?.id || null,
+        customId: interaction.customId
+      });
     }
     return;
   }
@@ -431,7 +444,28 @@ async function safeInteractionErrorResponse(interaction) {
   try {
     await interaction.reply({ content: 'Error', flags: 64, allowedMentions: { parse: [] } });
   } catch (error) {
-    if (error?.code === 10062 || error?.code === 40060) return;
+    if (error?.code === 10062 || error?.code === 40060) {
+      logSuppressedInteractionErrorReply(interaction, error);
+      return;
+    }
+    logError('No se pudo enviar reply de error en interactionHandler', error, {
+      action: 'panel_error_reply',
+      guildId: interaction.guildId,
+      userId: interaction.user?.id,
+      eventId: interaction.message?.id || null,
+      customId: interaction.customId
+    });
   }
+}
+
+function logSuppressedInteractionErrorReply(interaction, error) {
+  logError('No se pudo responder error por interaccion vencida/acknowledged', error, {
+    action: 'panel_error_reply',
+    guildId: interaction.guildId,
+    userId: interaction.user?.id,
+    eventId: interaction.message?.id || null,
+    customId: interaction.customId,
+    code: error?.code
+  });
 }
 

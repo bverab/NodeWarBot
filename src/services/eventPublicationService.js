@@ -54,9 +54,37 @@ async function publishOrRefreshWar(interaction, war) {
 }
 
 async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
-  const channel = await interaction.guild?.channels?.fetch(war.channelId).catch(() => null);
+  return await publishOrRefreshEventWithContext({
+    guild: interaction.guild,
+    guildId: interaction.guildId,
+    userId: interaction.user?.id
+  }, war, options);
+}
+
+// Dashboard-ready publishing entrypoint.
+// A future HTTP API can pass an explicit Discord context (guild/client-derived
+// channel access) without constructing a Discord Interaction object.
+async function publishOrRefreshEventWithContext(discordContext, war, options = {}) {
+  const channel = await discordContext.guild?.channels?.fetch(war.channelId).catch(error => {
+    logWarn('Fallo resolviendo canal para publicacion', {
+      action: 'publish_or_refresh',
+      guildId: discordContext.guildId,
+      userId: discordContext.userId,
+      eventId: war.id,
+      channelId: war.channelId,
+      reason: error?.message || 'unknown'
+    });
+    return null;
+  });
   if (!channel || !channel.send) {
-    logWarn('No se pudo publicar: canal inaccesible', { warId: war.id, channelId: war.channelId, guildId: interaction.guildId });
+    logWarn('No se pudo publicar: canal inaccesible', {
+      action: 'publish_or_refresh',
+      guildId: discordContext.guildId,
+      userId: discordContext.userId,
+      eventId: war.id,
+      warId: war.id,
+      channelId: war.channelId
+    });
     return { ok: false, status: 'error', reason: `No se pudo acceder al canal ${war.channelId}.` };
   }
 
@@ -81,7 +109,17 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
   const mustRepublish = shouldActivate && (isExpired || !normalizedWar.messageId);
 
   if (normalizedWar.messageId && !mustRepublish) {
-    const existing = await channel.messages.fetch(normalizedWar.messageId).catch(() => null);
+    const existing = await channel.messages.fetch(normalizedWar.messageId).catch(error => {
+      logWarn('No se pudo obtener mensaje existente para actualizar', {
+        action: 'publish_or_refresh',
+        guildId: discordContext.guildId,
+        userId: discordContext.userId,
+        eventId: normalizedWar.id,
+        messageId: normalizedWar.messageId,
+        reason: error?.message || 'unknown'
+      });
+      return null;
+    });
     if (existing) {
       const payload = await buildEventMessagePayload(normalizedWar);
       await existing.edit({
@@ -90,15 +128,41 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
         ...payload
       });
       const persisted = shouldActivate ? await warService.updateWar(normalizedWar) : normalizedWar;
-      logInfo('Evento actualizado en mensaje existente', { warId: normalizedWar.id, messageId: normalizedWar.messageId });
+      logInfo('Evento actualizado en mensaje existente', {
+        action: 'publish_or_refresh',
+        guildId: discordContext.guildId,
+        userId: discordContext.userId,
+        eventId: normalizedWar.id,
+        warId: normalizedWar.id,
+        messageId: normalizedWar.messageId
+      });
       return { ok: true, status: 'updated', war: persisted };
     }
   }
 
   if (mustRepublish && normalizedWar.messageId && channel.messages?.fetch) {
-    const stale = await channel.messages.fetch(normalizedWar.messageId).catch(() => null);
+    const stale = await channel.messages.fetch(normalizedWar.messageId).catch(error => {
+      logWarn('No se pudo obtener mensaje stale previo a republicacion', {
+        action: 'publish_or_refresh',
+        guildId: discordContext.guildId,
+        userId: discordContext.userId,
+        eventId: normalizedWar.id,
+        messageId: normalizedWar.messageId,
+        reason: error?.message || 'unknown'
+      });
+      return null;
+    });
     if (stale) {
-      await stale.delete().catch(() => null);
+      await stale.delete().catch(error => {
+        logWarn('No se pudo borrar mensaje stale previo a republicacion', {
+          action: 'publish_or_refresh',
+          guildId: discordContext.guildId,
+          userId: discordContext.userId,
+          eventId: normalizedWar.id,
+          messageId: normalizedWar.messageId,
+          reason: error?.message || 'unknown'
+        });
+      });
     }
   }
 
@@ -149,11 +213,20 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
   }
 
   const updatedWar = await warService.updateWar(warForPublish);
-  logInfo('Evento publicado', { warId: updatedWar.id, messageId: updatedWar.messageId, channelId: updatedWar.channelId });
+  logInfo('Evento publicado', {
+    action: 'publish_or_refresh',
+    guildId: discordContext.guildId,
+    userId: discordContext.userId,
+    eventId: updatedWar.id,
+    warId: updatedWar.id,
+    messageId: updatedWar.messageId,
+    channelId: updatedWar.channelId
+  });
   return { ok: true, status: 'published', war: updatedWar };
 }
 
 module.exports = {
   publishOrRefreshWar,
-  publishOrRefreshWarWithOptions
+  publishOrRefreshWarWithOptions,
+  publishOrRefreshEventWithContext
 };

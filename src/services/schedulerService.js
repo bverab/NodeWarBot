@@ -95,7 +95,7 @@ async function checkAndExecuteEvents() {
       await executeWarPublication(war);
     }
   } catch (error) {
-    logError('Error en scheduler', error);
+    logError('Error en scheduler', error, { action: 'scheduler_tick' });
   }
 }
 
@@ -118,7 +118,13 @@ async function executeWarPublication(war) {
   try {
     const channel = await client.channels.fetch(war.channelId).catch(() => null);
     if (!channel) {
-      logWarn('No se encontro canal para evento programado', { warId: war.id, channelId: war.channelId });
+      logWarn('No se encontro canal para evento programado', {
+        action: 'scheduler_publish',
+        eventId: war.id,
+        warId: war.id,
+        guildId: war.guildId,
+        channelId: war.channelId
+      });
       return;
     }
 
@@ -129,9 +135,12 @@ async function executeWarPublication(war) {
         logInfo('Mensaje anterior eliminado en scheduler', { warId: war.id, messageId: war.messageId });
       } catch (error) {
         logWarn('No se pudo eliminar mensaje anterior en scheduler', {
+          action: 'scheduler_publish',
+          eventId: war.id,
+          guildId: war.guildId,
           warId: war.id,
           messageId: war.messageId,
-          reason: error?.message || String(error)
+          reason: error?.message || 'unknown'
         });
       }
     }
@@ -195,9 +204,22 @@ async function executeWarPublication(war) {
     }
     await warService.updateWar(warForPublication);
 
-    logInfo('Evento auto-publicado', { warId: war.id, channelId: war.channelId, messageId: message.id });
+    logInfo('Evento auto-publicado', {
+      action: 'scheduler_publish',
+      eventId: war.id,
+      warId: war.id,
+      guildId: war.guildId,
+      channelId: war.channelId,
+      messageId: message.id
+    });
   } catch (error) {
-    logError(`Error publicando evento ${war.id}`, error);
+    logError('Error publicando evento programado', error, {
+      action: 'scheduler_publish',
+      eventId: war.id,
+      warId: war.id,
+      guildId: war.guildId,
+      channelId: war.channelId
+    });
   }
 }
 
@@ -253,7 +275,13 @@ async function publishRecapThread(war) {
     war.recap.lastPostedAt = Date.now();
     await warService.updateWar(war);
   } catch (error) {
-    logError(`Error publicando hilo de resumen ${war.id}`, error);
+    logError('Error publicando hilo de resumen', error, {
+      action: 'scheduler_recap',
+      eventId: war.id,
+      warId: war.id,
+      guildId: war.guildId,
+      channelId: war.channelId
+    });
   }
 }
 
@@ -270,14 +298,27 @@ async function closeWarSignups(war) {
         await message.edit(await buildEventMessagePayload(war));
       } catch (error) {
         if (error?.code !== 10008) {
-          logWarn('No se pudo actualizar cierre de inscripciones', { warId: war.id, reason: error?.message || String(error) });
+          logWarn('No se pudo actualizar cierre de inscripciones', {
+            action: 'scheduler_close_signups',
+            eventId: war.id,
+            warId: war.id,
+            guildId: war.guildId,
+            channelId: war.channelId,
+            reason: error?.message || 'unknown'
+          });
         }
       }
     }
 
     await warService.updateWar(war);
   } catch (error) {
-    logError(`Error al cerrar inscripciones de ${war.id}`, error);
+    logError('Error al cerrar inscripciones', error, {
+      action: 'scheduler_close_signups',
+      eventId: war.id,
+      warId: war.id,
+      guildId: war.guildId,
+      channelId: war.channelId
+    });
   }
 }
 
@@ -299,7 +340,14 @@ async function expireWarMessage(war) {
       await message.delete();
     } catch (error) {
       if (error?.code !== 10008) {
-        logWarn('No se pudo eliminar evento expirado', { warId: war.id, reason: error?.message || String(error) });
+        logWarn('No se pudo eliminar evento expirado', {
+          action: 'scheduler_expire_event',
+          eventId: war.id,
+          warId: war.id,
+          guildId: war.guildId,
+          channelId: war.channelId,
+          reason: error?.message || 'unknown'
+        });
       }
     }
 
@@ -307,9 +355,21 @@ async function expireWarMessage(war) {
     war.isClosed = true;
     war.schedule.lastMessageIdDeleted = Date.now();
     await warService.updateWar(war);
-    logInfo('Evento expirado y eliminado', { warId: war.id });
+    logInfo('Evento expirado y eliminado', {
+      action: 'scheduler_expire_event',
+      eventId: war.id,
+      warId: war.id,
+      guildId: war.guildId,
+      channelId: war.channelId
+    });
   } catch (error) {
-    logError(`Error al expirar evento ${war.id}`, error);
+    logError('Error al expirar evento', error, {
+      action: 'scheduler_expire_event',
+      eventId: war.id,
+      warId: war.id,
+      guildId: war.guildId,
+      channelId: war.channelId
+    });
   }
 }
 

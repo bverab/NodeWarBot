@@ -65,7 +65,13 @@ module.exports = async interaction => {
       return await handleConfigurePveSlotsModal(interaction);
     }
   } catch (error) {
-    logError('Error en modalHandler', error, { customId: interaction.customId, userId: interaction.user?.id });
+    logError('Error en modalHandler', error, {
+      action: 'modal_dispatch',
+      customId: interaction.customId,
+      guildId: interaction.guildId,
+      userId: interaction.user?.id,
+      eventId: interaction.message?.id || null
+    });
     await safeRespond(interaction, 'Error procesando el modal');
   }
 };
@@ -509,7 +515,14 @@ async function safeRespond(interaction, content) {
     }
     await interaction.reply({ content, flags: 64, allowedMentions: { parse: [] } });
   } catch (error) {
-    logWarn('No se pudo responder en modalHandler', { code: error?.code, customId: interaction.customId });
+    logWarn('No se pudo responder en modalHandler', {
+      action: 'modal_error_reply',
+      code: error?.code,
+      customId: interaction.customId,
+      guildId: interaction.guildId,
+      userId: interaction.user?.id,
+      eventId: interaction.message?.id || null
+    });
   }
 }
 
