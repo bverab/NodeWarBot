@@ -41,7 +41,7 @@ describe('PvE MVP integration', () => {
     expect(String(firstField.value)).toContain('User One');
   });
 
-  it('permite multiples horarios por usuario y evita duplicidad en el mismo horario', async () => {
+  it('permite multiples horarios por usuario y usa toggle en el mismo horario', async () => {
     const event = buildWar({
       id: 'pve_event_2',
       groupId: 'pve_group_2',
@@ -76,13 +76,17 @@ describe('PvE MVP integration', () => {
     expect(joinSecond.ok).toBe(true);
     expect(joinSecond.reason).toBe('joined');
 
-    const duplicateSameSlot = await pveService.joinSlot(event.id, second.id, {
+    const toggleOffSameSlot = await pveService.joinSlot(event.id, second.id, {
       userId: 'user_1',
       displayName: 'User One',
       isFake: false
     });
-    expect(duplicateSameSlot.ok).toBe(false);
-    expect(duplicateSameSlot.reason).toBe('already_joined_same_option');
+    expect(toggleOffSameSlot.ok).toBe(true);
+    expect(toggleOffSameSlot.reason).toBe('left');
+
+    const optionsAfterToggle = await pveService.getEventSlots(event.id);
+    const secondAfterToggle = optionsAfterToggle.find(option => option.id === second.id);
+    expect(secondAfterToggle.enrollments.some(entry => entry.userId === 'user_1')).toBe(false);
 
     const joinSecondUser = await pveService.joinSlot(event.id, first.id, {
       userId: 'user_2',
@@ -204,7 +208,7 @@ describe('PvE MVP integration', () => {
     expect(view.options[0].fillers[0].displayName).toBe('Denied User');
   });
 
-  it('filler por horario permite multiples horarios y evita doble estado en el mismo horario', async () => {
+  it('filler por horario permite multiples horarios y usa toggle en el mismo horario', async () => {
     const event = buildWar({
       id: 'pve_event_restricted_2',
       eventType: 'pve',
@@ -239,15 +243,19 @@ describe('PvE MVP integration', () => {
     expect(secondFillerSlot.ok).toBe(true);
     expect(secondFillerSlot.reason).toBe('joined_as_filler');
 
-    await pveService.configureAccess(event.id, 'RESTRICTED', ['allowed_user', 'same_user']);
-
-    const retryAsAllowed = await pveService.joinSlot(event.id, optionA.id, {
+    const toggleFillerOff = await pveService.joinSlot(event.id, optionA.id, {
       userId: 'same_user',
       displayName: 'Same User',
-      userRoleIds: ['role_allowed']
+      userRoleIds: []
     });
-    expect(retryAsAllowed.ok).toBe(false);
-    expect(retryAsAllowed.reason).toBe('already_registered_other_state_same_option');
+    expect(toggleFillerOff.ok).toBe(true);
+    expect(toggleFillerOff.reason).toBe('left');
+
+    const viewAfterToggle = await pveService.getEventPveView(event);
+    const slotAAfterToggle = viewAfterToggle.options.find(slot => slot.id === optionA.id);
+    const slotBAfterToggle = viewAfterToggle.options.find(slot => slot.id === optionB.id);
+    expect(slotAAfterToggle.fillers.some(entry => entry.userId === 'same_user')).toBe(false);
+    expect(slotBAfterToggle.fillers.some(entry => entry.userId === 'same_user')).toBe(true);
   });
 
   it('permite editar acceso PvE (modo y usuarios permitidos)', async () => {

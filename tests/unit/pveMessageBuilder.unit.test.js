@@ -118,4 +118,49 @@ describe('pveMessageBuilder render', () => {
     const fields = payload.embeds[0].data.fields || [];
     expect(fields.some(field => String(field.name).includes('Fillers'))).toBe(false);
   });
+
+  it('no trunca inscritos en horarios PvE', () => {
+    const payload = buildPveMessagePayload(
+      {
+        eventType: 'pve',
+        name: 'Full List',
+        type: 'Bosses',
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 3600000,
+        closesAt: Date.now() + 1800000,
+        isClosed: false,
+        accessMode: 'OPEN'
+      },
+      {
+        accessMode: 'OPEN',
+        allowedUserIds: [],
+        options: [
+          {
+            id: 'opt1',
+            label: '20:00',
+            time: '20:00',
+            capacity: 10,
+            enrollments: [
+              { displayName: 'Alice' },
+              { displayName: 'Bob' },
+              { displayName: 'Carl' },
+              { displayName: 'Diana' },
+              { displayName: 'Erik' }
+            ],
+            fillers: []
+          }
+        ]
+      }
+    );
+
+    const fields = payload.embeds[0].data.fields || [];
+    const slot = fields.find(field => String(field.name).includes('20:00'));
+    expect(String(slot.value)).toContain('Alice');
+    expect(String(slot.value)).toContain('Bob');
+    expect(String(slot.value)).toContain('Carl');
+    expect(String(slot.value)).toContain('Diana');
+    expect(String(slot.value)).toContain('Erik');
+    expect(String(slot.value)).not.toContain('+');
+    expect(String(slot.value)).not.toContain('mas');
+  });
 });
