@@ -1,6 +1,14 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getEventTypeMeta } = require('../constants/eventTypes');
 const { createParticipantDisplayFormatter } = require('./participantDisplayFormatter');
+const {
+  sanitizeDisplayText,
+  safeEmbedTitle,
+  safeEmbedDescription,
+  safeEmbedFieldName,
+  safeEmbedFieldValue,
+  safeMessageContent
+} = require('./textSafety');
 
 function normalizeAccessMode(value) {
   return String(value || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
@@ -20,14 +28,12 @@ const ICONS = {
 };
 const PARTICIPANT_PREFIX = '▏ ';
 
-function compactMembers(entries = [], formatParticipantDisplay, limit = 4) {
+function renderMembers(entries = [], formatParticipantDisplay) {
   const list = Array.isArray(entries) ? entries : [];
   if (list.length <= 0) return '-';
-  const visible = list.slice(0, limit);
-  const lines = visible.map(entry => `${PARTICIPANT_PREFIX}${formatParticipantDisplay(entry)}`);
-  const extra = list.length - visible.length;
-  if (extra > 0) lines.push(`${PARTICIPANT_PREFIX}+${extra} mas`);
-  return lines.join('\n');
+  return list
+    .map(entry => `${PARTICIPANT_PREFIX}${sanitizeDisplayText(formatParticipantDisplay(entry), { maxLength: 64, fallback: 'Usuario' })}`)
+    .join('\n');
 }
 
 function buildPveEmbed(event, view = {}) {
@@ -55,7 +61,7 @@ function buildPveEmbed(event, view = {}) {
     `${ICONS.calendar} **Horario**`,
     `<t:${startsAt}:F> - <t:${endsAt}:t>`,
     `<t:${startsAt}:R>`,
-    event.type || 'Contenido PvE',
+    sanitizeDisplayText(event.type, { maxLength: 120, fallback: 'Contenido PvE' }),
     '',
     `${ICONS.note} **Inscripciones**`,
     event.isClosed ? 'Cerradas' : `Abiertas (cierran ${closesAt})`,
@@ -64,21 +70,21 @@ function buildPveEmbed(event, view = {}) {
   ].join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle(`${ICONS.adventure} ${event.name} (${eventMeta.label})`)
-    .setDescription(description)
+    .setTitle(safeEmbedTitle(`${ICONS.adventure} ${sanitizeDisplayText(event.name, { maxLength: 90, fallback: 'Evento PvE' })} (${eventMeta.label})`, `${ICONS.adventure} Evento PvE`))
+    .setDescription(safeEmbedDescription(description))
     .setColor(0x2ecc71);
 
   if (!options.length) {
-    embed.addFields({ name: 'Horarios', value: 'Sin horarios configurados', inline: false });
+    embed.addFields({ name: 'Horarios', value: safeEmbedFieldValue('Sin horarios configurados'), inline: false });
   } else {
     const limited = options.slice(0, 18);
     for (let index = 0; index < limited.length; index += 1) {
       const option = limited[index];
-      const primaryMembers = compactMembers(option.enrollments, formatParticipantDisplay, 4);
+      const primaryMembers = renderMembers(option.enrollments, formatParticipantDisplay);
 
       embed.addFields({
-        name: `${ICONS.clock} ${option.label} (${option.enrollments.length}/${option.capacity})`,
-        value: primaryMembers,
+        name: safeEmbedFieldName(`${ICONS.clock} ${sanitizeDisplayText(option.label, { maxLength: 60, fallback: 'Horario' })} (${option.enrollments.length}/${option.capacity})`),
+        value: safeEmbedFieldValue(primaryMembers),
         inline: true
       });
 
@@ -92,14 +98,14 @@ function buildPveEmbed(event, view = {}) {
       const fillerLines = limited.map(option => {
         const fillers = Array.isArray(option.fillers) ? option.fillers : [];
         const value = fillers.length > 0
-          ? fillers.map(entry => formatParticipantDisplay(entry)).join(', ')
+          ? fillers.map(entry => sanitizeDisplayText(formatParticipantDisplay(entry), { maxLength: 64, fallback: 'Usuario' })).join(', ')
           : '-';
-        return `${option.label} -> ${value}`;
+        return `${sanitizeDisplayText(option.label, { maxLength: 60, fallback: 'Horario' })} -> ${value}`;
       });
 
       embed.addFields({
         name: '🧩 Fillers',
-        value: fillerLines.join('\n').slice(0, 1024),
+        value: safeEmbedFieldValue(fillerLines.join('\n')),
         inline: false
       });
     }
@@ -122,7 +128,7 @@ function buildPveJoinRows(event, view = {}) {
     row.addComponents(
       new ButtonBuilder()
         .setCustomId(`pve_join_${option.id}`)
-        .setLabel(option.label)
+        .setLabel(sanitizeDisplayText(option.label, { maxLength: 80, fallback: 'Horario' }))
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(event.isClosed)
     );
@@ -187,9 +193,9 @@ function buildPveListText(event, view = {}) {
   });
 
   return [
-    `**${event.name}**`,
+    `**${sanitizeDisplayText(event.name, { maxLength: 90, fallback: 'Evento PvE' })}**`,
     '',
-    sections.length ? sections.join('\n\n') : 'Sin horarios configurados'
+    safeMessageContent(sections.length ? sections.join('\n\n') : 'Sin horarios configurados', 'Sin horarios configurados')
   ].join('\n');
 }
 

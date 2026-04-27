@@ -1,6 +1,8 @@
 const { parseEmojiInput } = require('../../utils/emojiHelper');
 const { loadWars, updateWar } = require('../../services/warService');
 const pveService = require('../../services/pveService');
+const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../../utils/textSafety');
+const { logWarn } = require('../../utils/appLogger');
 const { getSelectedEventContext, setSelectedEventContext } = require('../../utils/eventAdminContextStore');
 const { refreshWarMessage } = require('../../commands/eventadminShared');
 const { isValidTime } = require('../../utils/cronHelper');
@@ -24,12 +26,25 @@ async function handleEventRoleAddModal(interaction) {
   const context = getSelectedWarContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const name = interaction.fields.getTextInputValue('panel_event_role_add_name')?.trim();
-  const slotsRaw = interaction.fields.getTextInputValue('panel_event_role_add_slots')?.trim();
-  const iconRaw = interaction.fields.getTextInputValue('panel_event_role_add_icon')?.trim();
+  const nameInput = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_role_add_name'), {
+    maxLength: 60,
+    fallback: ''
+  });
+  const slotsRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_role_add_slots'), {
+    maxLength: 3,
+    fallback: ''
+  }).value;
+  const iconRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_role_add_icon'), {
+    maxLength: 80,
+    allowEmpty: true
+  }).value;
+  const name = nameInput.value;
 
   const slots = Number.parseInt(slotsRaw, 10);
   if (!name) return await safeModalReply(interaction, { content: 'Nombre invalido.' });
+  if (nameInput.hadMassMentions) {
+    logWarn('Mention masiva neutralizada en alta de rol', { userId: interaction.user?.id, guildId: interaction.guildId });
+  }
   if (!Number.isInteger(slots) || slots < 1 || slots > 999) {
     return await safeModalReply(interaction, { content: 'Slots invalidos. Deben estar entre 1 y 999.' });
   }
@@ -66,8 +81,15 @@ async function handleEventRoleRenameModal(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const newName = interaction.fields.getTextInputValue('panel_event_role_rename_name')?.trim();
+  const newNameInput = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_role_rename_name'), {
+    maxLength: 60,
+    fallback: ''
+  });
+  const newName = newNameInput.value;
   if (!newName) return await safeModalReply(interaction, { content: 'Nombre invalido.' });
+  if (newNameInput.hadMassMentions) {
+    logWarn('Mention masiva neutralizada en rename de rol', { userId: interaction.user?.id, guildId: interaction.guildId });
+  }
 
   if (context.war.roles.some((role, idx) =>
     idx !== context.roleIndex && String(role.name).toLowerCase() === newName.toLowerCase()
@@ -90,7 +112,10 @@ async function handleEventRoleSlotsModal(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const slotsRaw = interaction.fields.getTextInputValue('panel_event_role_slots_value')?.trim();
+  const slotsRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_role_slots_value'), {
+    maxLength: 3,
+    fallback: ''
+  }).value;
   const slots = Number.parseInt(slotsRaw, 10);
   if (!Number.isInteger(slots) || slots < 1 || slots > 999) {
     return await safeModalReply(interaction, { content: 'Slots invalidos. Deben estar entre 1 y 999.' });
@@ -111,7 +136,10 @@ async function handleEventRoleIconModal(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const iconRaw = interaction.fields.getTextInputValue('panel_event_role_icon_value')?.trim() || '';
+  const iconRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_role_icon_value'), {
+    maxLength: 80,
+    allowEmpty: true
+  }).value || '';
   if (!iconRaw) {
     context.role.emoji = null;
     context.role.emojiSource = null;
@@ -133,9 +161,20 @@ async function handleEventEditDataBasicModal(interaction) {
   const context = getSelectedWarContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const name = interaction.fields.getTextInputValue('panel_event_edit_data_name')?.trim();
-  const type = interaction.fields.getTextInputValue('panel_event_edit_data_type')?.trim() || '';
-  const durationRaw = interaction.fields.getTextInputValue('panel_event_edit_data_duration')?.trim();
+  const nameInput = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_data_name'), {
+    maxLength: 90,
+    fallback: ''
+  });
+  const typeInput = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_data_type'), {
+    maxLength: 100,
+    allowEmpty: true
+  });
+  const durationRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_data_duration'), {
+    maxLength: 4,
+    fallback: ''
+  }).value;
+  const name = nameInput.value;
+  const type = typeInput.value || '';
   const duration = Number.parseInt(durationRaw, 10);
   if (!name) return await safeModalReply(interaction, { content: 'Nombre invalido.' });
   if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
@@ -171,7 +210,10 @@ async function handleEventEditCloseModal(interaction) {
   const context = getSelectedWarContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const closeRaw = interaction.fields.getTextInputValue('panel_event_edit_close_value')?.trim();
+  const closeRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_close_value'), {
+    maxLength: 4,
+    fallback: ''
+  }).value;
   const closeBefore = Number.parseInt(closeRaw, 10);
   const duration = Number.isInteger(context.war.duration) ? context.war.duration : 1440;
   if (!Number.isInteger(closeBefore) || closeBefore < 0 || closeBefore >= duration) {
@@ -205,8 +247,14 @@ async function handleEventEditRecapModal(interaction) {
   const context = getSelectedWarContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const minutesRaw = interaction.fields.getTextInputValue('panel_event_edit_recap_minutes')?.trim();
-  const messageText = interaction.fields.getTextInputValue('panel_event_edit_recap_message')?.trim() || '';
+  const minutesRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_recap_minutes'), {
+    maxLength: 4,
+    fallback: ''
+  }).value;
+  const messageText = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_recap_message'), {
+    maxLength: 250,
+    allowEmpty: true
+  }).value || '';
   const minutesBeforeExpire = Number.parseInt(minutesRaw, 10);
   if (!Number.isInteger(minutesBeforeExpire) || minutesBeforeExpire < 0 || minutesBeforeExpire > 1440) {
     return await safeModalReply(interaction, { content: 'Tiempo de borrado invalido. Usa 0 a 1440.' });
@@ -248,8 +296,14 @@ async function handleEventEditScheduleModal(interaction) {
   const context = getSelectedWarContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const time = interaction.fields.getTextInputValue('panel_event_edit_schedule_time')?.trim();
-  const dayRaw = interaction.fields.getTextInputValue('panel_event_edit_schedule_day')?.trim();
+  const time = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_schedule_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
+  const dayRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_schedule_day'), {
+    maxLength: 2,
+    fallback: ''
+  }).value;
   const day = Number.parseInt(dayRaw, 10);
 
   if (!isValidTime(time)) {
@@ -294,8 +348,14 @@ async function handleEventScheduleSeriesAddModal(interaction) {
   const context = getSelectedWarContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const time = interaction.fields.getTextInputValue('panel_event_schedule_series_time')?.trim();
-  const daysRaw = interaction.fields.getTextInputValue('panel_event_schedule_series_days')?.trim();
+  const time = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_schedule_series_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
+  const daysRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_schedule_series_days'), {
+    maxLength: 64,
+    fallback: ''
+  }).value;
 
   try {
     const result = await addSeriesDays(context.war, interaction.channelId, time, daysRaw);
@@ -333,8 +393,14 @@ async function handleEventScheduleSeriesEditModal(interaction) {
     return await replyWithSeriesScheduleManager(interaction, context.war, series, context.war.id, 'Selecciona primero la ocurrencia a editar.');
   }
 
-  const time = interaction.fields.getTextInputValue('panel_event_schedule_series_time')?.trim();
-  const dayRaw = interaction.fields.getTextInputValue('panel_event_schedule_series_day')?.trim();
+  const time = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_schedule_series_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
+  const dayRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_schedule_series_day'), {
+    maxLength: 2,
+    fallback: ''
+  }).value;
   const day = Number.parseInt(dayRaw, 10);
 
   try {
@@ -354,8 +420,14 @@ async function handlePveSlotAddModal(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const time = interaction.fields.getTextInputValue('panel_pve_slot_time')?.trim();
-  const capacity = interaction.fields.getTextInputValue('panel_pve_slot_capacity')?.trim();
+  const time = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_slot_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
+  const capacity = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_slot_capacity'), {
+    maxLength: 3,
+    fallback: ''
+  }).value;
 
   try {
     await pveService.addSlot(context.war.id, time, capacity);
@@ -385,8 +457,14 @@ async function handlePveSlotEditModal(interaction) {
   const optionId = context.context.pendingPveOptionId;
   if (!optionId) return await safeModalReply(interaction, { content: 'Selecciona un horario primero.' });
 
-  const time = interaction.fields.getTextInputValue('panel_pve_slot_time')?.trim();
-  const capacity = interaction.fields.getTextInputValue('panel_pve_slot_capacity')?.trim();
+  const time = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_slot_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
+  const capacity = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_slot_capacity'), {
+    maxLength: 3,
+    fallback: ''
+  }).value;
 
   try {
     await pveService.editSlot(optionId, { time, capacity });
@@ -424,7 +502,10 @@ async function handlePveEnrollMoveModal(interaction) {
     return await safeModalReply(interaction, { content: 'Selecciona un inscrito/filler primero.' });
   }
 
-  const targetTime = interaction.fields.getTextInputValue('panel_pve_enroll_target_time')?.trim();
+  const targetTime = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_enroll_target_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
   const view = await pveService.getEventPveView(context.war);
   const targetSlot = findSlotByTime(view.options, targetTime);
   if (!targetSlot) {
@@ -453,10 +534,23 @@ async function handlePveEnrollAddModal(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const userId = interaction.fields.getTextInputValue('panel_pve_enroll_add_user_id')?.trim();
-  const displayName = interaction.fields.getTextInputValue('panel_pve_enroll_add_display')?.trim();
-  const typeRaw = interaction.fields.getTextInputValue('panel_pve_enroll_add_type')?.trim();
-  const targetTime = interaction.fields.getTextInputValue('panel_pve_enroll_add_time')?.trim();
+  const userId = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_enroll_add_user_id'), {
+    maxLength: 32,
+    fallback: ''
+  }).value;
+  const displayNameInput = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_enroll_add_display'), {
+    maxLength: 64,
+    fallback: ''
+  });
+  const displayName = sanitizeDisplayText(displayNameInput.value, { maxLength: 64, fallback: '' });
+  const typeRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_enroll_add_type'), {
+    maxLength: 8,
+    fallback: ''
+  }).value;
+  const targetTime = sanitizeUserInput(interaction.fields.getTextInputValue('panel_pve_enroll_add_time'), {
+    maxLength: 5,
+    allowEmpty: true
+  }).value;
 
   if (!userId || !displayName) {
     return await safeModalReply(interaction, { content: 'userId y nickname son requeridos.' });
@@ -577,9 +671,13 @@ async function respondModalInFlow(interaction, payload) {
 }
 
 async function safeModalReply(interaction, payload) {
+  const sanitizedPayload = payload?.content
+    ? { ...payload, content: safeMessageContent(payload.content, 'Accion procesada') }
+    : payload;
+
   if (interaction.replied || interaction.deferred) {
     try {
-      await interaction.editReply(payload);
+      await interaction.editReply(sanitizedPayload);
       return;
     } catch (error) {
       if (error?.code !== 10062 && error?.code !== 40060) {
@@ -589,7 +687,7 @@ async function safeModalReply(interaction, payload) {
     }
   }
 
-  await interaction.reply({ flags: 64, ...payload });
+  await interaction.reply({ flags: 64, ...sanitizedPayload });
 }
 
 function getSelectedWarContext(interaction) {

@@ -3,6 +3,8 @@ const { buildEventMessagePayload, buildEventReadOnlyPayload, getEventMentionable
 const warService = require('./warService');
 const { shouldExecute } = require('../utils/cronHelper');
 const pveService = require('./pveService');
+const { safeMessageContent, neutralizeMassMentions } = require('../utils/textSafety');
+const { logInfo, logWarn, logError } = require('../utils/appLogger');
 
 let schedulerInstance = null;
 let checkInterval = null;
@@ -13,7 +15,7 @@ let checkInterval = null;
  */
 function initScheduler(client) {
   if (schedulerInstance) {
-    console.warn('⚠️ Scheduler ya está inicializado');
+    logWarn('Scheduler ya estaba inicializado');
     return;
   }
 
@@ -24,21 +26,18 @@ function initScheduler(client) {
   };
 
   startScheduler();
-  console.log('✅ Scheduler inicializado y corriendo');
+  logInfo('Scheduler inicializado y corriendo');
 }
 
 /**
- * Inicia el loop de verificación (cada minuto)
+ * Inicia el loop de verificacion (cada minuto)
  */
 function startScheduler() {
   if (checkInterval) {
     clearInterval(checkInterval);
   }
 
-  // Ejecutar inmediatamente
   checkAndExecuteEvents();
-
-  // Luego cada minuto
   checkInterval = setInterval(checkAndExecuteEvents, 60000);
 }
 
@@ -51,7 +50,7 @@ function stopScheduler() {
     checkInterval = null;
   }
   schedulerInstance = null;
-  console.log('⏹️ Scheduler detenido');
+  logInfo('Scheduler detenido');
 }
 
 /**
@@ -80,27 +79,23 @@ async function checkAndExecuteEvents() {
         continue;
       }
 
-      // Saltarse si no es un evento con schedule
       if (!war.schedule || !war.schedule.enabled) continue;
       if ((war.dayOfWeek === null || war.dayOfWeek === undefined) || !war.time) continue;
 
-      // Verificar si debe ejecutarse
       if (!shouldExecute(war.dayOfWeek, war.time, now, war.timezone)) continue;
 
-      // Verificar si ya se ejecutó hoy
       const lastCreatedDate = new Date(war.schedule.lastCreatedAt || 0);
       const todayString = getDateString(now);
       const lastCreatedString = getDateString(lastCreatedDate);
 
       if (todayString === lastCreatedString) {
-        continue; // Ya ejecutado hoy
+        continue;
       }
 
-      // Ejecutar: publicar nuevo evento
       await executeWarPublication(war);
     }
   } catch (error) {
-    console.error('❌ Error en scheduler:', error);
+    logError('Error en scheduler', error);
   }
 }
 
@@ -115,7 +110,7 @@ function getDateString(date) {
 }
 
 /**
- * Ejecuta la publicación de un evento
+ * Ejecuta la publicacion de un evento
  */
 async function executeWarPublication(war) {
   const { client } = schedulerInstance;
@@ -123,18 +118,21 @@ async function executeWarPublication(war) {
   try {
     const channel = await client.channels.fetch(war.channelId).catch(() => null);
     if (!channel) {
-      console.warn(`⚠️ No se encontró canal ${war.channelId} para evento ${war.id}`);
+      logWarn('No se encontro canal para evento programado', { warId: war.id, channelId: war.channelId });
       return;
     }
 
-    // Borrar mensaje anterior si existe
     if (war.messageId) {
       try {
         const oldMessage = await channel.messages.fetch(war.messageId);
         await oldMessage.delete();
-        console.log(`🗑️ Mensaje anterior eliminado: ${war.messageId}`);
-      } catch (e) {
-        console.warn(`⚠️ No se pudo eliminar mensaje anterior: ${e.message}`);
+        logInfo('Mensaje anterior eliminado en scheduler', { warId: war.id, messageId: war.messageId });
+      } catch (error) {
+        logWarn('No se pudo eliminar mensaje anterior en scheduler', {
+          warId: war.id,
+          messageId: war.messageId,
+          reason: error?.message || String(error)
+        });
       }
     }
 
@@ -157,7 +155,6 @@ async function executeWarPublication(war) {
     const expiresAt = publicationTimestamp + durationMinutes * 60 * 1000;
     const closesAt = Math.max(publicationTimestamp, expiresAt - closeBeforeMinutes * 60 * 1000);
 
-    // Publicar nuevo mensaje (incluye menciones configuradas)
     const warForPublication = {
       ...war,
       createdAt: publicationTimestamp,
@@ -184,14 +181,13 @@ async function executeWarPublication(war) {
 
     const payload = await buildEventMessagePayload(warForPublication);
     const message = await channel.send({
-      content: publishContent,
+      content: safeMessageContent(publishContent, 'Evento creado automaticamente'),
       allowedMentions: notifyTargets.length > 0
         ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
         : { parse: [] },
       ...payload
     });
 
-    // Actualizar registro del evento
     warForPublication.messageId = message.id;
     warForPublication.schedule.lastCreatedAt = publicationTimestamp;
     if (warForPublication.schedule?.mode === 'once') {
@@ -199,9 +195,9 @@ async function executeWarPublication(war) {
     }
     await warService.updateWar(warForPublication);
 
-    console.log(`✅ Evento auto-publicado: ${war.id} en canal ${war.channelId}`);
+    logInfo('Evento auto-publicado', { warId: war.id, channelId: war.channelId, messageId: message.id });
   } catch (error) {
-    console.error(`❌ Error publicando evento ${war.id}:`, error);
+    logError(`Error publicando evento ${war.id}`, error);
   }
 }
 
@@ -244,11 +240,11 @@ async function publishRecapThread(war) {
     const mentionsLine = uniqueUserIds.length > 0
       ? uniqueUserIds.map(userId => `<@${userId}>`).join(' ')
       : '(sin inscritos para avisar)';
-    const customText = String(war.recap?.messageText || '').trim();
+    const customText = neutralizeMassMentions(String(war.recap?.messageText || '').trim());
 
     await thread.send({
-      content: customText ? `${customText}\n\n${mentionsLine}` : mentionsLine,
-      allowedMentions: { parse: ['users'] }
+      content: safeMessageContent(customText ? `${customText}\n\n${mentionsLine}` : mentionsLine, '(sin inscritos para avisar)'),
+      allowedMentions: uniqueUserIds.length > 0 ? { parse: [], users: uniqueUserIds } : { parse: [] }
     });
 
     await thread.send(await buildEventReadOnlyPayload({ ...war, isClosed: true }));
@@ -257,7 +253,7 @@ async function publishRecapThread(war) {
     war.recap.lastPostedAt = Date.now();
     await warService.updateWar(war);
   } catch (error) {
-    console.error(`Error publicando hilo de resumen ${war.id}:`, error);
+    logError(`Error publicando hilo de resumen ${war.id}`, error);
   }
 }
 
@@ -274,14 +270,14 @@ async function closeWarSignups(war) {
         await message.edit(await buildEventMessagePayload(war));
       } catch (error) {
         if (error?.code !== 10008) {
-          console.warn(`No se pudo actualizar cierre de inscripciones para ${war.id}:`, error?.message || error);
+          logWarn('No se pudo actualizar cierre de inscripciones', { warId: war.id, reason: error?.message || String(error) });
         }
       }
     }
 
     await warService.updateWar(war);
   } catch (error) {
-    console.error(`Error al cerrar inscripciones de ${war.id}:`, error);
+    logError(`Error al cerrar inscripciones de ${war.id}`, error);
   }
 }
 
@@ -303,7 +299,7 @@ async function expireWarMessage(war) {
       await message.delete();
     } catch (error) {
       if (error?.code !== 10008) {
-        console.warn(`No se pudo eliminar evento expirado ${war.id}:`, error?.message || error);
+        logWarn('No se pudo eliminar evento expirado', { warId: war.id, reason: error?.message || String(error) });
       }
     }
 
@@ -311,9 +307,9 @@ async function expireWarMessage(war) {
     war.isClosed = true;
     war.schedule.lastMessageIdDeleted = Date.now();
     await warService.updateWar(war);
-    console.log(`Evento expirado y eliminado: ${war.id}`);
+    logInfo('Evento expirado y eliminado', { warId: war.id });
   } catch (error) {
-    console.error(`Error al expirar evento ${war.id}:`, error);
+    logError(`Error al expirar evento ${war.id}`, error);
   }
 }
 

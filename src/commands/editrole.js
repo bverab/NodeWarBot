@@ -1,6 +1,8 @@
 const { SlashCommandBuilder } = require('discord.js');
 const { parseEmojiInput } = require('../utils/emojiHelper');
 const { getDraftWar: getDraftWarFromStore } = require('../utils/draftSessionStore');
+const { sanitizeUserInput, safeMessageContent } = require('../utils/textSafety');
+const { logError, logWarn } = require('../utils/appLogger');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -108,9 +110,16 @@ module.exports = {
       }
 
       if (subcommand === 'rename') {
-        const newName = interaction.options.getString('nombre', true).trim();
+        const newNameInput = sanitizeUserInput(interaction.options.getString('nombre', true), {
+          maxLength: 60,
+          fallback: ''
+        });
+        const newName = newNameInput.value;
         if (!newName) {
           return await interaction.editReply({ content: 'Nombre invalido.' });
+        }
+        if (newNameInput.hadMassMentions) {
+          logWarn('Mention masiva neutralizada en /editrole rename', { userId: interaction.user?.id });
         }
 
         roleContext.role.name = newName;
@@ -130,7 +139,10 @@ module.exports = {
       }
 
       if (subcommand === 'icon') {
-        const value = interaction.options.getString('valor', true).trim();
+        const value = sanitizeUserInput(interaction.options.getString('valor', true), {
+          maxLength: 80,
+          fallback: ''
+        }).value;
         const parsed = parseEmojiInput(value, interaction.guild);
         if (!parsed) {
           return await interaction.editReply({ content: 'Icono invalido. Usa emoji unicode o formato <:nombre:id>.' });
@@ -164,12 +176,12 @@ module.exports = {
 
       return await interaction.editReply({ content: 'Subcomando no soportado.' });
     } catch (error) {
-      console.error('Error en editrole:', error);
+      logError('Error en editrole', error, { userId: interaction.user?.id });
 
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: 'Error ejecutando editrole', flags: 64 });
+        await interaction.reply({ content: safeMessageContent('Error ejecutando editrole'), flags: 64 });
       } else {
-        await interaction.editReply({ content: 'Error ejecutando editrole' }).catch(() => null);
+        await interaction.editReply({ content: safeMessageContent('Error ejecutando editrole') }).catch(() => null);
       }
     }
   }

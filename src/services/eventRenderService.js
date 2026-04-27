@@ -2,6 +2,7 @@ const { normalizeEventType } = require('../constants/eventTypes');
 const { buildWarMessagePayload, buildWarReadOnlyPayload, buildWarListText } = require('../utils/warMessageBuilder');
 const { buildPveMessagePayload, buildPveReadOnlyPayload, buildPveListText } = require('../utils/pveMessageBuilder');
 const pveService = require('./pveService');
+const { safeMessageContent } = require('../utils/textSafety');
 
 async function buildEventMessagePayload(event) {
   if (normalizeEventType(event.eventType) === 'pve') {
@@ -22,9 +23,9 @@ async function buildEventReadOnlyPayload(event) {
 async function buildEventListText(event) {
   if (normalizeEventType(event.eventType) === 'pve') {
     const view = await pveService.getEventPveView(event);
-    return buildPveListText(event, view);
+    return safeMessageContent(buildPveListText(event, view), 'Sin datos para mostrar');
   }
-  return buildWarListText(event);
+  return safeMessageContent(buildWarListText(event), 'Sin datos para mostrar');
 }
 
 async function getEventMentionableUserIds(event) {

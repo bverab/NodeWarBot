@@ -124,7 +124,8 @@ async function main() {
       try {
         await interaction.reply({
           content: 'Error ejecutando el comando',
-          flags: 64
+          flags: 64,
+          allowedMentions: { parse: [] }
         });
       } catch (replyError) {
         if (replyError?.code === 40060 || replyError?.code === 10062) {

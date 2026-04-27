@@ -7,6 +7,8 @@ const {
 const { isValidTime, normalizeTimeZone, normalizeTimeZoneInfo } = require('../utils/cronHelper');
 const { normalizeEventType, getEventTypeMeta } = require('../constants/eventTypes');
 const { extractEmojiAndName, parseEmojiInput } = require('../utils/emojiHelper');
+const { sanitizeUserInput, sanitizeDisplayText, safeEmbedTitle, safeEmbedDescription, safeEmbedFieldValue } = require('../utils/textSafety');
+const { logError, logWarn, logInfo } = require('../utils/appLogger');
 const templateService = require('../services/templateService');
 const pveService = require('../services/pveService');
 const {
@@ -63,7 +65,7 @@ module.exports = async interaction => {
       return await handleConfigurePveSlotsModal(interaction);
     }
   } catch (error) {
-    console.error('Error en modalHandler:', error);
+    logError('Error en modalHandler', error, { customId: interaction.customId, userId: interaction.user?.id });
     await safeRespond(interaction, 'Error procesando el modal');
   }
 };
@@ -86,9 +88,39 @@ async function handleWarCreation(interaction) {
   }
   const templateDraft = template ? templateService.buildTemplateDraft(template) : null;
 
-  const name = interaction.fields.getTextInputValue('war_name_input');
-  const type = interaction.fields.getTextInputValue('war_type_input') || templateDraft?.type || eventMeta.defaultDescription;
-  const timezoneRaw = interaction.fields.getTextInputValue('war_timezone_input') || templateDraft?.timezone || 'America/Bogota';
+  const nameInput = sanitizeUserInput(interaction.fields.getTextInputValue('war_name_input'), {
+    maxLength: 50,
+    fallback: ''
+  });
+  const typeInput = sanitizeUserInput(
+    interaction.fields.getTextInputValue('war_type_input') || templateDraft?.type || eventMeta.defaultDescription,
+    {
+      maxLength: 100,
+      allowEmpty: true
+    }
+  );
+  const timezoneInput = sanitizeUserInput(
+    interaction.fields.getTextInputValue('war_timezone_input') || templateDraft?.timezone || 'America/Bogota',
+    {
+      maxLength: 50,
+      fallback: 'America/Bogota'
+    }
+  );
+
+  const name = nameInput.value;
+  const type = typeInput.value || eventMeta.defaultDescription;
+  const timezoneRaw = timezoneInput.value || 'America/Bogota';
+  if (!name) {
+    return await safeRespond(interaction, '❌ Nombre invalido. No puede estar vacio.');
+  }
+
+  if (nameInput.hadMassMentions || typeInput.hadMassMentions) {
+    logWarn('Se neutralizaron menciones masivas en creacion de evento', {
+      userId: interaction.user?.id,
+      guildId: interaction.guildId
+    });
+  }
+
   const timezoneInfo = normalizeTimeZoneInfo(timezoneRaw);
   if (timezoneInfo.source === 'fallback' && timezoneRaw?.trim()) {
     return await safeRespond(
@@ -97,8 +129,14 @@ async function handleWarCreation(interaction) {
     );
   }
   const timezone = normalizeTimeZone(timezoneRaw);
-  const timeStr = interaction.fields.getTextInputValue('war_time_input')?.trim() || '22:00';
-  const durationRaw = interaction.fields.getTextInputValue('war_duration_input')?.trim() || '70';
+  const timeStr = sanitizeUserInput(interaction.fields.getTextInputValue('war_time_input'), {
+    maxLength: 5,
+    fallback: '22:00'
+  }).value;
+  const durationRaw = sanitizeUserInput(interaction.fields.getTextInputValue('war_duration_input'), {
+    maxLength: 9,
+    fallback: '70'
+  }).value;
 
   if (!isValidTime(timeStr)) {
     return await safeRespond(interaction, '\u274C Hora invalida. Usa formato HH:mm (ej: 22:00)');
@@ -170,17 +208,21 @@ async function showRolesEditor(interaction, warData, notice = '') {
     : '*(ninguno)*';
 
   const embed = new EmbedBuilder()
-    .setTitle(`\u{1F4CB} ${warData.name} (${eventMeta.label})`)
-    .setDescription(warData.type || 'Evento de guerra')
+    .setTitle(safeEmbedTitle(`\u{1F4CB} ${warData.name} (${eventMeta.label})`, '📋 Evento'))
+    .setDescription(safeEmbedDescription(warData.type || 'Evento de guerra'))
     .setColor(0x5865f2)
     .addFields(
-      { name: '\u{1F30D} Zona Horaria', value: warData.timezone, inline: true },
-      { name: '\u{1F58C}\uFE0F Visual', value: `Fuente: ${String(warData.classIconSource || 'bot')}\nEstilo: ${String(warData.participantDisplayStyle || 'modern')}`, inline: true },
-      { name: '\u{1F465} Roles', value: rolesDisplay, inline: false },
-      { name: '\u{1F4DD} Pasos', value: '1. Agrega roles aqui\n2. Haz click en **Publicar** para elegir dias y @mentions', inline: false }
+      { name: '\u{1F30D} Zona Horaria', value: safeEmbedFieldValue(warData.timezone, 'Sin zona'), inline: true },
+      {
+        name: '\u{1F58C}\uFE0F Visual',
+        value: safeEmbedFieldValue(`Fuente: ${String(warData.classIconSource || 'bot')}\nEstilo: ${String(warData.participantDisplayStyle || 'modern')}`),
+        inline: true
+      },
+      { name: '\u{1F465} Roles', value: safeEmbedFieldValue(rolesDisplay), inline: false },
+      { name: '\u{1F4DD} Pasos', value: safeEmbedFieldValue('1. Agrega roles aqui\n2. Haz click en **Publicar** para elegir dias y @mentions'), inline: false }
     );
   if (notice) {
-    embed.addFields({ name: 'Info', value: notice, inline: false });
+    embed.addFields({ name: 'Info', value: safeEmbedFieldValue(notice), inline: false });
   }
 
   const buttons = new ActionRowBuilder().addComponents(
@@ -226,19 +268,19 @@ async function showPveEditor(interaction, warData, notice = '') {
     : '*(ninguno)*';
 
   const embed = new EmbedBuilder()
-    .setTitle(`🧭 ${warData.name} (${eventMeta.label})`)
-    .setDescription(warData.type || 'Evento PvE')
+    .setTitle(safeEmbedTitle(`🧭 ${warData.name} (${eventMeta.label})`, '🧭 Evento PvE'))
+    .setDescription(safeEmbedDescription(warData.type || 'Evento PvE'))
     .setColor(0x2ecc71)
     .addFields(
-      { name: '🌍 Zona Horaria', value: warData.timezone, inline: true },
-      { name: '🕒 Publicacion', value: `${warData.time} (${warData.duration} min)`, inline: true },
-      { name: '🔐 Acceso', value: accessText, inline: false },
-      { name: '⏰ Horarios', value: slotDisplay, inline: false },
-      { name: '📝 Pasos', value: '1. Configura horarios y cupo\n2. Haz click en **Publicar** para elegir dias y @mentions', inline: false }
+      { name: '🌍 Zona Horaria', value: safeEmbedFieldValue(warData.timezone, 'Sin zona'), inline: true },
+      { name: '🕒 Publicacion', value: safeEmbedFieldValue(`${warData.time} (${warData.duration} min)`), inline: true },
+      { name: '🔐 Acceso', value: safeEmbedFieldValue(accessText), inline: false },
+      { name: '⏰ Horarios', value: safeEmbedFieldValue(slotDisplay), inline: false },
+      { name: '📝 Pasos', value: safeEmbedFieldValue('1. Configura horarios y cupo\n2. Haz click en **Publicar** para elegir dias y @mentions'), inline: false }
     );
 
   if (notice) {
-    embed.addFields({ name: 'Info', value: notice, inline: false });
+    embed.addFields({ name: 'Info', value: safeEmbedFieldValue(notice), inline: false });
   }
 
   const buttons = new ActionRowBuilder().addComponents(
@@ -273,7 +315,10 @@ async function handleAddRolesBulkModal(interaction) {
     return await interaction.reply({ content: 'Sesion expirada', flags: 64 });
   }
 
-  const rolesText = interaction.fields.getTextInputValue('roles_text');
+  const rolesText = sanitizeUserInput(interaction.fields.getTextInputValue('roles_text'), {
+    maxLength: 1500,
+    fallback: ''
+  }).value;
   const lines = rolesText.split('\n').map(l => l.trim()).filter(Boolean);
 
   let added = 0;
@@ -326,7 +371,10 @@ function parseRoleLine(line, interaction) {
   const match = line.match(/^(.+?)\s*:\s*(\d+)\s*$/);
   if (!match) return null;
 
-  const leftPart = match[1].trim();
+  const leftPart = sanitizeUserInput(match[1], {
+    maxLength: 60,
+    fallback: ''
+  }).value;
   const max = Number.parseInt(match[2], 10);
   if (!max || max < 1) return null;
 
@@ -350,9 +398,15 @@ async function handlePanelEditNameModal(interaction) {
     return await interaction.reply({ content: selected.message, flags: 64 });
   }
 
-  const newName = interaction.fields.getTextInputValue('panel_edit_name_input')?.trim();
+  const { value: newName, hadMassMentions } = sanitizeUserInput(interaction.fields.getTextInputValue('panel_edit_name_input'), {
+    maxLength: 60,
+    fallback: ''
+  });
   if (!newName) {
     return await interaction.reply({ content: 'Nombre invalido.', flags: 64 });
+  }
+  if (hadMassMentions) {
+    logInfo('Se neutralizo mention masiva en rename de rol', { userId: interaction.user?.id });
   }
 
   selected.role.name = newName;
@@ -365,7 +419,10 @@ async function handlePanelEditSlotsModal(interaction) {
     return await interaction.reply({ content: selected.message, flags: 64 });
   }
 
-  const raw = interaction.fields.getTextInputValue('panel_edit_slots_input')?.trim();
+  const raw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_edit_slots_input'), {
+    maxLength: 4,
+    fallback: ''
+  }).value;
   const qty = Number.parseInt(raw, 10);
   if (!Number.isInteger(qty) || qty < 1) {
     return await interaction.reply({ content: 'Slots invalidos. Debe ser un numero mayor a 0.', flags: 64 });
@@ -388,7 +445,10 @@ async function handlePanelEditIconModal(interaction) {
     return await interaction.reply({ content: selected.message, flags: 64 });
   }
 
-  const value = interaction.fields.getTextInputValue('panel_edit_icon_input')?.trim();
+  const value = sanitizeUserInput(interaction.fields.getTextInputValue('panel_edit_icon_input'), {
+    maxLength: 80,
+    allowEmpty: true
+  }).value;
   if (!value) {
     selected.role.emoji = null;
     selected.role.emojiSource = null;
@@ -447,9 +507,9 @@ async function safeRespond(interaction, content) {
       await interaction.editReply({ content, embeds: [], components: [] });
       return;
     }
-    await interaction.reply({ content, flags: 64 });
+    await interaction.reply({ content, flags: 64, allowedMentions: { parse: [] } });
   } catch (error) {
-    console.warn(`No se pudo responder (${error?.code})`);
+    logWarn('No se pudo responder en modalHandler', { code: error?.code, customId: interaction.customId });
   }
 }
 

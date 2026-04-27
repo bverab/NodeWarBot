@@ -2,6 +2,14 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { getWarTotals } = require('./warState');
 const { getEventTypeMeta } = require('../constants/eventTypes');
 const { createParticipantDisplayFormatter } = require('./participantDisplayFormatter');
+const {
+  sanitizeDisplayText,
+  safeEmbedTitle,
+  safeEmbedDescription,
+  safeEmbedFieldName,
+  safeEmbedFieldValue,
+  safeMessageContent
+} = require('./textSafety');
 
 // Constructor de payload visual del evento:
 // - Embed principal (roles, waitlist, metadata)
@@ -30,11 +38,13 @@ function buildWarEmbed(war) {
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
   const recurrenceLabel = Number.isInteger(war.dayOfWeek) ? dayNames[war.dayOfWeek] : null;
 
+  const safeName = sanitizeDisplayText(war.name, { maxLength: 90, fallback: 'Evento' });
+  const safeType = sanitizeDisplayText(war.type, { maxLength: 120, fallback: 'Por definir' });
   const description = [
     `${ICONS.calendar} **Horario**`,
     `<t:${startsAt}:F> - <t:${endsAt}:t>`,
     `<t:${startsAt}:R>`,
-    war.type || 'Por definir',
+    safeType,
     '',
     `${ICONS.note} **Inscripciones**`,
     war.isClosed ? 'Cerradas' : 'Abiertas',
@@ -42,8 +52,8 @@ function buildWarEmbed(war) {
   ].join('\n');
 
   const embed = new EmbedBuilder()
-    .setTitle(`${ICONS.skull} ${war.name} (${eventMeta.label}) ${totalSlots} players`)
-    .setDescription(description)
+    .setTitle(safeEmbedTitle(`${ICONS.skull} ${safeName} (${eventMeta.label}) ${totalSlots} players`, `${ICONS.skull} Evento`))
+    .setDescription(safeEmbedDescription(description))
     .setColor(0x9333ea);
 
   const roleFields = war.roles.map(role => {
@@ -51,8 +61,8 @@ function buildWarEmbed(war) {
     const membersText = formatRoleMembers(role, formatParticipantDisplay);
 
     return {
-      name: `${role.emoji || ICONS.whiteCircle} ${role.name} (${role.users.length}/${role.max})`,
-      value: restrictionsText ? `${restrictionsText}\n${membersText}` : membersText,
+      name: safeEmbedFieldName(`${role.emoji || ICONS.whiteCircle} ${sanitizeDisplayText(role.name, { maxLength: 60, fallback: 'Rol' })} (${role.users.length}/${role.max})`),
+      value: safeEmbedFieldValue(restrictionsText ? `${restrictionsText}\n${membersText}` : membersText),
       inline: true
     };
   });
@@ -60,22 +70,24 @@ function buildWarEmbed(war) {
   if (roleFields.length) {
     embed.addFields(...roleFields);
   } else {
-    embed.addFields({ name: 'Roles', value: 'Sin roles configurados', inline: false });
+    embed.addFields({ name: 'Roles', value: safeEmbedFieldValue('Sin roles configurados'), inline: false });
   }
 
   const waitlistText = war.waitlist.length
     ? war.waitlist
       .map((entry, index) => {
         const role = war.roles.find(r => r.name === entry.roleName);
-        const roleLabel = role ? ` (${role.emoji || ICONS.whiteCircle} ${role.name})` : '';
-        return `${index + 1}. ${entry.userName}${roleLabel}`;
+        const roleLabel = role
+          ? ` (${role.emoji || ICONS.whiteCircle} ${sanitizeDisplayText(role.name, { maxLength: 60, fallback: 'Rol' })})`
+          : '';
+        return `${index + 1}. ${sanitizeDisplayText(entry.userName, { maxLength: 64, fallback: 'Usuario' })}${roleLabel}`;
       })
       .join('\n')
     : '-';
 
   embed.addFields({
-    name: `${ICONS.waitlist} Waitlist (${war.waitlist.length})`,
-    value: waitlistText,
+    name: safeEmbedFieldName(`${ICONS.waitlist} Waitlist (${war.waitlist.length})`, 'Waitlist'),
+    value: safeEmbedFieldValue(waitlistText),
     inline: false
   });
 
@@ -84,7 +96,7 @@ function buildWarEmbed(war) {
 
   embed.addFields({
     name: 'Registro',
-    value: `**${totalSigned}/${totalSlots}** jugadores inscritos\nCreado por ${createdBy} | ${createdAt}${recurrenceLabel ? `\nRepite: ${recurrenceLabel}` : ''}`,
+    value: safeEmbedFieldValue(`**${totalSigned}/${totalSlots}** jugadores inscritos\nCreado por ${createdBy} | ${createdAt}${recurrenceLabel ? `\nRepite: ${recurrenceLabel}` : ''}`),
     inline: false
   });
 
@@ -146,7 +158,7 @@ function formatRoleRestrictions(role) {
 
   const allowedNames = Array.isArray(role.allowedRoles) ? role.allowedRoles.filter(Boolean) : [];
   if (allowedNames.length > 0) {
-    return `${ICONS.lock} ${allowedNames.map(name => `@${name}`).join(' ')}`;
+    return `${ICONS.lock} ${allowedNames.map(name => sanitizeDisplayText(`@${name}`, { maxLength: 50, fallback: '@rol' })).join(' ')}`;
   }
 
   return null;
@@ -223,16 +235,16 @@ function buildWarListText(war) {
     .join('\n\n');
 
   const waitlistText = war.waitlist.length
-    ? war.waitlist.map((entry, index) => `${index + 1}. ${entry.userName}${entry.roleName ? ` (${entry.roleName})` : ''}`).join('\n')
+    ? war.waitlist.map((entry, index) => `${index + 1}. ${sanitizeDisplayText(entry.userName, { maxLength: 64, fallback: 'Usuario' })}${entry.roleName ? ` (${sanitizeDisplayText(entry.roleName, { maxLength: 60, fallback: 'Rol' })})` : ''}`).join('\n')
     : '(sin usuarios en espera)';
 
   return [
-    `**${war.name}**`,
+    `**${sanitizeDisplayText(war.name, { maxLength: 90, fallback: 'Evento' })}**`,
     '',
-    roleText || 'Sin roles',
+    safeMessageContent(roleText || 'Sin roles', 'Sin roles'),
     '',
     `**Waitlist (${war.waitlist.length})**`,
-    waitlistText
+    safeMessageContent(waitlistText, '(sin usuarios en espera)')
   ].join('\n');
 }
 function formatRoleMembers(role, formatParticipantDisplay) {

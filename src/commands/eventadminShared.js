@@ -6,6 +6,8 @@ const {
 } = require('../utils/eventAdminContextStore');
 const { getRoleByName, addParticipantToRole, pickWaitlistForRole } = require('../utils/warState');
 const { buildEventMessagePayload } = require('../services/eventRenderService');
+const { sanitizeDisplayText } = require('../utils/textSafety');
+const { logWarn, logError } = require('../utils/appLogger');
 
 async function resolveTargetWar(interaction, eventId) {
   if (eventId) {
@@ -51,7 +53,7 @@ async function resolveActiveWar(interaction) {
       return active;
     }
   } catch (error) {
-    console.warn('No se pudieron leer mensajes recientes para resolver evento activo');
+    logWarn('No se pudieron leer mensajes recientes para resolver evento activo', { channelId: interaction.channelId });
   }
 
   return null;
@@ -67,7 +69,7 @@ async function refreshWarMessage(interaction, war) {
     return true;
   } catch (error) {
     if (error?.code === 10008) return false;
-    console.error('Error actualizando mensaje del evento:', error);
+    logError('Error actualizando mensaje del evento', error, { warId: war.id, messageId: war.messageId });
     return false;
   }
 }
@@ -81,7 +83,7 @@ function promoteFromWaitlist(state, roleName) {
 
   const promoted = {
     userId: nextInWaitlist.userId,
-    displayName: nextInWaitlist.userName,
+    displayName: sanitizeDisplayText(nextInWaitlist.userName, { maxLength: 64, fallback: 'Usuario' }),
     isFake: nextInWaitlist.isFake
   };
 

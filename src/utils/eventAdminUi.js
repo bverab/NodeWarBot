@@ -8,6 +8,7 @@
   UserSelectMenuBuilder
 } = require('discord.js');
 const { normalizeEventType } = require('../constants/eventTypes');
+const { neutralizeMassMentions } = require('./textSafety');
 
 const DAY_NAMES_SHORT = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
 
@@ -902,7 +903,7 @@ function buildPanelDescription(war, scope) {
 }
 
 function truncate(text, max) {
-  const value = String(text || '');
+  const value = neutralizeMassMentions(String(text || ''));
   return value.length <= max ? value : `${value.slice(0, max - 1)}...`;
 }
 

@@ -16,6 +16,9 @@ const {
   pickWaitlistForRole
 } = require('../utils/warState');
 const { notifyPromotion } = require('../utils/promotionNotifier');
+const { sanitizeDisplayText, safeMessageContent } = require('../utils/textSafety');
+const { consumeRateLimit, buildInteractionRateKey } = require('../utils/rateLimiter');
+const { logError } = require('../utils/appLogger');
 
 // Maneja botones del mensaje publico del evento:
 // - Cerrar/abrir inscripciones
@@ -25,6 +28,18 @@ const { notifyPromotion } = require('../utils/promotionNotifier');
 module.exports = async interaction => {
   try {
     if (!interaction.isButton()) return;
+
+    const rate = consumeRateLimit(buildInteractionRateKey(interaction, 'button'), {
+      windowMs: 4000,
+      maxHits: 6
+    });
+    if (!rate.allowed) {
+      return await interaction.reply({
+        content: `Demasiadas acciones seguidas. Espera ${Math.ceil(rate.retryAfterMs / 1000)}s.`,
+        flags: 64,
+        allowedMentions: { parse: [] }
+      });
+    }
 
     await interaction.deferUpdate();
 
@@ -52,12 +67,19 @@ module.exports = async interaction => {
       return await handleLeavePveSlot(interaction);
     }
   } catch (error) {
-    console.error('Error en buttonHandler:', error);
+    logError('Error en buttonHandler', error, {
+      customId: interaction.customId,
+      userId: interaction.user?.id,
+      messageId: interaction.message?.id
+    });
 
     try {
       await interaction.followUp({ content: 'Error interno', flags: 64 });
     } catch (replyError) {
-      console.error('Error enviando follow-up:', replyError);
+      logError('Error enviando follow-up desde buttonHandler', replyError, {
+        customId: interaction.customId,
+        userId: interaction.user?.id
+      });
     }
   }
 };
@@ -160,7 +182,10 @@ async function handleJoinRole(interaction) {
 
   const participant = {
     userId: interaction.user.id,
-    displayName: interaction.member?.displayName || interaction.user.username,
+    displayName: sanitizeDisplayText(interaction.member?.displayName || interaction.user.username, {
+      maxLength: 64,
+      fallback: 'Usuario'
+    }),
     isFake: false,
     userRoleIds: interaction.member?.roles?.cache
       ? Array.from(interaction.member.roles.cache.keys()).map(String)
@@ -258,7 +283,7 @@ async function handleJoinRole(interaction) {
   };
 
   await interaction.followUp({
-    content: responseByType[result.type] || 'Evento actualizado',
+    content: safeMessageContent(responseByType[result.type] || 'Evento actualizado', 'Evento actualizado'),
     flags: 64
   });
 
@@ -283,7 +308,10 @@ async function handleJoinPveSlot(interaction) {
 
   const participant = {
     userId: interaction.user.id,
-    displayName: interaction.member?.displayName || interaction.user.username,
+    displayName: sanitizeDisplayText(interaction.member?.displayName || interaction.user.username, {
+      maxLength: 64,
+      fallback: 'Usuario'
+    }),
     isFake: false
   };
 
@@ -294,12 +322,7 @@ async function handleJoinPveSlot(interaction) {
     if (refreshed) {
       await interaction.message.edit(await buildEventMessagePayload(refreshed));
     }
-    return await interaction.followUp({
-      content: result.reason === 'joined_as_filler'
-        ? 'No estas en la lista permitida. Te agregue como Filler en este horario.'
-        : 'Inscripcion confirmada.',
-      flags: 64
-    });
+    return;
   }
 
   const responseByReason = {
@@ -332,11 +355,12 @@ async function handleLeavePveSlot(interaction) {
   if (refreshed) {
     await interaction.message.edit(await buildEventMessagePayload(refreshed));
   }
-
-  return await interaction.followUp({
-    content: left ? 'Saliste de tus inscripciones en este evento.' : 'No estabas inscrito en este evento.',
-    flags: 64
-  });
+  if (!left) {
+    return await interaction.followUp({
+      content: 'No estabas inscrito en este evento.',
+      flags: 64
+    });
+  }
 }
 
 function promoteFromWaitlist(state, roleName) {
@@ -349,7 +373,7 @@ function promoteFromWaitlist(state, roleName) {
 
   const promoted = {
     userId: nextInWaitlist.userId,
-    displayName: nextInWaitlist.userName,
+    displayName: sanitizeDisplayText(nextInWaitlist.userName, { maxLength: 64, fallback: 'Usuario' }),
     isFake: nextInWaitlist.isFake
   };
 

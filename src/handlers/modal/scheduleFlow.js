@@ -13,6 +13,8 @@ const {
 } = require('../../utils/draftSessionStore');
 const { normalizeEventType } = require('../../constants/eventTypes');
 const pveService = require('../../services/pveService');
+const { sanitizeUserInput, safeMessageContent } = require('../../utils/textSafety');
+const { logWarn } = require('../../utils/appLogger');
 
 async function showScheduleModeSelector(interaction, warData) {
   const menu = new StringSelectMenuBuilder()
@@ -199,7 +201,7 @@ async function showScheduleMentionsSelector(interaction, warData, selectedDays) 
       ]
     });
   } catch (error) {
-    console.warn('Error obteniendo roles:', error);
+    logWarn('Error obteniendo roles para selector de menciones', { reason: error?.message || String(error), guildId: interaction.guildId });
     await showPublishPreview(interaction, warData, selectedDays, [], 'editReply');
   }
 }
@@ -244,8 +246,14 @@ async function handleScheduleRecapModal(interaction) {
     return await interaction.editReply({ content: 'Sesion expirada', embeds: [], components: [] });
   }
 
-  const minutesRaw = interaction.fields.getTextInputValue('recap_minutes_before_expire_input')?.trim() || '0';
-  const textRaw = interaction.fields.getTextInputValue('recap_message_text_input')?.trim() || '';
+  const minutesRaw = sanitizeUserInput(interaction.fields.getTextInputValue('recap_minutes_before_expire_input'), {
+    maxLength: 4,
+    fallback: '0'
+  }).value;
+  const textRaw = sanitizeUserInput(interaction.fields.getTextInputValue('recap_message_text_input'), {
+    maxLength: 250,
+    allowEmpty: true
+  }).value || '';
 
   const minutesBeforeExpire = Number(minutesRaw);
   if (!Number.isInteger(minutesBeforeExpire) || minutesBeforeExpire < 0 || minutesBeforeExpire > 1440) {
@@ -408,17 +416,18 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
 }
 
 async function finalizeScheduleInteraction(interaction, payload) {
+  const safePayload = payload?.content ? { ...payload, content: safeMessageContent(payload.content, 'Accion procesada') } : payload;
   if (interaction.deferred || interaction.replied) {
-    await interaction.editReply(payload);
+    await interaction.editReply(safePayload);
     return;
   }
 
   if (interaction.isStringSelectMenu() || interaction.isButton()) {
-    await interaction.update(payload);
+    await interaction.update(safePayload);
     return;
   }
 
-  await interaction.reply({ ...payload, flags: 64 });
+  await interaction.reply({ ...safePayload, flags: 64 });
 }
 
 async function safeDefer(interaction) {

@@ -1,6 +1,7 @@
 const EMPTY_SLOT = '-';
 const { normalizeEventType } = require('../constants/eventTypes');
 const { normalizeClassIconSource, normalizeParticipantDisplayStyle } = require('./participantDisplayFormatter');
+const { sanitizeDisplayText, sanitizeUserInput } = require('./textSafety');
 
 // Utilidades de estado del evento:
 // - Normalizacion de datos persistidos
@@ -11,7 +12,7 @@ function toParticipant(entry) {
   if (typeof entry === 'object' && entry.userId) {
     return {
       userId: String(entry.userId),
-      displayName: entry.displayName || entry.userName || 'Usuario',
+      displayName: sanitizeDisplayText(entry.displayName || entry.userName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
       isFake: Boolean(entry.isFake) || String(entry.userId).startsWith('fake_')
     };
   }
@@ -24,7 +25,7 @@ function toParticipant(entry) {
 
     return {
       userId: userId.trim(),
-      displayName: (displayName || 'Usuario').trim(),
+      displayName: sanitizeDisplayText(displayName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
       isFake: userId.trim().startsWith('fake_')
     };
   }
@@ -36,7 +37,7 @@ function toParticipant(entry) {
 
     return {
       userId,
-      displayName: displayName || 'Usuario',
+      displayName: sanitizeDisplayText(displayName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
       isFake: true
     };
   }
@@ -55,13 +56,15 @@ function normalizeRole(role = {}) {
   const emoji = role.emoji || null;
 
   return {
-    name: (role.name || 'Rol').trim(),
+    name: sanitizeDisplayText(role.name || 'Rol', { maxLength: 60, fallback: 'Rol' }),
     max: Number.isInteger(role.max) && role.max > 0 ? role.max : 1,
     emoji,
     emojiSource: role.emojiSource || inferEmojiSource(emoji),
     users,
     allowedRoleIds: Array.isArray(role.allowedRoleIds) ? role.allowedRoleIds.map(String) : [],
-    allowedRoles: Array.isArray(role.allowedRoles) ? role.allowedRoles : []
+    allowedRoles: Array.isArray(role.allowedRoles)
+      ? role.allowedRoles.map(value => sanitizeDisplayText(value, { maxLength: 60, fallback: '' })).filter(Boolean)
+      : []
   };
 }
 
@@ -70,8 +73,8 @@ function normalizeWaitlistEntry(entry = {}) {
 
   return {
     userId: String(entry.userId),
-    userName: entry.userName || entry.displayName || 'Usuario',
-    roleName: entry.roleName || null,
+    userName: sanitizeDisplayText(entry.userName || entry.displayName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
+    roleName: entry.roleName ? sanitizeDisplayText(entry.roleName, { maxLength: 60, fallback: 'Rol' }) : null,
     joinedAt: Number.isFinite(entry.joinedAt) ? entry.joinedAt : Date.now(),
     isFake: Boolean(entry.isFake) || String(entry.userId).startsWith('fake_')
   };
@@ -81,7 +84,7 @@ function normalizeFillerEntry(entry = {}) {
   if (!entry.userId) return null;
   return {
     userId: String(entry.userId),
-    displayName: String(entry.displayName || entry.userName || 'Usuario'),
+    displayName: sanitizeDisplayText(entry.displayName || entry.userName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
     isFake: Boolean(entry.isFake) || String(entry.userId).startsWith('fake_'),
     joinedAt: Number.isFinite(entry.joinedAt) ? entry.joinedAt : Date.now()
   };
@@ -104,8 +107,8 @@ function normalizeWar(war = {}) {
     id: String(war.id || Date.now()),
     groupId: war.groupId || null,                    // NUEVO: grupo de eventos relacionados
     eventType: normalizeEventType(war.eventType || 'war'),
-    name: war.name || 'Node War',
-    type: war.type || 'Sin descripcion',
+    name: sanitizeDisplayText(war.name || 'Node War', { maxLength: 90, fallback: 'Node War' }),
+    type: sanitizeDisplayText(war.type || 'Sin descripcion', { maxLength: 120, fallback: 'Sin descripcion' }),
     classIconSource: normalizeClassIconSource(war.classIconSource),
     participantDisplayStyle: normalizeParticipantDisplayStyle(war.participantDisplayStyle),
     
@@ -156,12 +159,16 @@ function normalizeSchedule(schedule = {}) {
 }
 
 function normalizeRecap(recap = {}) {
+  const messageText = sanitizeUserInput(recap.messageText, {
+    maxLength: 250,
+    allowEmpty: true
+  }).value;
   return {
     enabled: Boolean(recap.enabled),
     minutesBeforeExpire: Number.isFinite(recap.minutesBeforeExpire) && recap.minutesBeforeExpire >= 0
       ? Math.floor(recap.minutesBeforeExpire)
       : 0,
-    messageText: String(recap.messageText || '').trim(),
+    messageText,
     threadId: recap.threadId || null,
     lastPostedAt: recap.lastPostedAt || null
   };

@@ -1,6 +1,7 @@
 const { normalizeEventType } = require('../constants/eventTypes');
 const eventOptionRepository = require('../db/eventOptionRepository');
 const warService = require('./warService');
+const { sanitizeDisplayText } = require('../utils/textSafety');
 
 function parsePveSlotsInput(rawTimes, rawCapacity) {
   const timesText = String(rawTimes || '').trim();
@@ -72,6 +73,23 @@ async function joinSlot(eventId, optionId, participant) {
   const event = warService.loadWars().find(entry => entry.id === String(eventId));
   if (!event) return { ok: false, reason: 'event_missing' };
 
+  const options = await getEventSlots(eventId);
+  const targetOption = options.find(option => option.id === String(optionId));
+  if (!targetOption) return { ok: false, reason: 'option_missing' };
+
+  const existing = (targetOption.enrollments || []).find(
+    enrollment => String(enrollment.userId) === String(participant.userId)
+  );
+
+  if (existing) {
+    const removed = await eventOptionRepository.removeEventEnrollment(
+      eventId,
+      optionId,
+      participant.userId
+    );
+    return { ok: removed, reason: removed ? 'left' : 'leave_failed' };
+  }
+
   const accessMode = normalizeAccessMode(event.accessMode);
   const allowedUserIds = normalizeAllowedUserIds(event.allowedUserIds);
   const hasAccess = accessMode === 'OPEN' || allowedUserIds.includes(String(participant.userId));
@@ -81,7 +99,7 @@ async function joinSlot(eventId, optionId, participant) {
     eventId,
     optionId,
     userId: participant.userId,
-    displayName: participant.displayName,
+    displayName: sanitizeDisplayText(participant.displayName, { maxLength: 64, fallback: 'Usuario' }),
     isFake: Boolean(participant.isFake),
     enrollmentType
   });
@@ -192,7 +210,7 @@ async function adminAddEnrollment(eventId, optionId, participant, enrollmentType
     eventId,
     optionId,
     userId: participant.userId,
-    displayName: participant.displayName,
+    displayName: sanitizeDisplayText(participant.displayName, { maxLength: 64, fallback: 'Usuario' }),
     isFake: Boolean(participant.isFake),
     enrollmentType
   });

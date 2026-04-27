@@ -7,6 +7,8 @@ const { buildEventSelectorPayload } = require('../utils/eventAdminUi');
 const { isAdminExecutor, resolveTargetWar } = require('./eventadminShared');
 const { safeEphemeralReply } = require('../utils/interactionReply');
 const { publishOrRefreshWar } = require('../services/eventPublicationService');
+const { sanitizeUserInput, safeMessageContent } = require('../utils/textSafety');
+const { logError, logWarn } = require('../utils/appLogger');
 
 function buildEventTypeChoices(includePlaceholder = true) {
   const choices = [
@@ -345,8 +347,8 @@ module.exports = {
 
         if (subcommand === 'create') {
           const type = normalizeEventType(interaction.options.getString('tipo', true));
-          const name = interaction.options.getString('nombre', true).trim();
-          const eventId = interaction.options.getString('evento_id', true).trim();
+          const name = getSanitizedOption(interaction, 'nombre', { required: true, maxLength: 50 });
+          const eventId = getSanitizedOption(interaction, 'evento_id', { required: true, maxLength: 64 });
           const overwrite = Boolean(interaction.options.getBoolean('sobrescribir') || false);
           const source = resolveTemplateSourceFromValue(interaction, type, eventId);
 
@@ -391,9 +393,9 @@ module.exports = {
         }
 
         if (subcommand === 'update') {
-          const templateId = interaction.options.getString('id', true).trim();
-          const sourceValue = interaction.options.getString('evento_id', true).trim();
-          const newName = interaction.options.getString('nombre')?.trim();
+          const templateId = getSanitizedOption(interaction, 'id', { required: true, maxLength: 64 });
+          const sourceValue = getSanitizedOption(interaction, 'evento_id', { required: true, maxLength: 64 });
+          const newName = getSanitizedOption(interaction, 'nombre', { maxLength: 50, allowEmpty: true });
           const existing = await templateService.getTemplateById(interaction.guildId, templateId);
           if (!existing) {
             return await safeEphemeralReply(interaction, `No se encontro plantilla \`${templateId}\`.`);
@@ -483,7 +485,7 @@ module.exports = {
         }
 
         await interaction.deferReply({ flags: 64 });
-        const explicitId = interaction.options.getString('id');
+        const explicitId = getSanitizedOption(interaction, 'id', { maxLength: 64, allowEmpty: true });
         const scopeRaw = interaction.options.getString('alcance') || 'single';
         const target = await resolveTargetWar(interaction, explicitId);
         if (!target) {
@@ -516,9 +518,9 @@ module.exports = {
         }
 
         const scopeLabel = useSeries ? 'toda la serie' : 'solo ocurrencia';
-        await interaction.editReply(
+        await interaction.editReply(safeMessageContent(
           `Publicacion forzada completada (${scopeLabel}).\nPublicados: ${published}\nActualizados: ${updated}\nFallidos: ${failed}`
-        );
+        ));
         return;
       }
 
@@ -542,7 +544,7 @@ module.exports = {
       }
 
       if (group === 'schedule' && subcommand === 'cancel') {
-        const id = interaction.options.getString('id', true).trim();
+        const id = getSanitizedOption(interaction, 'id', { required: true, maxLength: 64 });
         const wars = warService.loadWars();
         const target = wars.find(war => war.id === id && war.channelId === interaction.channelId);
         if (!target) {
@@ -560,7 +562,7 @@ module.exports = {
 
       return await safeEphemeralReply(interaction, 'Subcomando no soportado');
     } catch (error) {
-      console.error('Error en event:', error);
+      logError('Error en event', error, { userId: interaction.user?.id, command: 'event' });
       await safeEphemeralReply(interaction, 'Error al ejecutar /event');
     }
   }
@@ -683,4 +685,17 @@ async function handleAutocomplete(interaction) {
   }
 
   await interaction.respond([]);
+}
+
+function getSanitizedOption(interaction, name, options = {}) {
+  const raw = interaction.options.getString(name, Boolean(options.required));
+  const sanitized = sanitizeUserInput(raw, {
+    maxLength: options.maxLength,
+    allowEmpty: Boolean(options.allowEmpty),
+    fallback: ''
+  });
+  if (sanitized.hadMassMentions) {
+    logWarn('Mention masiva neutralizada en event', { userId: interaction.user?.id, option: name });
+  }
+  return sanitized.value;
 }

@@ -14,6 +14,8 @@ const {
 } = require('../utils/warState');
 const { notifyPromotion } = require('../utils/promotionNotifier');
 const { parseEmojiInput } = require('../utils/emojiHelper');
+const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../utils/textSafety');
+const { logError, logWarn } = require('../utils/appLogger');
 const {
   resolveTargetWar,
   refreshWarMessage,
@@ -276,7 +278,7 @@ module.exports = {
       if (subcommand === 'role_perm_clear') return await handleRolePermClear(interaction);
       if (subcommand === 'recap') return await handleRecapConfig(interaction);
     } catch (error) {
-      console.error('Error en eventadmin:', error);
+      logError('Error en eventadmin', error, { userId: interaction.user?.id, command: 'eventadmin' });
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({ content: 'Error ejecutando eventadmin', flags: 64 });
       }
@@ -352,7 +354,7 @@ async function handleAddMember(interaction) {
   }
 
   const user = interaction.options.getUser('usuario', true);
-  const roleName = interaction.options.getString('rol', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
   const member = await interaction.guild.members.fetch(user.id).catch(() => null);
   if (!member) {
     return await interaction.editReply({ content: 'Ese usuario no pertenece a este servidor.' });
@@ -360,7 +362,7 @@ async function handleAddMember(interaction) {
 
   const participant = {
     userId: user.id,
-    displayName: member.displayName || user.username,
+    displayName: sanitizeDisplayText(member.displayName || user.username, { maxLength: 64, fallback: 'Usuario' }),
     isFake: false
   };
 
@@ -465,7 +467,7 @@ async function handleRemoveMember(interaction) {
   }
 
   const user = interaction.options.getUser('usuario', true);
-  const roleName = interaction.options.getString('rol', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
 
   const { war: updatedWar, result } = await updateWarByMessageId(war.messageId, state => {
     const selectedRole = getRoleByName(state, roleName);
@@ -527,9 +529,9 @@ async function handleRoleAdd(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('nombre', true).trim();
+  const roleName = getSanitizedOption(interaction, 'nombre', { required: true, maxLength: 60 });
   const slots = interaction.options.getInteger('slots', true);
-  const iconRaw = interaction.options.getString('icono')?.trim() || '';
+  const iconRaw = getSanitizedOption(interaction, 'icono', { maxLength: 80, allowEmpty: true }) || '';
 
   if (war.roles.some(role => role.name.toLowerCase() === roleName.toLowerCase())) {
     return await interaction.editReply({ content: `Ya existe un rol llamado **${roleName}**.` });
@@ -560,8 +562,8 @@ async function handleRoleRename(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('rol', true).trim();
-  const newName = interaction.options.getString('nuevo', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
+  const newName = getSanitizedOption(interaction, 'nuevo', { required: true, maxLength: 60 });
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
   if (war.roles.some(entry => entry.name.toLowerCase() === newName.toLowerCase() && entry !== role)) {
@@ -584,7 +586,7 @@ async function handleRoleRemove(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('rol', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
   const roleIndex = war.roles.findIndex(role => role.name === roleName);
   if (roleIndex < 0) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
@@ -601,7 +603,7 @@ async function handleRoleSlots(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('rol', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
   const slots = interaction.options.getInteger('slots', true);
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
@@ -620,8 +622,8 @@ async function handleRoleIcon(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('rol', true).trim();
-  const iconRaw = interaction.options.getString('icono', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
+  const iconRaw = getSanitizedOption(interaction, 'icono', { required: true, maxLength: 80 });
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
@@ -641,7 +643,7 @@ async function handleRoleIconClear(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('rol', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
@@ -657,7 +659,7 @@ async function handleRolePermAdd(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('rol', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
   const allowedRole = interaction.options.getRole('permiso', true);
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
@@ -677,7 +679,7 @@ async function handleRolePermRemove(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('rol', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
   const allowedRole = interaction.options.getRole('permiso', true);
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
@@ -695,7 +697,7 @@ async function handleRolePermClear(interaction) {
   const war = await resolveTargetWar(interaction, interaction.options.getString('id'));
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
-  const roleName = interaction.options.getString('rol', true).trim();
+  const roleName = getSanitizedOption(interaction, 'rol', { required: true, maxLength: 60 });
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
@@ -712,7 +714,7 @@ async function handleRecapConfig(interaction) {
   if (!war) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
 
   const minutes = interaction.options.getInteger('minutos', true);
-  const text = interaction.options.getString('texto')?.trim() || '';
+  const text = getSanitizedOption(interaction, 'texto', { maxLength: 250, allowEmpty: true }) || '';
   if (!war.recap) war.recap = {};
   war.recap.enabled = minutes > 0 || text.length > 0;
   war.recap.minutesBeforeExpire = minutes;
@@ -727,7 +729,7 @@ async function handleRecapConfig(interaction) {
 async function handleToggleLock(interaction, shouldLock) {
   await interaction.deferReply({ flags: 64 });
 
-  const eventId = interaction.options.getString('id', true).trim();
+  const eventId = getSanitizedOption(interaction, 'id', { required: true, maxLength: 64 });
   const war = await resolveTargetWar(interaction, eventId);
   if (!war) {
     return await interaction.editReply({ content: `No se encontro evento con id \`${eventId}\` en este canal.` });
@@ -756,8 +758,25 @@ async function handleToggleLock(interaction, shouldLock) {
   }
 
   await interaction.editReply({
-    content: shouldLock
+    content: safeMessageContent(shouldLock
       ? `Inscripciones bloqueadas para **${updatedWar.name}** (\`${updatedWar.id}\`)`
       : `Inscripciones desbloqueadas para **${updatedWar.name}** (\`${updatedWar.id}\`)`
+    )
   });
+}
+
+function getSanitizedOption(interaction, name, options = {}) {
+  const raw = interaction.options.getString(name, Boolean(options.required));
+  const sanitized = sanitizeUserInput(raw, {
+    maxLength: options.maxLength,
+    allowEmpty: Boolean(options.allowEmpty),
+    fallback: ''
+  });
+  if (sanitized.hadMassMentions) {
+    logWarn('Mention masiva neutralizada en eventadmin', {
+      userId: interaction.user?.id,
+      option: name
+    });
+  }
+  return sanitized.value;
 }

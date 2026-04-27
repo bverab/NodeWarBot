@@ -17,11 +17,25 @@ const {
 const { ROLE_PANEL_ACTIONS } = require('./interaction/rolePanelActions');
 const { EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/eventAdminPanelActions');
 const { PVE_EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/pveEventAdminPanelActions');
+const { consumeRateLimit, buildInteractionRateKey } = require('../utils/rateLimiter');
+const { logError } = require('../utils/appLogger');
 
 module.exports = async interaction => {
   const { customId } = interaction;
 
   try {
+    const rate = consumeRateLimit(buildInteractionRateKey(interaction, 'panel'), {
+      windowMs: 3000,
+      maxHits: 8
+    });
+    if (!rate.allowed) {
+      return await interaction.reply({
+        content: `Accion limitada por spam. Intenta de nuevo en ${Math.ceil(rate.retryAfterMs / 1000)}s.`,
+        flags: 64,
+        allowedMentions: { parse: [] }
+      });
+    }
+
     if (customId === 'add_roles_bulk') return await handleAddRolesBulkButton(interaction);
     if (customId === 'publish_war') return await handlePublishWar(interaction);
     if (customId === 'cancel_war') return await handleCancelWar(interaction);
@@ -56,7 +70,11 @@ module.exports = async interaction => {
       return await pveEventPanelHandler(interaction);
     }
   } catch (error) {
-    console.error('Error en interactionHandler:', error);
+    logError('Error en interactionHandler', error, {
+      customId,
+      userId: interaction.user?.id,
+      channelId: interaction.channelId
+    });
     await safeInteractionErrorResponse(interaction);
   }
 };
@@ -411,7 +429,7 @@ async function safeInteractionErrorResponse(interaction) {
   }
 
   try {
-    await interaction.reply({ content: 'Error', flags: 64 });
+    await interaction.reply({ content: 'Error', flags: 64, allowedMentions: { parse: [] } });
   } catch (error) {
     if (error?.code === 10062 || error?.code === 40060) return;
   }

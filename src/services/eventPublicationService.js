@@ -2,6 +2,8 @@ const { normalizeEventType } = require('../constants/eventTypes');
 const { buildEventMessagePayload } = require('./eventRenderService');
 const warService = require('./warService');
 const pveService = require('./pveService');
+const { safeMessageContent } = require('../utils/textSafety');
+const { logWarn, logInfo } = require('../utils/appLogger');
 
 function normalizeNotifyRoles(war) {
   if (normalizeEventType(war.eventType) === 'pve' && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED') {
@@ -15,9 +17,9 @@ function buildPublicationContent(notifyTargets, targetType = 'roles') {
     return 'Evento publicado manualmente';
   }
   if (targetType === 'users') {
-    return notifyTargets.map(userId => `<@${userId}>`).join(' ');
+    return safeMessageContent(notifyTargets.map(userId => `<@${userId}>`).join(' '), 'Evento publicado manualmente');
   }
-  return notifyTargets.map(roleId => `<@&${roleId}>`).join(' ');
+  return safeMessageContent(notifyTargets.map(roleId => `<@&${roleId}>`).join(' '), 'Evento publicado manualmente');
 }
 
 function buildAllowedMentions(notifyTargets, targetType = 'roles') {
@@ -54,6 +56,7 @@ async function publishOrRefreshWar(interaction, war) {
 async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
   const channel = await interaction.guild?.channels?.fetch(war.channelId).catch(() => null);
   if (!channel || !channel.send) {
+    logWarn('No se pudo publicar: canal inaccesible', { warId: war.id, channelId: war.channelId, guildId: interaction.guildId });
     return { ok: false, status: 'error', reason: `No se pudo acceder al canal ${war.channelId}.` };
   }
 
@@ -82,11 +85,12 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
     if (existing) {
       const payload = await buildEventMessagePayload(normalizedWar);
       await existing.edit({
-        content,
+        content: safeMessageContent(content, 'Evento publicado manualmente'),
         allowedMentions,
         ...payload
       });
       const persisted = shouldActivate ? await warService.updateWar(normalizedWar) : normalizedWar;
+      logInfo('Evento actualizado en mensaje existente', { warId: normalizedWar.id, messageId: normalizedWar.messageId });
       return { ok: true, status: 'updated', war: persisted };
     }
   }
@@ -131,7 +135,7 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
 
   const payload = await buildEventMessagePayload(warForPublish);
   const message = await channel.send({
-    content,
+    content: safeMessageContent(content, 'Evento publicado manualmente'),
     allowedMentions,
     ...payload
   });
@@ -145,6 +149,7 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
   }
 
   const updatedWar = await warService.updateWar(warForPublish);
+  logInfo('Evento publicado', { warId: updatedWar.id, messageId: updatedWar.messageId, channelId: updatedWar.channelId });
   return { ok: true, status: 'published', war: updatedWar };
 }
 
