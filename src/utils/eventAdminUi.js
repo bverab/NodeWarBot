@@ -132,12 +132,19 @@ function buildPveEventPanelPayload(war, options = {}) {
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_event_finish_keep').setLabel('Guardar sin publicar').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_event_finish_publish').setLabel('Guardar y publicar').setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('panel_pve_toggle_close')
+      .setLabel(war.isClosed ? 'Reactivar inscripciones' : 'Cerrar inscripciones')
+      .setStyle(war.isClosed ? ButtonStyle.Success : ButtonStyle.Danger)
+  );
+
+  const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('panel_event_cancel').setLabel('Cancelar evento').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId('panel_event_back_to_list').setLabel('Volver a lista').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
   );
 
-  return { embeds: [embed], components: [row1, row2] };
+  return { embeds: [embed], components: [row1, row2, row3] };
 }
 
 function buildPveAccessEditorPayload(war, options = {}) {
@@ -150,7 +157,7 @@ function buildPveAccessEditorPayload(war, options = {}) {
     .setTitle(`Acceso PvE: ${war.name}`)
     .setDescription(`Modo actual: **${accessMode}**`)
     .setColor(0x2ecc71)
-    .addFields({ name: 'Usuarios permitidos', value: truncate(allowedText, 1024), inline: false });
+    .addFields({ name: 'Usuarios permitidos/priorizados', value: truncate(allowedText, 1024), inline: false });
 
   if (notice) embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
 

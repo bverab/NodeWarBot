@@ -225,6 +225,13 @@ Current PvE model is slot-oriented:
 - restricted mode by selected users (`OPEN` / `RESTRICTED`),
 - multiple slots per user are supported as long as no duplicate within the same slot.
 
+`/event edit` for PvE uses a dedicated panel with:
+- slot/capacity management,
+- restricted access user management (allowed/prioritized users),
+- participant + filler operations (add/remove/move/promote),
+- publish/update via "Guardar y publicar",
+- close/reactivate signups from the same panel.
+
 Render goals:
 - familiar visual language with War/Siege,
 - horizontal slot grid,

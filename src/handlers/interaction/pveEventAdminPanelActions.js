@@ -51,6 +51,29 @@ async function handlePveEditAccess(interaction) {
   );
 }
 
+async function handlePveToggleClose(interaction) {
+  const context = getSelectedPveContext(interaction);
+  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+
+  context.war.isClosed = !context.war.isClosed;
+  const updated = await updateWar(context.war);
+  await refreshIfPublished(interaction, updated);
+
+  const notice = updated.isClosed
+    ? 'Inscripciones PvE cerradas desde el panel.'
+    : 'Inscripciones PvE reactivadas desde el panel.';
+
+  await updateWithContext(
+    interaction,
+    {
+      ...buildEventPanelPayload(updated, { scope: context.context.scope || null }),
+      content: notice
+    },
+    updated.id,
+    { currentView: 'panel' }
+  );
+}
+
 async function handlePveAccessModeSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedPveContext(interaction);
@@ -402,6 +425,7 @@ function trimTitle(text) {
 }
 
 const PVE_EVENT_ADMIN_PANEL_ACTIONS = {
+  panel_pve_toggle_close: handlePveToggleClose,
   panel_pve_edit_slots: handlePveEditSlots,
   panel_pve_slots_select: handlePveSlotsSelect,
   panel_pve_slot_add: handlePveSlotAdd,
