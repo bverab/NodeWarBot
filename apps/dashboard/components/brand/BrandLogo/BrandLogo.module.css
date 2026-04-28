@@ -4,6 +4,12 @@
   gap: 5px;
   flex: 0 0 auto;
   width: fit-content;
+  border-radius: 10px;
+}
+
+.logo:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
+  outline-offset: 5px;
 }
 
 .symbol {

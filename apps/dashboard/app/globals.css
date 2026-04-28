@@ -7,6 +7,9 @@
 html {
   background: var(--bg);
   color: var(--text);
+  scroll-behavior: smooth;
+  scrollbar-color: color-mix(in srgb, var(--color-violet-glow) 68%, var(--color-cyan-accent)) #03050d;
+  scrollbar-width: thin;
 }
 
 body {
@@ -30,6 +33,26 @@ button,
 input,
 select {
   font: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #03050d;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid #03050d;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-violet-glow) 72%, #151028), color-mix(in srgb, var(--color-cyan-accent) 46%, #111827));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-violet-glow) 86%, white), color-mix(in srgb, var(--color-cyan-accent) 58%, #111827));
 }
 
 .page-shell {
@@ -230,6 +253,18 @@ select {
   }
 }
 
+@keyframes spectreFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 900px) {
   .login-page {
     grid-template-columns: 1fr;
@@ -257,4 +292,18 @@ select {
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}
 

@@ -35,7 +35,8 @@
 
 .nav a {
   position: relative;
-  transition: color 160ms ease, text-shadow 160ms ease;
+  border-radius: 6px;
+  transition: color 180ms ease, text-shadow 180ms ease;
 }
 
 .nav a::after {
@@ -59,6 +60,12 @@
 .nav a:hover::after {
   opacity: 0.72;
   transform: scaleX(1);
+}
+
+.nav a:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
+  outline-offset: 6px;
+  color: color-mix(in srgb, var(--color-cyan-accent) 76%, white);
 }
 
 .actions {
@@ -110,5 +117,12 @@
   .actions a,
   .actions button {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav a,
+  .nav a::after {
+    transition: none;
   }
 }

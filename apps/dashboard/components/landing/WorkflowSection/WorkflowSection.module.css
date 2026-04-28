@@ -2,6 +2,8 @@
   position: relative;
   z-index: 1;
   padding: 84px 0;
+  scroll-margin-top: 110px;
+  animation: spectreFadeUp 640ms ease both;
   background:
     radial-gradient(circle at 82% 12%, rgba(124, 58, 237, 0.075), transparent 25%),
     radial-gradient(circle at 16% 56%, rgba(56, 189, 248, 0.035), transparent 28%),

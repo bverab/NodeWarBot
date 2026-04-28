@@ -4,6 +4,7 @@ import { FeatureGrid } from "@/components/landing/FeatureGrid";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { PreviewSection } from "@/components/landing/PreviewSection";
 import { WorkflowSection } from "@/components/landing/WorkflowSection";
+import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 
 export default async function HomePage() {
@@ -20,6 +21,7 @@ export default async function HomePage() {
         <WorkflowSection />
         <CTASection signedIn={signedIn} />
       </main>
+      <SiteFooter />
     </div>
   );
 }

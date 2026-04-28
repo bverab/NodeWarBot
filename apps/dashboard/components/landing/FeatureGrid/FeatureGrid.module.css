@@ -2,6 +2,8 @@
   position: relative;
   z-index: 1;
   padding: 84px 0;
+  scroll-margin-top: 110px;
+  animation: spectreFadeUp 640ms ease both;
 }
 
 .section::before {

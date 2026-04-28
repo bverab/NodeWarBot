@@ -7,6 +7,13 @@
   background:
     linear-gradient(180deg, rgba(13, 16, 30, 0.78), rgba(8, 10, 19, 0.9)),
     var(--bg-panel);
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+
+.card:hover {
+  border-color: color-mix(in srgb, var(--color-violet-glow) 34%, var(--border));
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.24), 0 0 38px rgba(139, 92, 246, 0.1);
+  transform: translateY(-2px);
 }
 
 .icon {
@@ -33,4 +40,14 @@
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+
+  .card:hover {
+    transform: none;
+  }
 }

@@ -12,10 +12,17 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
 }
 
 .muted {
   border-color: rgba(197, 202, 225, 0.18);
   color: var(--muted-strong);
   background: rgba(197, 202, 225, 0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge {
+    transition: none;
+  }
 }

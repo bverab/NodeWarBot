@@ -18,7 +18,7 @@ const statusClass = {
 
 export function DashboardPreview() {
   return (
-    <div className={styles.preview} id="preview" aria-label="Spectre dashboard preview">
+    <div className={styles.preview} aria-label="Spectre dashboard preview">
       <aside className={styles.sidebar}>
         <div className={styles.brandMark}>
           <span className={styles.brandGlyph}>S</span>

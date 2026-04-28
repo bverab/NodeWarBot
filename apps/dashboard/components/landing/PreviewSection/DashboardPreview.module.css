@@ -1,4 +1,5 @@
 .preview {
+  position: relative;
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
   min-height: 430px;
@@ -13,6 +14,30 @@
   box-shadow: var(--shadow), 0 0 90px rgba(139, 92, 246, 0.18);
   overflow: hidden;
   transform: perspective(1200px) rotateX(2deg) rotateY(-4deg);
+  animation: previewFloat 8s ease-in-out infinite;
+  transition: border-color 240ms ease, box-shadow 240ms ease, transform 240ms ease;
+}
+
+.preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 0 34%, rgba(255, 255, 255, 0.06) 48%, transparent 62%);
+  opacity: 0;
+  transform: translateX(-18%);
+  transition: opacity 240ms ease, transform 520ms ease;
+}
+
+.preview:hover {
+  border-color: color-mix(in srgb, var(--color-violet-glow) 42%, var(--border-strong));
+  box-shadow: var(--shadow), 0 0 110px rgba(139, 92, 246, 0.24), 0 0 46px rgba(56, 189, 248, 0.08);
+  transform: perspective(1200px) rotateX(1.5deg) rotateY(-3deg) translateY(-3px);
+}
+
+.preview:hover::after {
+  opacity: 0.72;
+  transform: translateX(18%);
 }
 
 .sidebar {
@@ -120,6 +145,12 @@
   padding: 12px;
   color: var(--muted-strong);
   font-size: 13px;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
 }
 
 .row:last-child {
@@ -160,7 +191,12 @@
 
 @media (max-width: 900px) {
   .preview {
+    animation: none;
     transform: none;
+  }
+
+  .preview:hover {
+    transform: translateY(-2px);
   }
 }
 
@@ -181,5 +217,29 @@
 
   .actions {
     justify-content: flex-start;
+  }
+}
+
+@keyframes previewFloat {
+  0%,
+  100% {
+    transform: perspective(1200px) rotateX(2deg) rotateY(-4deg) translateY(0);
+  }
+
+  50% {
+    transform: perspective(1200px) rotateX(2deg) rotateY(-4deg) translateY(-5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview,
+  .preview::after,
+  .row {
+    animation: none;
+    transition: none;
+  }
+
+  .preview:hover {
+    transform: perspective(1200px) rotateX(2deg) rotateY(-4deg);
   }
 }
