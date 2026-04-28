@@ -1,73 +1,35 @@
-"use client";
+import { redirect } from "next/navigation";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { getServerAuthSession } from "@/lib/auth";
+import { GuildsClient } from "./GuildsClient";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-
-type Guild = {
-  id: string;
-  name: string;
-  icon: string | null;
-  owner: boolean;
-  permissions: string;
+type GuildsPageProps = {
+  searchParams?: Promise<{
+    preview?: string;
+  }>;
 };
 
-type GuildResponse = {
-  guilds: Guild[];
-};
+export default async function GuildsPage({ searchParams }: GuildsPageProps) {
+  const params = await searchParams;
+  const preview = params?.preview === "1";
+  const session = await getServerAuthSession();
 
-export default function GuildsPage() {
-  const [guilds, setGuilds] = useState<Guild[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const run = async () => {
-      try {
-        const response = await fetch("/api/guilds", { cache: "no-store" });
-        if (!response.ok) {
-          if (response.status === 401) {
-            setError("You need to sign in first.");
-            return;
-          }
-
-          setError(`Guild fetch failed with status ${response.status}.`);
-          return;
-        }
-
-        const json = (await response.json()) as GuildResponse;
-        setGuilds(json.guilds ?? []);
-      } catch {
-        setError("Network error while loading guilds.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void run();
-  }, []);
+  if (!session && !preview) {
+    redirect("/login");
+  }
 
   return (
-    <main style={{ padding: 24 }}>
-      <h1>Your Discord Guilds</h1>
-
-      {loading ? <p>Loading guilds...</p> : null}
-      {!loading && error ? <p>{error}</p> : null}
-
-      {!loading && !error ? (
-        <ul>
-          {guilds.map((guild) => (
-            <li key={guild.id}>
-              <strong>{guild.name}</strong> ({guild.id})
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      <nav style={{ display: "flex", gap: 12 }}>
-        <Link href="/">Home</Link>
-        <Link href="/login">Login</Link>
-        <Link href="/api/auth/signout">Sign out</Link>
-      </nav>
-    </main>
+    <DashboardLayout
+      title={preview ? "Guilds Preview" : "Guilds"}
+      description={
+        preview
+          ? "Preview mode uses local UI data only. It does not call Discord or unlock backend actions."
+          : "Choose a Discord guild to prepare future Spectre dashboard views."
+      }
+      preview={preview}
+      userName={session?.user?.name ?? session?.user?.email}
+    >
+      <GuildsClient preview={preview} />
+    </DashboardLayout>
   );
 }

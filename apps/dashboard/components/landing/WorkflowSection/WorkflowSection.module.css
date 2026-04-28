@@ -1,0 +1,65 @@
+.section {
+  position: relative;
+  z-index: 1;
+  padding: 84px 0;
+  background:
+    radial-gradient(circle at 82% 12%, rgba(124, 58, 237, 0.075), transparent 25%),
+    radial-gradient(circle at 16% 56%, rgba(56, 189, 248, 0.035), transparent 28%),
+    linear-gradient(180deg, rgba(1, 2, 8, 0.16), rgba(1, 2, 8, 0.34));
+}
+
+.section::before {
+  content: "";
+  position: absolute;
+  inset: -28px 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(145, 118, 255, 0.14), transparent);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 0.72fr 1.28fr;
+  gap: 34px;
+  align-items: center;
+}
+
+.heading {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+
+.heading h2 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 54px);
+  line-height: 1;
+}
+
+.lede {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.stepNumber {
+  color: var(--cyan);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+@media (max-width: 900px) {
+  .grid,
+  .steps {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,47 @@
+.card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 18px 18px 0;
+}
+
+.heading h3 {
+  margin: 0;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 320px;
+}
+
+.table th,
+.table td {
+  border-top: 1px solid rgba(154, 170, 255, 0.1);
+  padding: 13px 18px;
+  text-align: left;
+}
+
+.table th {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.table td {
+  color: var(--muted-strong);
+  font-size: 13px;
+}

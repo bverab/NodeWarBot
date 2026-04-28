@@ -1,0 +1,59 @@
+.section {
+  position: relative;
+  z-index: 1;
+  padding: 84px 0;
+}
+
+.section::before {
+  content: "";
+  position: absolute;
+  inset: -28px 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(145, 118, 255, 0.14), transparent);
+}
+
+.sectionAtmosphere {
+  background:
+    radial-gradient(circle at 82% 12%, rgba(124, 58, 237, 0.075), transparent 25%),
+    radial-gradient(circle at 16% 56%, rgba(56, 189, 248, 0.035), transparent 28%),
+    linear-gradient(180deg, rgba(1, 2, 8, 0.16), rgba(1, 2, 8, 0.34));
+}
+
+.heading {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  margin-bottom: 28px;
+}
+
+.heading h2 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 54px);
+  line-height: 1;
+}
+
+.centered {
+  margin-inline: auto;
+  text-align: center;
+  justify-items: center;
+}
+
+.lede {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

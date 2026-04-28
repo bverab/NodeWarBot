@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NodeWarBot Dashboard",
-  description: "Web dashboard foundation for NodeWarBot"
+  title: "Spectre",
+  description: "Discord-native guild operations for war, siege, and PvE events"
 };
 
 type RootLayoutProps = {
@@ -13,7 +14,7 @@ type RootLayoutProps = {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, fontFamily: "Segoe UI, sans-serif" }}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

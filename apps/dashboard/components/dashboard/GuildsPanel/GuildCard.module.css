@@ -1,0 +1,36 @@
+.card {
+  display: grid;
+  gap: 18px;
+  min-height: 244px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.36), rgba(56, 189, 248, 0.18));
+  color: var(--text);
+  font-weight: 900;
+  overflow: hidden;
+}
+
+.icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

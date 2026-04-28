@@ -1,0 +1,39 @@
+.section {
+  position: relative;
+  z-index: 1;
+  padding: 84px 0;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(124, 58, 237, 0.1), transparent 32%),
+    linear-gradient(180deg, rgba(1, 2, 8, 0.12), rgba(1, 2, 8, 0.4));
+}
+
+.section::before {
+  content: "";
+  position: absolute;
+  inset: -28px 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(145, 118, 255, 0.14), transparent);
+}
+
+.heading {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0 auto 28px;
+  text-align: center;
+  justify-items: center;
+}
+
+.heading h2 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 54px);
+  line-height: 1;
+}
+
+.lede {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 18px;
+  line-height: 1.65;
+}

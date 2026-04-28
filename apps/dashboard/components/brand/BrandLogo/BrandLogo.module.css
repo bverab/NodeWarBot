@@ -1,0 +1,33 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  width: fit-content;
+}
+
+.symbol {
+  width: clamp(30px, 2.2vw, 34px);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px rgba(124, 58, 237, 0.22));
+  transform: translateY(-0.5px);
+}
+
+.wordmark {
+  width: clamp(124px, 8.5vw, 138px);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 9px rgba(124, 58, 237, 0.12));
+  transform: translateY(0.5px);
+}
+
+@media (max-width: 640px) {
+  .symbol {
+    width: 31px;
+  }
+
+  .wordmark {
+    width: 118px;
+  }
+}

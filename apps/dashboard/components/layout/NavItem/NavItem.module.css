@@ -1,0 +1,34 @@
+.link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 11px 12px;
+  color: var(--muted-strong);
+}
+
+.linkActive,
+.link:hover {
+  background: rgba(139, 92, 246, 0.14);
+  color: var(--text);
+}
+
+.linkActive {
+  border: 1px solid rgba(139, 92, 246, 0.42);
+  background:
+    linear-gradient(90deg, rgba(139, 92, 246, 0.34), rgba(139, 92, 246, 0.08)),
+    rgba(255, 255, 255, 0.05);
+  box-shadow: inset 3px 0 0 var(--violet);
+}
+
+.badge {
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: #cab7ff;
+  background: rgba(139, 92, 246, 0.22);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}

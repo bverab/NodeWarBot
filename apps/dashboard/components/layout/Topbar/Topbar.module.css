@@ -1,0 +1,103 @@
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(5, 7, 17, 0.82);
+  padding: 16px 24px;
+  backdrop-filter: blur(16px);
+}
+
+.guildSelector {
+  display: inline-flex;
+  min-width: min(360px, 100%);
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.guildSelector > svg {
+  margin-left: auto;
+}
+
+.guildSelectorMark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: #ffd896;
+  background: rgba(245, 158, 11, 0.18);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.guildSelector div,
+.userCopy {
+  display: grid;
+  gap: 2px;
+}
+
+.guildSelector strong,
+.userCopy strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.guildSelector span,
+.userCopy span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.userArea {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted-strong);
+}
+
+.avatar {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.7), rgba(56, 189, 248, 0.44));
+  font-weight: 900;
+}
+
+.iconButton {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    padding: 22px;
+  }
+}
