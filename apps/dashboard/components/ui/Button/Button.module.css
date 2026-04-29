@@ -27,6 +27,19 @@
   transform: translateY(0);
 }
 
+.button:disabled,
+.button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.52;
+  transform: none;
+}
+
+.button:disabled:hover,
+.button[aria-disabled="true"]:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .primary {
   color: #05101c;
   background: linear-gradient(135deg, var(--cyan), color-mix(in srgb, var(--color-violet-glow) 62%, white));

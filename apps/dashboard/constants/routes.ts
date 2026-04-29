@@ -3,6 +3,6 @@ export const routes = {
   login: "/login",
   guilds: "/guilds",
   guildsPreview: "/guilds?preview=1",
-  discordSignIn: "/api/auth/signin/discord?callbackUrl=/guilds",
+  discordSignIn: "/login",
   discordSignOut: "/api/auth/signout"
 } as const;

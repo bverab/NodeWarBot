@@ -1,18 +1,39 @@
-import Image from "next/image";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, Eye, LogIn, ShieldCheck } from "lucide-react";
+import { CalendarClock, CheckCircle2, ShieldCheck, UsersRound } from "lucide-react";
 import { getServerAuthSession } from "@/lib/auth";
-import { getDiscordEnvStatus } from "@/lib/env";
-import { assets } from "@/constants/assets";
+import { getDiscordEnvStatus, getGoogleEnvStatus } from "@/lib/env";
 import { routes } from "@/constants/routes";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { LoginActions } from "./LoginActions";
+import "./login.css";
 
-export default async function LoginPage() {
+type LoginPageProps = {
+  searchParams?: Promise<{
+    error?: string;
+  }>;
+};
+
+const authErrorMessages: Record<string, string> = {
+  OAuthCallback:
+    "The Discord authorization session expired or could not be verified. Try again from this page.",
+  OAuthSignin:
+    "Spectre could not start the Discord authorization flow. Check the OAuth app configuration.",
+  OAuthAccountNotLinked:
+    "This Discord account is linked to a different sign-in method.",
+  Configuration:
+    "Discord OAuth is not configured correctly for this environment."
+};
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await getServerAuthSession();
   const discordEnv = getDiscordEnvStatus();
+  const googleEnv = getGoogleEnvStatus();
+  const showDevWarning = process.env.NODE_ENV !== "production" && !discordEnv.configured;
+  const params = await searchParams;
+  const authError = params?.error
+    ? authErrorMessages[params.error] ?? "Authentication failed. Try signing in with Discord again."
+    : undefined;
 
   if (session) {
     redirect(routes.guilds);
@@ -21,66 +42,60 @@ export default async function LoginPage() {
   return (
     <main className="page-shell login-page">
       <section className="login-visual">
-        <Link className="brand-mark" href="/">
-          <span className="brand-glyph">S</span>
-          <span>Spectre</span>
-        </Link>
-        <div className="section-heading">
-          <Badge>Secure Discord entry</Badge>
-          <h1>Enter the guild command layer.</h1>
-          <p className="section-lede">
-            Spectre uses Discord OAuth to identify you and read the guilds you can access. Tokens
-            stay server-side.
-          </p>
-        </div>
-        <Card>
-          <div className="login-mascot-card">
-            <div className="login-mascot-visual">
-              <Image
-                alt="Spectre mascot brand artwork"
-                fill
-                sizes="180px"
-                src={assets.spectreMascotHero}
-              />
+        <div className="login-sparkles" aria-hidden="true" />
+        <div className="login-visual-content">
+          <BrandLogo className="login-brand" size="lg" />
+
+          <div className="section-heading login-heading">
+            <Badge>Secure Discord Entry</Badge>
+            <h1>Guild operations through a sharper command layer.</h1>
+            <p className="section-lede">
+              Authenticate with Discord, select the guild you manage, and keep event coordination
+              aligned from one focused dashboard.
+            </p>
+          </div>
+
+          <div className="login-floating-cards" aria-label="Spectre login status previews">
+            <div className="login-floating-card login-floating-card-one">
+              <ShieldCheck size={17} aria-hidden="true" />
+              <div>
+                <strong>Guild detected</strong>
+                <span>Black Desert guild linked</span>
+              </div>
             </div>
-            <div>
-              <ShieldCheck size={24} aria-hidden="true" />
-              <h3>Current access</h3>
-              <p>Guild selection is available now. Admin permission checks are still conservative.</p>
+            <div className="login-floating-card login-floating-card-two">
+              <CheckCircle2 size={17} aria-hidden="true" />
+              <div>
+                <strong>Admin access verified</strong>
+                <span>Node War and Siege controls ready</span>
+              </div>
+            </div>
+            <div className="login-floating-card login-floating-card-three">
+              <CalendarClock size={17} aria-hidden="true" />
+              <div>
+                <strong>Node War scheduled</strong>
+                <span>Tonight - 22:00 - 50 slots</span>
+              </div>
+            </div>
+            <div className="login-floating-card login-floating-card-four">
+              <UsersRound size={17} aria-hidden="true" />
+              <div>
+                <strong>32/50 players registered</strong>
+                <span>Classes and roles synced</span>
+              </div>
             </div>
           </div>
-        </Card>
+        </div>
       </section>
 
       <section className="login-panel">
-        <div className="login-panel-inner">
-          <Badge tone="muted">Discord OAuth</Badge>
-          <h1>Sign in</h1>
-          <p>
-            Connect with Discord to load your guild list. Web event editing, publishing, and PvE
-            management are coming later.
-          </p>
-          {!discordEnv.configured ? (
-            <Card className="developer-warning">
-              <AlertTriangle size={20} aria-hidden="true" />
-              <div>
-                <h3>Discord OAuth is not configured</h3>
-                <p>Missing: {discordEnv.missing.join(", ")}</p>
-              </div>
-            </Card>
-          ) : null}
-          <Button href={discordEnv.configured ? routes.discordSignIn : routes.guildsPreview}>
-            {discordEnv.configured ? <LogIn size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
-            {discordEnv.configured ? "Continue with Discord" : "Browse preview mode"}
-          </Button>
-          <Button href={routes.guildsPreview} variant="secondary">
-            <Eye size={17} aria-hidden="true" />
-            Preview dashboard UI
-          </Button>
-          <Button href={routes.home} variant="ghost">
-            Back to Spectre
-          </Button>
-        </div>
+        <LoginActions
+          authError={authError}
+          discordConfigured={discordEnv.configured}
+          discordMissing={discordEnv.missing}
+          googleConfigured={googleEnv.configured}
+          showDevWarning={showDevWarning}
+        />
       </section>
     </main>
   );

@@ -27,12 +27,14 @@ Set these in `apps/dashboard/.env.local` (or in your environment):
 DISCORD_CLIENT_ID=your_discord_application_client_id
 DISCORD_CLIENT_SECRET=your_discord_application_client_secret
 NEXTAUTH_SECRET=long_random_secret
-NEXTAUTH_URL=http://localhost:3001
+NEXTAUTH_URL=http://localhost:3000
 ```
 
 Notes:
 - OAuth scopes requested are `identify guilds`.
 - `NEXTAUTH_URL` must match the local dashboard URL.
+- Discord Developer Portal must include `http://localhost:3000/api/auth/callback/discord`.
+- If the dashboard runs on a different port, update both `NEXTAUTH_URL` and the Discord redirect URI to match exactly.
 - Root bot variables (`TOKEN`, `CLIENT_ID`, `GUILD_ID`, `DATABASE_URL`) stay in root `.env`.
 
 ## Run Locally
@@ -45,9 +47,9 @@ npm run dev --prefix apps/dashboard
 
 Then open:
 
-- `http://localhost:3001/`
-- `http://localhost:3001/login`
-- `http://localhost:3001/guilds`
+- `http://localhost:3000/`
+- `http://localhost:3000/login`
+- `http://localhost:3000/guilds`
 
 ## Current Pages
 
