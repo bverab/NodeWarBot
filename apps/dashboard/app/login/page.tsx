@@ -4,6 +4,7 @@ import { getServerAuthSession } from "@/lib/auth";
 import { getDiscordEnvStatus, getGoogleEnvStatus } from "@/lib/env";
 import { routes } from "@/constants/routes";
 import { BrandLogo } from "@/components/brand/BrandLogo";
+import { ShootingStars } from "@/components/effects/ShootingStars";
 import { Badge } from "@/components/ui/Badge";
 import { LoginActions } from "./LoginActions";
 import "./login.css";
@@ -42,7 +43,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   return (
     <main className="page-shell login-page">
       <section className="login-visual">
-        <div className="login-sparkles" aria-hidden="true" />
+        <ShootingStars className="login-shooting-stars" />
         <div className="login-visual-content">
           <BrandLogo className="login-brand" size="lg" />
 

@@ -15,7 +15,7 @@
   overflow: hidden;
   padding: 44px;
   background:
-    linear-gradient(90deg, rgba(1, 2, 8, 0.48) 0%, rgba(1, 2, 8, 0.28) 48%, rgba(1, 2, 8, 0.62) 100%),
+    linear-gradient(90deg, rgba(1, 2, 8, 0.34) 0%, rgba(1, 2, 8, 0.18) 48%, rgba(1, 2, 8, 0.46) 100%),
     radial-gradient(circle at 72% 30%, rgba(155, 92, 255, 0.2), transparent 32%),
     radial-gradient(circle at 22% 76%, rgba(110, 231, 255, 0.12), transparent 26%),
     url("/assets/backgrounds/login-spectre-bg.png") center / cover no-repeat;
@@ -33,49 +33,27 @@
 
 .login-visual::before {
   background:
-    linear-gradient(180deg, rgba(1, 2, 8, 0.08) 0%, rgba(1, 2, 8, 0.72) 100%),
+    linear-gradient(180deg, rgba(1, 2, 8, 0.04) 0%, rgba(1, 2, 8, 0.48) 100%),
     radial-gradient(circle at 30% 48%, rgba(3, 5, 13, 0.28), transparent 42%),
     radial-gradient(circle at 72% 62%, rgba(56, 189, 248, 0.1), transparent 24%);
-  backdrop-filter: blur(1.5px);
 }
 
-.login-visual::after {
-  background:
-    linear-gradient(115deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 100%),
-    linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 100%);
-  background-size: 84px 84px;
-  opacity: 0.11;
-  mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.78), transparent 76%);
-}
-
-.login-sparkles {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+.login-shooting-stars {
   z-index: 1;
-  background-image:
-    radial-gradient(circle at 12% 18%, rgba(247, 247, 255, 0.74) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 26% 58%, rgba(110, 231, 255, 0.52) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 44% 34%, rgba(231, 224, 255, 0.62) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 64% 52%, rgba(155, 92, 255, 0.62) 0 1px, transparent 1.8px),
-    radial-gradient(circle at 78% 24%, rgba(247, 247, 255, 0.56) 0 1px, transparent 1.7px);
-  background-size: 260px 220px, 340px 300px, 420px 360px, 300px 260px, 520px 400px;
-  opacity: 0.22;
-  animation: loginSparkle 9s ease-in-out infinite alternate;
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 88%);
-}
-
-.login-sparkles::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(circle at 18% 22%, rgba(247, 247, 255, 0.56) 0 1px, transparent 1.6px),
-    radial-gradient(circle at 54% 42%, rgba(110, 231, 255, 0.42) 0 1px, transparent 1.5px),
-    radial-gradient(circle at 82% 66%, rgba(231, 224, 255, 0.48) 0 1px, transparent 1.6px);
-  background-size: 180px 180px, 240px 220px, 300px 280px;
-  opacity: 0.12;
-  animation: sparkleDrift 14s linear infinite;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 24%,
+    rgba(0, 0, 0, 0.72) 42%,
+    black 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    transparent 24%,
+    rgba(0, 0, 0, 0.72) 42%,
+    black 100%
+  );
 }
 
 .login-visual-content {
@@ -404,32 +382,6 @@
   }
 }
 
-@keyframes loginSparkle {
-  0% {
-    opacity: 0.12;
-    transform: translate3d(0, 0, 0);
-  }
-
-  45% {
-    opacity: 0.26;
-  }
-
-  100% {
-    opacity: 0.18;
-    transform: translate3d(0, -5px, 0);
-  }
-}
-
-@keyframes sparkleDrift {
-  from {
-    transform: translateY(0);
-  }
-
-  to {
-    transform: translateY(-40px);
-  }
-}
-
 @media (max-width: 1180px) {
   .login-floating-card {
     width: min(214px, 26vw);
@@ -534,8 +486,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .login-sparkles,
-  .login-sparkles::after,
   .login-floating-card {
     animation: none;
   }
