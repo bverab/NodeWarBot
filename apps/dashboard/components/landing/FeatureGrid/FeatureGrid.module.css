@@ -16,10 +16,7 @@
 }
 
 .sectionAtmosphere {
-  background:
-    radial-gradient(circle at 82% 12%, rgba(124, 58, 237, 0.075), transparent 25%),
-    radial-gradient(circle at 16% 56%, rgba(56, 189, 248, 0.035), transparent 28%),
-    linear-gradient(180deg, rgba(1, 2, 8, 0.16), rgba(1, 2, 8, 0.34));
+  background: transparent;
 }
 
 .heading {

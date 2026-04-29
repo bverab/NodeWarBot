@@ -2,36 +2,10 @@
   position: relative;
   z-index: 1;
   min-height: 100vh;
+  margin-top: -96px;
   overflow: hidden;
   padding: 0;
   isolation: isolate;
-}
-
-.hero::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(1, 2, 8, 0.94) 0%, rgba(1, 2, 8, 0.82) 25%, rgba(1, 2, 8, 0.2) 48%, rgba(1, 2, 8, 0) 74%),
-    linear-gradient(180deg, rgba(1, 2, 8, 0.02) 0%, rgba(1, 2, 8, 0) 62%, rgba(1, 2, 8, 0.34) 100%);
-}
-
-.hero::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  z-index: 2;
-  height: min(34vh, 360px);
-  pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(1, 2, 8, 0) 0%,
-    rgba(1, 2, 8, 0.18) 38%,
-    rgba(1, 2, 8, 0.58) 74%,
-    var(--color-background-deep) 100%
-  );
 }
 
 .artFrame {
@@ -40,25 +14,15 @@
   z-index: 0;
   overflow: hidden;
   min-height: 100vh;
+  opacity: 0.46;
   mask-image:
     linear-gradient(90deg, transparent 0%, black 2%, black 100%),
     linear-gradient(180deg, black 0%, black 82%, transparent 100%);
   mask-composite: intersect;
 }
 
-.artFrame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 56% 42%, transparent 0 34%, rgba(2, 3, 10, 0.04) 62%, rgba(2, 3, 10, 0.14) 100%),
-    linear-gradient(90deg, rgba(2, 3, 10, 0.82), rgba(2, 3, 10, 0.12) 21%, rgba(2, 3, 10, 0) 60%, rgba(2, 3, 10, 0.06));
-}
-
 .artImage {
-  object-fit: cover;
   object-position: 72% center;
-  filter: saturate(1.08) contrast(1.04);
 }
 
 .inner {
@@ -67,6 +31,7 @@
   display: grid;
   grid-template-columns: minmax(320px, 0.44fr) minmax(0, 0.56fr);
   align-items: center;
+  justify-items: center;
   width: min(1320px, calc(100% - 48px));
   margin: 0 auto;
   min-height: 100vh;
@@ -137,84 +102,41 @@
   position: relative;
   min-height: 100%;
   z-index: 3;
+  --mascot-right: auto;
+  --mascot-bottom: 10%;
+  --mascot-width: clamp(420px, 31vw, 620px);
 }
 
 .visualLayer::before {
   content: "";
   position: absolute;
-  inset: 6% -6% 0 0;
+  inset: 8% -8% 4% 18%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.26), transparent 58%);
-  filter: blur(24px);
-  opacity: 0.82;
+  background:
+    radial-gradient(circle, rgba(124, 58, 237, 0.3), transparent 58%),
+    radial-gradient(circle at 70% 48%, rgba(56, 189, 248, 0.12), transparent 42%);
+  filter: blur(26px);
+  opacity: 0.72;
 }
 
-.floatingPanel {
+.mascotFrame {
   position: absolute;
+  right: var(--mascot-right);
+  bottom: var(--mascot-bottom);
   z-index: 2;
-  width: min(240px, 42vw);
-  background: rgba(10, 12, 24, 0.82);
-  box-shadow: 0 20px 70px rgba(2, 3, 10, 0.48), 0 0 42px rgba(124, 58, 237, 0.16);
+  width: var(--mascot-width);
+  aspect-ratio: 0.86;
 }
 
-.floatingPanelLeft {
-  left: 12%;
-  bottom: 18%;
-}
-
-.floatingPanelRight {
-  right: 10%;
-  top: auto;
-  bottom: 24%;
-}
-
-.floatingPanelHead,
-.miniList span {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.floatingPanelHead {
-  margin-bottom: 12px;
-}
-
-.floatingPanelHead span,
-.miniList b {
-  color: #a676ff;
-}
-
-.miniList {
-  display: grid;
-  gap: 8px;
-  color: var(--muted-strong);
-  font-size: 13px;
-}
-
-.dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 7px;
-  border-radius: 99px;
-}
-
-.dotRed {
-  background: var(--color-danger);
-}
-
-.dotGold {
-  background: var(--color-warning);
-}
-
-.dotGreen {
-  background: var(--color-success);
+.mascotImage {
+  object-fit: contain;
+  object-position: center;
 }
 
 @media (max-width: 900px) {
   .hero {
     min-height: auto;
+    margin-top: -86px;
   }
 
   .hero::before {
@@ -232,7 +154,14 @@
   }
 
   .visualLayer {
-    min-height: 520px;
+    min-height: 460px;
+    --mascot-right: 8%;
+    --mascot-bottom: 14%;
+    --mascot-width: clamp(340px, 36vw, 500px);
+  }
+
+  .mascotFrame {
+    width: min(var(--mascot-width), 74vw);
   }
 
   .artFrame {
@@ -248,18 +177,15 @@
     flex-direction: column;
   }
 
+  .hero {
+    margin-top: -126px;
+  }
+
   .visualLayer {
-    min-height: 380px;
-  }
-
-  .floatingPanel {
-    position: relative;
-    width: 100%;
-  }
-
-  .floatingPanelLeft,
-  .floatingPanelRight {
-    inset: auto;
+    min-height: 330px;
+    --mascot-right: 50%;
+    --mascot-bottom: 0;
+    --mascot-width: min(320px, 82vw);
   }
 
   .artFrame {
@@ -269,5 +195,10 @@
     min-height: 360px;
     opacity: 0.86;
     mask-image: linear-gradient(180deg, black 0%, black 72%, transparent 100%);
+  }
+
+  .mascotFrame {
+    width: var(--mascot-width);
+    transform: translateX(50%);
   }
 }

@@ -4,10 +4,7 @@
   padding: 84px 0;
   scroll-margin-top: 110px;
   animation: spectreFadeUp 640ms ease both;
-  background:
-    radial-gradient(circle at 82% 12%, rgba(124, 58, 237, 0.075), transparent 25%),
-    radial-gradient(circle at 16% 56%, rgba(56, 189, 248, 0.035), transparent 28%),
-    linear-gradient(180deg, rgba(1, 2, 8, 0.16), rgba(1, 2, 8, 0.34));
+  background: transparent;
 }
 
 .section::before {
@@ -21,14 +18,14 @@
 
 .band {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
+  gap: 26px;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  min-height: 154px;
-  padding: 28px 28px 28px 210px;
+  min-height: 170px;
+  padding: 28px;
   background:
     linear-gradient(90deg, rgba(2, 3, 10, 0.88), rgba(2, 3, 10, 0.36)),
     radial-gradient(circle at 8% 50%, rgba(124, 58, 237, 0.34), transparent 28%),
@@ -49,18 +46,17 @@
 }
 
 .mascot {
-  position: absolute;
-  left: 18px;
-  bottom: -28px;
-  width: 176px;
-  height: 162px;
-  opacity: 0.64;
+  position: relative;
+  align-self: center;
+  width: 164px;
+  height: 142px;
+  opacity: 0.78;
   filter: drop-shadow(0 0 34px rgba(124, 58, 237, 0.48));
 }
 
 .mascot img {
   object-fit: contain;
-  object-position: left bottom;
+  object-position: center;
 }
 
 .lede {
@@ -74,12 +70,17 @@
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+  justify-content: flex-end;
 }
 
 @media (max-width: 900px) {
   .band {
-    align-items: stretch;
-    flex-direction: column;
+    grid-template-columns: 130px minmax(0, 1fr);
+  }
+
+  .actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 }
 
@@ -90,18 +91,20 @@
   }
 
   .mascot {
-    position: relative;
-    display: block;
-    left: auto;
-    bottom: auto;
     width: 100%;
     height: 128px;
-    opacity: 0.48;
+    opacity: 0.7;
   }
 
   .band {
+    grid-template-columns: 1fr;
     min-height: auto;
     padding: 22px;
+    text-align: center;
+  }
+
+  .actions {
+    justify-content: stretch;
   }
 }
 

@@ -2,7 +2,6 @@ import Image from "next/image";
 import { ArrowRight, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
 import { assets } from "@/constants/assets";
 import { routes } from "@/constants/routes";
 import styles from "./HeroSection.module.css";
@@ -13,7 +12,7 @@ type HeroSectionProps = {
 
 export function HeroSection({ signedIn }: HeroSectionProps) {
   return (
-    <section className={styles.hero}>
+    <section className={styles.hero} id="home">
       <div className={styles.artFrame}>
         <Image
           alt="Spectre mascot surrounded by violet arcane energy over a dark fantasy landscape"
@@ -21,7 +20,7 @@ export function HeroSection({ signedIn }: HeroSectionProps) {
           fill
           priority
           sizes="100vw"
-          src={assets.landingHeroSceneWide}
+          src={assets.landingHeroSceneShining}
         />
       </div>
       <div className={styles.inner}>
@@ -56,23 +55,16 @@ export function HeroSection({ signedIn }: HeroSectionProps) {
         </div>
 
         <div className={styles.visualLayer} aria-hidden="true">
-          <Card className={`${styles.floatingPanel} ${styles.floatingPanelLeft}`}>
-            <div className={styles.floatingPanelHead}>
-              <strong>Signups</strong>
-              <span>24 / 50</span>
-            </div>
-            <div className={styles.miniList}>
-              <span><i className={`${styles.dot} ${styles.dotRed}`} /> Mystic <b>2 / 2</b></span>
-              <span><i className={`${styles.dot} ${styles.dotGold}`} /> Warrior <b>3 / 3</b></span>
-              <span><i className={`${styles.dot} ${styles.dotGreen}`} /> Ranger <b>2 / 2</b></span>
-            </div>
-          </Card>
-          <Card className={`${styles.floatingPanel} ${styles.floatingPanelRight}`}>
-            <Badge tone="muted">Upcoming war</Badge>
-            <h3>Calpheon Siege</h3>
-            <p>Saturday, May 24 - 20:00 UTC</p>
-            <Button href={routes.login}>Join flow</Button>
-          </Card>
+          <div className={styles.mascotFrame}>
+            <Image
+              alt=""
+              className={styles.mascotImage}
+              fill
+              priority
+              sizes="(max-width: 900px) 72vw, 48vw"
+              src={assets.spectreMascotBook}
+            />
+          </div>
         </div>
       </div>
     </section>

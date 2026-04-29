@@ -1,0 +1,140 @@
+.section {
+  position: relative;
+  z-index: 1;
+  padding: 92px 0;
+  scroll-margin-top: 118px;
+  animation: spectreFadeUp 640ms ease both;
+  background: transparent;
+}
+
+.section::before {
+  content: "";
+  position: absolute;
+  inset: -28px 0 auto;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(145, 118, 255, 0.14), transparent);
+}
+
+.heading {
+  display: grid;
+  max-width: 820px;
+  margin: 0 auto 30px;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.heading h2 {
+  margin: 0;
+  font-size: clamp(30px, 4vw, 54px);
+  line-height: 1;
+}
+
+.lede {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.plan {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+  min-height: 430px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    rgba(8, 11, 23, 0.78);
+}
+
+.highlighted {
+  border-color: color-mix(in srgb, var(--color-violet-glow) 42%, var(--border-strong));
+  box-shadow: 0 24px 78px rgba(0, 0, 0, 0.24), 0 0 48px rgba(139, 92, 246, 0.13);
+}
+
+.planHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.planHeader h3 {
+  margin: 0 0 10px;
+  font-size: 24px;
+}
+
+.planHeader strong {
+  display: block;
+  color: var(--text);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.planBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(110, 231, 255, 0.18);
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--cyan);
+  background: rgba(110, 231, 255, 0.065);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.plan p {
+  margin: 0;
+  color: var(--muted-strong);
+  line-height: 1.6;
+}
+
+.features {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.features li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted-strong);
+}
+
+.features svg {
+  flex: 0 0 auto;
+  color: var(--cyan);
+  filter: drop-shadow(0 0 10px rgba(110, 231, 255, 0.2));
+}
+
+.plan > a {
+  align-self: end;
+  width: fit-content;
+}
+
+@media (max-width: 760px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plan {
+    min-height: auto;
+  }
+
+  .planHeader {
+    flex-direction: column;
+  }
+}
