@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   CalendarDays,
   Crown,
@@ -10,6 +9,7 @@ import {
   Swords,
   Users
 } from "lucide-react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import { NavItem } from "@/components/layout/NavItem";
 import styles from "./Sidebar.module.css";
 
@@ -46,10 +46,7 @@ const groups = [
 export function Sidebar() {
   return (
     <aside className={styles.sidebar}>
-      <Link className={styles.brandMark} href="/">
-        <span className={styles.brandGlyph}>S</span>
-        <span>Spectre</span>
-      </Link>
+      <BrandLogo className={styles.brandLogo} size="sm" />
 
       <nav className={styles.nav} aria-label="Dashboard navigation">
         {groups.map((group) => (

@@ -65,6 +65,8 @@
   align-items: center;
   gap: 10px;
   color: var(--muted-strong);
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .avatar {
@@ -93,6 +95,10 @@
   .topbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .userArea {
+    justify-content: flex-start;
   }
 }
 

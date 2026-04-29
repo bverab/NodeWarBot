@@ -5,6 +5,8 @@
   flex: 0 0 auto;
   width: fit-content;
   border-radius: 10px;
+  --brand-symbol-size: 34px;
+  --brand-wordmark-size: 138px;
 }
 
 .logo:focus-visible {
@@ -13,7 +15,7 @@
 }
 
 .symbol {
-  width: clamp(30px, 2.2vw, 34px);
+  width: var(--brand-symbol-size);
   height: auto;
   object-fit: contain;
   filter: drop-shadow(0 0 10px rgba(124, 58, 237, 0.22));
@@ -21,19 +23,36 @@
 }
 
 .wordmark {
-  width: clamp(124px, 8.5vw, 138px);
+  width: var(--brand-wordmark-size);
   height: auto;
   object-fit: contain;
   filter: drop-shadow(0 0 9px rgba(124, 58, 237, 0.12));
   transform: translateY(0.5px);
 }
 
+.sm {
+  gap: 4px;
+  --brand-symbol-size: 28px;
+  --brand-wordmark-size: 108px;
+}
+
+.md {
+  --brand-symbol-size: clamp(30px, 2.2vw, 34px);
+  --brand-wordmark-size: clamp(124px, 8.5vw, 138px);
+}
+
+.lg {
+  gap: 7px;
+  --brand-symbol-size: clamp(36px, 3vw, 44px);
+  --brand-wordmark-size: clamp(138px, 10vw, 166px);
+}
+
 @media (max-width: 640px) {
   .symbol {
-    width: 31px;
+    width: min(var(--brand-symbol-size), 31px);
   }
 
   .wordmark {
-    width: 118px;
+    width: min(var(--brand-wordmark-size), 118px);
   }
 }

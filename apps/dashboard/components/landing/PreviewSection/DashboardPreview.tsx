@@ -1,4 +1,5 @@
 import { CalendarDays, Eye, Pencil, Plus, Shield, Trash2 } from "lucide-react";
+import { BrandLogo } from "@/components/brand/BrandLogo";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import styles from "./DashboardPreview.module.css";
@@ -20,10 +21,7 @@ export function DashboardPreview() {
   return (
     <div className={styles.preview} aria-label="Spectre dashboard preview">
       <aside className={styles.sidebar}>
-        <div className={styles.brandMark}>
-          <span className={styles.brandGlyph}>S</span>
-          <span>Spectre</span>
-        </div>
+        <BrandLogo className={styles.brandLogo} size="sm" />
         <div className={styles.nav}>
           <span className={styles.navActive} />
           <span />

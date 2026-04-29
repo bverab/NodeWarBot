@@ -4,7 +4,17 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Spectre",
-  description: "Discord-native guild operations for war, siege, and PvE events"
+  description: "Discord-native guild operations for war, siege, and PvE events",
+  icons: {
+    icon: [
+      {
+        url: "/assets/icons/spectre-favicon.png",
+        type: "image/png"
+      }
+    ],
+    shortcut: "/assets/icons/spectre-favicon.png",
+    apple: "/assets/icons/spectre-favicon.png"
+  }
 };
 
 type RootLayoutProps = {

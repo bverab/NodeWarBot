@@ -46,26 +46,9 @@
   background: rgba(8, 10, 20, 0.58);
 }
 
-.brandMark {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.brandGlyph {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--color-cyan-accent) 42%, transparent);
-  border-radius: 8px;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--color-violet-glow) 32%, transparent), color-mix(in srgb, var(--color-blue-accent) 16%, transparent));
-  box-shadow: 0 0 26px color-mix(in srgb, var(--color-cyan-accent) 24%, transparent);
-  color: var(--color-text-primary);
+.brandLogo {
+  transform: scale(0.82);
+  transform-origin: left center;
 }
 
 .nav {

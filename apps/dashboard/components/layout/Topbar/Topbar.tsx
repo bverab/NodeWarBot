@@ -1,6 +1,7 @@
 import { Bell, ChevronDown, Disc3 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { routes } from "@/constants/routes";
+import { SignOutButton } from "./SignOutButton";
 import styles from "./Topbar.module.css";
 
 type TopbarProps = {
@@ -33,6 +34,7 @@ export function Topbar({ displayName, initial, preview = false }: TopbarProps) {
           <span>{preview ? "Preview mode" : "Operator"}</span>
         </div>
         <span className={styles.avatar}>{initial}</span>
+        {!preview ? <SignOutButton /> : null}
       </div>
     </header>
   );
