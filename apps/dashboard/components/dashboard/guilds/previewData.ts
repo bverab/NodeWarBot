@@ -1,4 +1,4 @@
-import type { GuildCardData } from "@/components/dashboard/GuildsPanel";
+import type { GuildCardData } from "@/components/dashboard/guilds";
 
 export const previewGuilds: GuildCardData[] = [
   {
@@ -6,6 +6,7 @@ export const previewGuilds: GuildCardData[] = [
     name: "Eternal Order",
     icon: null,
     owner: true,
+    manageable: true,
     preview: true
   },
   {
@@ -13,6 +14,7 @@ export const previewGuilds: GuildCardData[] = [
     name: "Crimson Veil",
     icon: null,
     owner: false,
+    manageable: true,
     preview: true
   },
   {
@@ -20,6 +22,7 @@ export const previewGuilds: GuildCardData[] = [
     name: "Ashen Court",
     icon: null,
     owner: false,
+    manageable: false,
     preview: true
   }
 ];

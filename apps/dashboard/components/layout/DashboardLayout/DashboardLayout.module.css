@@ -14,6 +14,7 @@
 
 .content {
   padding: 28px 24px 56px;
+  animation: spectreFadeUp 260ms ease both;
 }
 
 .header {

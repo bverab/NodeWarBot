@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ErrorState, GuildsPanel, LoadingState, type GuildCardData } from "@/components/dashboard/GuildsPanel";
-import { previewGuilds } from "@/components/dashboard/previewData";
+import { ErrorState, GuildsPanel, LoadingState, type GuildCardData } from "@/components/dashboard/guilds";
+import { previewGuilds } from "@/components/dashboard/guilds/previewData";
 
 type Guild = GuildCardData & {
   permissions: string;
@@ -10,6 +10,7 @@ type Guild = GuildCardData & {
 
 type GuildResponse = {
   guilds: Guild[];
+  error?: string;
 };
 
 type GuildsClientProps = {
@@ -19,7 +20,12 @@ type GuildsClientProps = {
 export function GuildsClient({ preview = false }: GuildsClientProps) {
   const [guilds, setGuilds] = useState<GuildCardData[]>(preview ? previewGuilds : []);
   const [error, setError] = useState<string | null>(null);
+  const [lastGuildId, setLastGuildId] = useState<string | null>(null);
   const [loading, setLoading] = useState(!preview);
+
+  useEffect(() => {
+    setLastGuildId(window.localStorage.getItem("spectre:lastGuildId"));
+  }, []);
 
   useEffect(() => {
     if (preview) {
@@ -30,12 +36,13 @@ export function GuildsClient({ preview = false }: GuildsClientProps) {
       try {
         const response = await fetch("/api/guilds", { cache: "no-store" });
         if (!response.ok) {
+          const json = (await response.json().catch(() => null)) as GuildResponse | null;
           if (response.status === 401) {
             setError("Sign in with Discord to load your guilds.");
             return;
           }
 
-          setError(`Discord guild fetch failed with status ${response.status}.`);
+          setError(json?.error ?? `Discord guild fetch failed with status ${response.status}.`);
           return;
         }
 
@@ -59,5 +66,5 @@ export function GuildsClient({ preview = false }: GuildsClientProps) {
     return <ErrorState message={error} />;
   }
 
-  return <GuildsPanel guilds={guilds} preview={preview} />;
+  return <GuildsPanel guilds={guilds} lastGuildId={lastGuildId} preview={preview} />;
 }

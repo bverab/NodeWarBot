@@ -20,7 +20,7 @@ export function ErrorState({ message }: ErrorStateProps) {
       icon={Shield}
       title={message}
     >
-      Guild data comes from Discord OAuth and requires the `identify guilds` scope.
+      Guild data requires Discord OAuth plus a server-side bot guild check. Tokens are never exposed to the browser.
     </EmptyState>
   );
 }

@@ -40,7 +40,7 @@
   margin-top: auto;
 }
 
-.guildChip {
+.profileChip {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -48,9 +48,21 @@
   border-radius: 8px;
   padding: 12px;
   background: rgba(255, 255, 255, 0.05);
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 
-.guildChipIcon {
+.profileChip:hover {
+  border-color: color-mix(in srgb, var(--color-violet-glow) 32%, var(--border));
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow: 0 12px 30px rgba(139, 92, 246, 0.1);
+}
+
+.profileChip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
+  outline-offset: 3px;
+}
+
+.profileAvatar {
   display: grid;
   width: 34px;
   height: 34px;
@@ -61,19 +73,30 @@
   background: rgba(245, 158, 11, 0.18);
   font-size: 12px;
   font-weight: 900;
+  overflow: hidden;
 }
 
-.guildChip div {
+.profileAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profileChip div {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
-.guildChip strong {
+.profileChip strong {
   color: var(--text);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.guildChip span {
+.profileChip span {
   color: var(--muted);
   font-size: 12px;
 }

@@ -12,21 +12,34 @@
   backdrop-filter: blur(16px);
 }
 
+.guildDropdown {
+  position: relative;
+  width: min(320px, 100%);
+  flex: 0 1 320px;
+}
+
 .guildSelector {
   display: inline-flex;
-  min-width: min(360px, 100%);
+  width: 100%;
   align-items: center;
   justify-content: flex-start;
   gap: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
+  cursor: pointer;
   color: var(--muted-strong);
   background: rgba(255, 255, 255, 0.05);
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 
 .guildSelector > svg {
   margin-left: auto;
+  transition: transform 180ms ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
 }
 
 .guildSelectorMark {
@@ -40,22 +53,113 @@
   background: rgba(245, 158, 11, 0.18);
   font-size: 12px;
   font-weight: 900;
+  overflow: hidden;
 }
 
-.guildSelector div,
+.guildSelectorMark img,
+.guildOptionMark img,
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.guildSelectorCopy,
 .userCopy {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .guildSelector strong,
 .userCopy strong {
   color: var(--text);
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .guildSelector span,
 .userCopy span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.guildMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 8;
+  display: grid;
+  width: 100%;
+  min-width: 280px;
+  max-height: 280px;
+  gap: 6px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--color-violet-glow) 30%, var(--border));
+  border-radius: 8px;
+  padding: 8px;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(56, 189, 248, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(13, 16, 31, 0.98), rgba(6, 8, 18, 0.98));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34), 0 0 28px rgba(139, 92, 246, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.guildOption {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  color: var(--muted-strong);
+  background: transparent;
+  text-align: left;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.guildOption:hover,
+.guildOption:focus-visible,
+.guildOptionActive {
+  border-color: color-mix(in srgb, var(--color-cyan-accent) 24%, var(--border));
+  color: var(--text);
+  background: rgba(139, 92, 246, 0.12);
+  outline: none;
+}
+
+.guildOptionMark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: #cab7ff;
+  background: rgba(139, 92, 246, 0.18);
+  font-size: 11px;
+  font-weight: 900;
+  overflow: hidden;
+}
+
+.guildOption span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.guildOption strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guildOption small {
   color: var(--muted);
   font-size: 12px;
 }
@@ -78,6 +182,12 @@
   color: var(--text);
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.7), rgba(56, 189, 248, 0.44));
   font-weight: 900;
+  overflow: hidden;
+}
+
+.avatar:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
+  outline-offset: 3px;
 }
 
 .iconButton {
@@ -89,6 +199,21 @@
   border-radius: 8px;
   color: var(--muted-strong);
   background: rgba(255, 255, 255, 0.05);
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, color 180ms ease;
+}
+
+.guildSelector:hover,
+.iconButton:hover {
+  border-color: color-mix(in srgb, var(--color-cyan-accent) 30%, var(--border));
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow: 0 12px 32px rgba(56, 189, 248, 0.08);
+  color: var(--text);
+}
+
+.guildSelector:focus-visible,
+.iconButton:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
+  outline-offset: 3px;
 }
 
 @media (max-width: 900px) {
@@ -99,6 +224,11 @@
 
   .userArea {
     justify-content: flex-start;
+  }
+
+  .guildDropdown {
+    width: min(360px, 100%);
+    flex-basis: auto;
   }
 }
 

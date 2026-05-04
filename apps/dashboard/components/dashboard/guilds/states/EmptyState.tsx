@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/Card";
-import styles from "./GuildsPanel.module.css";
+import styles from "../GuildsPanel.module.css";
 
 type EmptyStateProps = {
   icon: LucideIcon;
