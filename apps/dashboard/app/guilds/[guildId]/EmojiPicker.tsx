@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { parseDiscordEmoji } from "@/lib/discordEmoji";
-import styles from "./overview.module.css";
+import styles from "./EmojiPicker.module.css";
 
 type EmojiSummary = {
   id: string;
@@ -25,6 +25,9 @@ type EmojiPickerProps = {
   name?: string;
   defaultValue?: string | null;
   defaultSource?: string | null;
+  value?: string | null;
+  source?: string | null;
+  onChange?: (value: string, source: string) => void;
 };
 
 async function fetchWithTimeout(url: string) {
@@ -102,7 +105,15 @@ function debugEmojiState(input: {
   }
 }
 
-export function EmojiPicker({ guildId, name = "emoji", defaultValue, defaultSource }: EmojiPickerProps) {
+export function EmojiPicker({
+  guildId,
+  name = "emoji",
+  defaultValue,
+  defaultSource,
+  value: controlledValue,
+  source: controlledSource,
+  onChange
+}: EmojiPickerProps) {
   const isMountedRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"guild" | "application" | "manual">("guild");
@@ -235,9 +246,17 @@ export function EmojiPicker({ guildId, name = "emoji", defaultValue, defaultSour
   );
 
   const allEmojis = useMemo(() => [...guildEmojis, ...applicationEmojis], [applicationEmojis, guildEmojis]);
-  const previewEmoji = allEmojis.find((emoji) => emoji.syntax === value || emoji.raw === value);
-  const parsedValue = parseDiscordEmoji(value);
-  const selectedName = previewEmoji?.name ?? parsedValue?.name ?? (value && source === "manual" ? "Manual" : null);
+  const displayValue = controlledValue ?? value;
+  const displaySource = controlledSource ?? source;
+  const previewEmoji = allEmojis.find((emoji) => emoji.syntax === displayValue || emoji.raw === displayValue);
+  const parsedValue = parseDiscordEmoji(displayValue);
+  const selectedName = previewEmoji?.name ?? parsedValue?.name ?? (displayValue && displaySource === "manual" ? "Manual" : null);
+
+  const commitValue = (nextValue: string, nextSource: string) => {
+    setValue(nextValue);
+    setSource(nextSource);
+    onChange?.(nextValue, nextSource);
+  };
 
   const retry = () => {
     if (tab === "application") {
@@ -254,21 +273,20 @@ export function EmojiPicker({ guildId, name = "emoji", defaultValue, defaultSour
 
   return (
     <div className={styles.emojiPicker}>
-      <input name={name} type="hidden" value={value} />
-      <input name={`${name}Source`} type="hidden" value={source} />
+      <input name={name} type="hidden" value={displayValue} />
+      <input name={`${name}Source`} type="hidden" value={displaySource} />
       <div className={styles.emojiControl}>
-        <button className={styles.emojiTrigger} onClick={() => setOpen((current) => !current)} type="button">
-          {previewEmoji || parsedValue ? <img alt="" src={(previewEmoji?.url ?? parsedValue?.imageUrl) as string} /> : <span>{value && source === "manual" ? value.slice(0, 2) : "+"}</span>}
-          <span>{value ? "Change icon" : "Select icon"}</span>
+        <button className={`${styles.emojiTrigger} ${open ? styles.selectorOpen : ""}`} onClick={() => setOpen((current) => !current)} type="button">
+          {previewEmoji || parsedValue ? <img alt="" src={(previewEmoji?.url ?? parsedValue?.imageUrl) as string} /> : <span>{displayValue && displaySource === "manual" ? displayValue.slice(0, 2) : "+"}</span>}
+          <span>{displayValue ? "Change icon" : "Select icon"}</span>
           {selectedName ? <small>{selectedName}</small> : null}
         </button>
-        {value ? (
+        {displayValue ? (
           <button
             aria-label="Clear icon"
             className={styles.emojiClear}
             onClick={() => {
-              setValue("");
-              setSource("");
+              commitValue("", "");
             }}
             type="button"
           >
@@ -289,11 +307,10 @@ export function EmojiPicker({ guildId, name = "emoji", defaultValue, defaultSour
               <input
                 maxLength={128}
                 onChange={(event) => {
-                  setValue(event.target.value);
-                  setSource(event.target.value ? "manual" : "");
+                  commitValue(event.target.value, event.target.value ? "manual" : "");
                 }}
                 placeholder="emoji or :flame:"
-                value={value}
+                value={displayValue}
               />
             </label>
           ) : (
@@ -310,8 +327,7 @@ export function EmojiPicker({ guildId, name = "emoji", defaultValue, defaultSour
                     <button
                       key={`${emoji.source}-${emoji.id}`}
                       onClick={() => {
-                        setValue(emoji.raw ?? emoji.syntax);
-                        setSource(emoji.source);
+                        commitValue(emoji.raw ?? emoji.syntax, emoji.source);
                         setOpen(false);
                       }}
                       title={emoji.name}

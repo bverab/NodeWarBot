@@ -26,6 +26,7 @@ type SortableItem = {
 };
 
 type SortableSlotGridProps<T extends SortableItem> = {
+  children?: ReactNode;
   className: string;
   disabled?: boolean;
   getItemClassName?: (item: T) => string;
@@ -74,6 +75,7 @@ function SortableSlot<T extends SortableItem>({ disabled, itemClassName = "", in
 }
 
 export function SortableSlotGrid<T extends SortableItem>({
+  children,
   className,
   disabled = false,
   getItemClassName,
@@ -117,6 +119,7 @@ export function SortableSlotGrid<T extends SortableItem>({
               renderItem={renderItem}
             />
           ))}
+          {children}
         </div>
       </SortableContext>
     </DndContext>

@@ -1,0 +1,226 @@
+.roleMultiSelect {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 9px;
+  position: relative;
+}
+
+.fieldHeading {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inlineHelp {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.rolePickerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rolePickerHeader > div {
+  display: grid;
+  gap: 4px;
+}
+
+.rolePickerHeader span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.rolePickerHeader > button {
+  border: 0;
+  padding: 0;
+  color: var(--cyan);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.roleSelectTrigger {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(154, 170, 255, 0.14);
+  border-radius: 8px;
+  padding: 0 11px;
+  color: var(--muted-strong);
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.055), transparent 38%),
+    rgba(13, 16, 34, 0.92);
+  cursor: pointer;
+  font-weight: 800;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.roleSelectTrigger:hover:not(:disabled),
+.selectorOpen {
+  border-color: rgba(56, 189, 248, 0.28);
+  color: var(--text);
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.1), transparent 38%),
+    rgba(13, 16, 34, 0.98);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.06);
+}
+
+.roleSelectTrigger:focus-visible,
+.roleOptionsList button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.roleSelectTrigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.roleDropdown {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  box-sizing: border-box;
+  border: 1px solid rgba(154, 170, 255, 0.18);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), transparent 34%),
+    rgba(8, 10, 24, 0.985);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  animation: selectorReveal 150ms ease-out;
+}
+
+.roleSearch {
+  position: relative;
+  display: grid;
+}
+
+.roleSearch svg {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.roleSearch input {
+  height: 36px;
+  min-height: 36px;
+  border: 1px solid rgba(154, 170, 255, 0.14);
+  border-radius: 8px;
+  padding: 0 12px 0 38px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.roleOptionsList {
+  display: grid;
+  min-height: 0;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.roleOptionsList::-webkit-scrollbar {
+  width: 8px;
+}
+
+.roleOptionsList::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(154, 170, 255, 0.18);
+}
+
+.roleOptionsList button {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid rgba(154, 170, 255, 0.1);
+  border-radius: 8px;
+  padding: 0 9px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  text-align: left;
+}
+
+.roleOptionsList button:hover {
+  border-color: rgba(56, 189, 248, 0.22);
+  color: var(--text);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.roleOptionsList button[aria-pressed="true"] {
+  border-color: rgba(56, 189, 248, 0.26);
+  color: var(--text);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.roleOptionsList button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roleOptionsList p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.selectedRoleChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.selectedRoleChips button,
+.selectedRoleChips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  padding: 4px 8px;
+  color: var(--cyan);
+  background: rgba(56, 189, 248, 0.08);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.selectedRoleChips button {
+  cursor: pointer;
+}
+
+.channelSelect {
+  position: relative;
+  margin-top: 8px;
+}
+
+@keyframes selectorReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

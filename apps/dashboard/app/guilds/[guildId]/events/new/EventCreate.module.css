@@ -1,0 +1,681 @@
+.createEventForm {
+  display: grid;
+}
+
+.createEventCard {
+  display: grid;
+  gap: 14px;
+  overflow: visible;
+  padding: 0;
+  background:
+    radial-gradient(circle at 86% 0%, rgba(139, 92, 246, 0.1), transparent 28%),
+    rgba(8, 10, 24, 0.72);
+}
+
+.createMetaBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(154, 170, 255, 0.1);
+  padding: 12px 16px 0;
+}
+
+.createMetaBar p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.createStepper {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(154, 170, 255, 0.08);
+  border-radius: 8px;
+  margin: 0 12px;
+  background: rgba(154, 170, 255, 0.08);
+}
+
+.createStepper button {
+  display: flex;
+  min-height: 48px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  padding: 10px 12px;
+  color: var(--muted);
+  background: rgba(8, 10, 24, 0.94);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.createStepper button span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.createStepper button[aria-current="step"],
+.createStepper .stepActive {
+  color: var(--text);
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.15), transparent 40%),
+    rgba(12, 15, 34, 0.98);
+}
+
+.createStepper button[aria-current="step"] span,
+.createStepper .stepActive span {
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.5), rgba(56, 189, 248, 0.3));
+}
+
+.createStepper button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.createStepper button:focus-visible,
+.segmentControl button:focus-visible,
+.orderControls button:focus-visible,
+.advancedSummary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.createPanel {
+  min-height: 430px;
+  padding: 0 18px;
+}
+
+.createSection {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.createSectionCompact {
+  grid-template-columns: minmax(220px, 280px) minmax(0, 760px);
+}
+
+.createSectionMedium {
+  grid-template-columns: minmax(220px, 300px) minmax(0, 900px);
+}
+
+.createSectionFull {
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.createSectionFull .createSectionIntro {
+  position: static;
+  max-width: 920px;
+  border-right: 0;
+  border-bottom: 1px solid rgba(154, 170, 255, 0.12);
+  padding-right: 0;
+  padding-bottom: 16px;
+}
+
+.createSectionIntro {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 10px;
+  border-right: 1px solid rgba(154, 170, 255, 0.12);
+  padding-right: 22px;
+}
+
+.createSectionIntro h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.createSectionIntro p,
+.inlineHelp,
+.helpPanel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.createFieldsWide,
+.basicsGrid,
+.scheduleGrid,
+.slotConfigGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.createFieldsWide label,
+.basicsGrid label,
+.scheduleGrid label,
+.slotConfigGrid label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.createFieldsWide input,
+.createFieldsWide select,
+.basicsGrid input,
+.basicsGrid select,
+.scheduleGrid input,
+.scheduleGrid select,
+.slotConfigGrid input,
+.slotConfigGrid select {
+  height: 42px;
+  min-height: 42px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--text);
+  background: rgba(5, 7, 17, 0.76);
+}
+
+.createFieldsWide input:focus-visible,
+.createFieldsWide select:focus-visible,
+.basicsGrid input:focus-visible,
+.basicsGrid select:focus-visible,
+.scheduleGrid input:focus-visible,
+.scheduleGrid select:focus-visible,
+.slotConfigGrid input:focus-visible,
+.slotConfigGrid select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.fieldLarge,
+.segmentBlock,
+.helpPanel {
+  grid-column: 1 / -1;
+}
+
+.typeContextPanel {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(56, 189, 248, 0.07);
+}
+
+.typeContextPanel strong {
+  color: var(--text);
+}
+
+.typeContextPanel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.fieldHeading {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.segmentControl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmentControl button {
+  min-height: 36px;
+  border: 1px solid rgba(154, 170, 255, 0.14);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.segmentControl button:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.26);
+  color: var(--text);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.segmentControl button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.segmentControl button[aria-pressed="true"] {
+  border-color: rgba(56, 189, 248, 0.36);
+  color: var(--text);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.segmentBlock {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.helpPanel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--cyan);
+  background: rgba(56, 189, 248, 0.07);
+}
+
+.manualSlotList,
+.pveOptionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 300px));
+  align-items: start;
+  justify-content: start;
+  gap: 12px;
+}
+
+.manualSlotPanel,
+.pveOptionCard {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 12px;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.manualSlotPanel {
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), transparent 30%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.pveOptionCard {
+  background:
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.1), transparent 32%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.manualSlotPanel:hover,
+.pveOptionCard:hover,
+.addSlotPanel:hover,
+.pveHelpCard:hover {
+  border-color: rgba(56, 189, 248, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.1), transparent 30%),
+    rgba(255, 255, 255, 0.045);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.addSlotPanel,
+.pveHelpCard {
+  display: grid;
+  min-height: 180px;
+  align-content: center;
+  justify-items: start;
+  gap: 10px;
+  border: 1px dashed rgba(154, 170, 255, 0.2);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.addSlotPanel h4,
+.pveHelpCard h4 {
+  margin: 0;
+  color: var(--text);
+}
+
+.addSlotPanel p,
+.pveHelpCard p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.manualSlotHeader {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.manualSlotHeader > div:first-child {
+  min-width: 0;
+}
+
+.manualSlotHeader h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orderControls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.orderControls span,
+.orderControls button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.orderControls button {
+  cursor: pointer;
+}
+
+.orderControls button:hover:not(:disabled) {
+  border-color: rgba(56, 189, 248, 0.24);
+  color: var(--text);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.orderControls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.advancedChannelBox {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.advancedChannelBox p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.advancedSummary {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.advancedSummary:hover {
+  border-color: rgba(56, 189, 248, 0.24);
+  color: var(--text);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.postSetupGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.setupPanel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.advancedPanel {
+  opacity: 0.92;
+}
+
+.mentionPanel {
+  border-color: rgba(56, 189, 248, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), transparent 34%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.setupPanelHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.setupPanelHeader svg {
+  color: var(--cyan);
+}
+
+.setupPanelHeader h4 {
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+.setupPanelHeader p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.setupPanel label,
+.setupInlineGrid label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.setupPanel input,
+.setupPanel select,
+.setupInlineGrid input {
+  height: 40px;
+  min-height: 40px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 11px;
+  color: var(--text);
+  background: rgba(5, 7, 17, 0.76);
+}
+
+.setupInlineGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.reviewGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reviewHero {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 9px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 8px;
+  padding: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.2), transparent 34%),
+    rgba(56, 189, 248, 0.07);
+}
+
+.reviewHero h3 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.reviewHero p {
+  margin: 0;
+  color: var(--muted-strong);
+}
+
+.reviewTile {
+  display: grid;
+  min-height: 120px;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.reviewTile svg {
+  color: var(--cyan);
+}
+
+.reviewTile strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.reviewTile span {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.reviewList {
+  display: grid;
+  grid-column: span 3;
+  gap: 8px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.reviewList h4 {
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+.reviewList p {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.reviewList strong {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.reviewList span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.createFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid rgba(154, 170, 255, 0.12);
+  padding: 18px 24px 24px;
+}
+
+@media (max-width: 900px) {
+  .createSection,
+  .createFieldsWide,
+  .basicsGrid,
+  .scheduleGrid,
+  .slotConfigGrid,
+  .manualSlotList,
+  .pveOptionGrid,
+  .postSetupGrid,
+  .setupInlineGrid,
+  .reviewGrid,
+  .reviewList p {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewList {
+    grid-column: span 1;
+  }
+
+  .createStepper {
+    grid-template-columns: 1fr;
+  }
+
+  .createStepper button {
+    justify-content: flex-start;
+  }
+
+  .createPanel {
+    min-height: auto;
+    padding: 0 16px;
+  }
+
+  .createSectionIntro {
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid rgba(154, 170, 255, 0.12);
+    padding-right: 0;
+    padding-bottom: 16px;
+  }
+
+  .createFooter,
+  .manualSlotHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

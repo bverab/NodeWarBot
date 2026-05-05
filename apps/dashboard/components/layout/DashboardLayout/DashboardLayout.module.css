@@ -10,10 +10,14 @@
 
 .main {
   min-width: 0;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(124, 58, 237, 0.1), transparent 30%),
+    radial-gradient(circle at 12% 16%, rgba(56, 189, 248, 0.045), transparent 28%),
+    rgba(5, 7, 17, 0.36);
 }
 
 .content {
-  padding: 28px 24px 56px;
+  padding: 22px 24px 52px;
   animation: spectreFadeUp 260ms ease both;
 }
 
@@ -22,17 +26,18 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 18px;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 }
 
 .header h1 {
-  margin: 0 0 8px;
-  font-size: clamp(30px, 4vw, 46px);
+  margin: 0 0 6px;
+  font-size: clamp(28px, 3vw, 38px);
 }
 
 .header p {
   margin: 0;
   color: var(--muted);
+  line-height: 1.5;
 }
 
 @media (max-width: 900px) {
