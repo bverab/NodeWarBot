@@ -1,4 +1,4 @@
-import { LayoutDashboard } from "lucide-react";
+import { Archive, ArrowLeft, LayoutDashboard, Trash2 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -6,6 +6,8 @@ import { guildRoutes } from "@/constants/routes";
 import { formatDateTime } from "@/lib/formatters";
 import { getGuildTemplateDetail } from "@/lib/server/dashboardData";
 import { TemplateVisualEditor } from "./TemplateVisualEditor";
+import { ConfirmResourceAction } from "../../ConfirmResourceAction";
+import { DisabledIconAction } from "../../DisabledIconAction";
 import { GuildNotFound } from "../../GuildNotFound";
 import { RememberGuild } from "../../RememberGuild";
 import { getGuildPageContext } from "../../guildContext";
@@ -50,7 +52,37 @@ export default async function TemplateDetailPage({ params, searchParams }: PageP
         </Card>
 
         <div className={styles.quickActions}>
-          <Button href={guildRoutes.templates(activeGuild.id)} variant="secondary">Back to templates</Button>
+          <Button href={guildRoutes.templates(activeGuild.id)} variant="secondary"><ArrowLeft size={16} aria-hidden="true" />Back to templates</Button>
+          {activeGuild.manageable && !template.isArchived ? (
+            <ConfirmResourceAction
+              actionClassName={styles.archiveIconButton}
+              actionIcon={<Archive size={16} aria-hidden="true" />}
+              actionLabel="Archive template"
+              body={`You are about to archive "${template.name}". It will no longer be available for new event creation. Existing events created from this template will not be affected.`}
+              confirmLabel="Archive template"
+              endpoint={`/api/guilds/${activeGuild.id}/templates/${template.id}/archive`}
+              redirectTo={guildRoutes.templates(activeGuild.id)}
+              resourceName={template.name}
+              title="Archive template?"
+            />
+          ) : (
+            <DisabledIconAction
+              ariaLabel={`Archive unavailable for ${template.name}`}
+              className={styles.archiveIconButton}
+              title="This template is already archived."
+            >
+              <Archive size={16} aria-hidden="true" />
+              Archive template
+            </DisabledIconAction>
+          )}
+          <DisabledIconAction
+            ariaLabel={`Delete unavailable for ${template.name}`}
+            className={styles.deleteIconButton}
+            title="Permanent template delete is not available yet. Use archive instead."
+          >
+            <Trash2 size={16} aria-hidden="true" />
+            Delete
+          </DisabledIconAction>
         </div>
 
         <div className={styles.eventEditorGrid}>
