@@ -90,21 +90,6 @@ function normalizeEmoji(value: unknown, source: EmojiSummary["source"]): EmojiSu
   };
 }
 
-function debugEmojiState(input: {
-  tab: string;
-  guildLoading: boolean;
-  applicationLoading: boolean;
-  guildLoaded: boolean;
-  applicationLoaded: boolean;
-  guildCount: number;
-  applicationCount: number;
-  filteredCount: number;
-}) {
-  if (process.env.NODE_ENV === "development") {
-    console.debug("[EmojiPicker]", input);
-  }
-}
-
 export function EmojiPicker({
   guildId,
   name = "emoji",
@@ -227,22 +212,11 @@ export function EmojiPicker({
 
   const filtered = useMemo(
     () => {
-      const matching = currentEmojis.filter((emoji) => {
+      return currentEmojis.filter((emoji) => {
         return emoji.name.toLowerCase().includes(query.toLowerCase());
       });
-      debugEmojiState({
-        tab,
-        guildLoading,
-        applicationLoading,
-        guildLoaded,
-        applicationLoaded,
-        guildCount: guildEmojis.length,
-        applicationCount: applicationEmojis.length,
-        filteredCount: matching.length
-      });
-      return matching;
     },
-    [applicationEmojis.length, applicationLoaded, applicationLoading, currentEmojis, guildEmojis.length, guildLoaded, guildLoading, query, tab]
+    [currentEmojis, query]
   );
 
   const allEmojis = useMemo(() => [...guildEmojis, ...applicationEmojis], [applicationEmojis, guildEmojis]);

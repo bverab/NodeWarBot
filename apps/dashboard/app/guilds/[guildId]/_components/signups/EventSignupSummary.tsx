@@ -1,7 +1,7 @@
 "use client";
 
-import { SlotEmoji } from "./SlotEmoji";
-import { ParticipantChip, type ParticipantChipData } from "./ParticipantChip";
+import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
+import { ParticipantChip, type ParticipantChipData } from "@/app/guilds/[guildId]/_components/shared/ParticipantChip";
 import styles from "./EventSignupSummary.module.css";
 
 export type PveOptionSummary = {

@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { Lock, Pencil, RefreshCw, Send, Trash2, Users, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatDateForInput } from "@/lib/formatters";
-import styles from "../../overview.module.css";
+import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 type EventActionsProps = {
   guildId: string;

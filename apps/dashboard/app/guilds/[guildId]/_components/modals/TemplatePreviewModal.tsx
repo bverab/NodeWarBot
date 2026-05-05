@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Eye } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { SlotEmoji } from "./SlotEmoji";
+import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
 import styles from "./TemplatePreviewModal.module.css";
 
 type TemplatePreviewSlot = {

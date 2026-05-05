@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { filterChannelsBySearch } from "@/lib/channelSearch";
-import { EmojiPicker } from "../../EmojiPicker";
-import { SlotEmoji } from "../../SlotEmoji";
-import overviewStyles from "../../overview.module.css";
+import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
+import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
+import overviewStyles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 import styles from "./EventCreate.module.css";
 import selectorStyles from "./RoleMultiSelect.module.css";
 

@@ -7,9 +7,9 @@ import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid"
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { sortSlotsByOrder } from "@/lib/slotOrdering";
-import { EmojiPicker } from "../../EmojiPicker";
-import { SlotEmoji } from "../../SlotEmoji";
-import styles from "../../overview.module.css";
+import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
+import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
+import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 type TemplateSlot = {
   id: string;

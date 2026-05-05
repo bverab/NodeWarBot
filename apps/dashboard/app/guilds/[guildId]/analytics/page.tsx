@@ -2,10 +2,10 @@ import { LineChart } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card } from "@/components/ui/Card";
 import { getGuildOverview } from "@/lib/server/dashboardData";
-import { GuildNotFound } from "../GuildNotFound";
-import { RememberGuild } from "../RememberGuild";
-import { getGuildPageContext } from "../guildContext";
-import styles from "../overview.module.css";
+import { GuildNotFound } from "@/app/guilds/[guildId]/_components/shared/GuildNotFound";
+import { RememberGuild } from "@/app/guilds/[guildId]/_components/shared/RememberGuild";
+import { getGuildPageContext } from "@/app/guilds/[guildId]/_context/guildContext";
+import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 type PageProps = {
   params: Promise<{ guildId: string }>;

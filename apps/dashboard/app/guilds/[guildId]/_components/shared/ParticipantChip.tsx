@@ -1,7 +1,7 @@
 "use client";
 
 import { BdoClassIcon } from "@/components/dashboard/BdoClassIcon";
-import styles from "./overview.module.css";
+import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 export type ParticipantChipData = {
   id: string;

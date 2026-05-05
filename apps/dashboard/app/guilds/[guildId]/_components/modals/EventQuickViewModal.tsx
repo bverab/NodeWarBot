@@ -12,8 +12,8 @@ import {
   type PveOptionSummary,
   type WaitlistSummary,
   type WarSlotSummary
-} from "./EventSignupSummary";
-import type { ParticipantChipData } from "./ParticipantChip";
+} from "@/app/guilds/[guildId]/_components/signups/EventSignupSummary";
+import type { ParticipantChipData } from "@/app/guilds/[guildId]/_components/shared/ParticipantChip";
 import styles from "./EventQuickViewModal.module.css";
 
 type QuickViewEvent = {

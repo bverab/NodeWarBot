@@ -6,12 +6,12 @@ import { guildRoutes } from "@/constants/routes";
 import { formatDateTime } from "@/lib/formatters";
 import { getGuildTemplateDetail } from "@/lib/server/dashboardData";
 import { TemplateVisualEditor } from "./TemplateVisualEditor";
-import { ConfirmResourceAction } from "../../ConfirmResourceAction";
-import { DisabledIconAction } from "../../DisabledIconAction";
-import { GuildNotFound } from "../../GuildNotFound";
-import { RememberGuild } from "../../RememberGuild";
-import { getGuildPageContext } from "../../guildContext";
-import styles from "../../overview.module.css";
+import { ConfirmResourceAction } from "@/app/guilds/[guildId]/_components/actions/ConfirmResourceAction";
+import { DisabledIconAction } from "@/app/guilds/[guildId]/_components/actions/DisabledIconAction";
+import { GuildNotFound } from "@/app/guilds/[guildId]/_components/shared/GuildNotFound";
+import { RememberGuild } from "@/app/guilds/[guildId]/_components/shared/RememberGuild";
+import { getGuildPageContext } from "@/app/guilds/[guildId]/_context/guildContext";
+import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 type PageProps = {
   params: Promise<{ guildId: string; templateId: string }>;

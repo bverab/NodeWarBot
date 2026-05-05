@@ -1,5 +1,5 @@
 import { Settings } from "lucide-react";
-import { GuildModulePage } from "../GuildModulePage";
+import { GuildModulePage } from "@/app/guilds/[guildId]/_components/shared/GuildModulePage";
 
 type PageProps = {
   params: Promise<{ guildId: string }>;

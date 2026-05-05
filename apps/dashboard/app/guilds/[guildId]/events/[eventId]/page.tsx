@@ -5,15 +5,15 @@ import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { formatDateTime } from "@/lib/formatters";
 import { getGuildEventDetail } from "@/lib/server/dashboardData";
-import { ConfirmResourceAction } from "../../ConfirmResourceAction";
-import { PveEventSignupGrid } from "../../EventSignupSummary";
+import { ConfirmResourceAction } from "@/app/guilds/[guildId]/_components/actions/ConfirmResourceAction";
+import { PveEventSignupGrid } from "@/app/guilds/[guildId]/_components/signups/EventSignupSummary";
 import { EventActions } from "./EventActions";
 import { EventSlotGrid } from "./EventSlotGrid";
-import { GuildNotFound } from "../../GuildNotFound";
-import { ParticipantChip } from "../../ParticipantChip";
-import { RememberGuild } from "../../RememberGuild";
-import { getGuildPageContext } from "../../guildContext";
-import styles from "../../overview.module.css";
+import { GuildNotFound } from "@/app/guilds/[guildId]/_components/shared/GuildNotFound";
+import { ParticipantChip } from "@/app/guilds/[guildId]/_components/shared/ParticipantChip";
+import { RememberGuild } from "@/app/guilds/[guildId]/_components/shared/RememberGuild";
+import { getGuildPageContext } from "@/app/guilds/[guildId]/_context/guildContext";
+import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 type PageProps = {
   params: Promise<{ guildId: string; eventId: string }>;

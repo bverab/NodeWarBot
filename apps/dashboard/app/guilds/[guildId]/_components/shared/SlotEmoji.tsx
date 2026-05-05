@@ -1,5 +1,5 @@
 import { parseDiscordEmoji } from "@/lib/discordEmoji";
-import styles from "./overview.module.css";
+import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 export function SlotEmoji({ value }: { value?: string | null }) {
   if (!value) {

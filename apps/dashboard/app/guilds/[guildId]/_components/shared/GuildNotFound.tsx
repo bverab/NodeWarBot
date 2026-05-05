@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { routes } from "@/constants/routes";
 import type { DashboardGuildSummary } from "@/lib/dashboardGuilds";
-import styles from "./overview.module.css";
+import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 type GuildNotFoundProps = {
   availableGuilds: DashboardGuildSummary[];

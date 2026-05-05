@@ -7,9 +7,9 @@ import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid"
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
-import { EmojiPicker } from "../../EmojiPicker";
-import { SlotEmoji } from "../../SlotEmoji";
-import overviewStyles from "../../overview.module.css";
+import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
+import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
+import overviewStyles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 import createStyles from "../../events/new/EventCreate.module.css";
 import { RoleMultiSelect, type RoleOption } from "../../events/new/NewEventForm";
 
