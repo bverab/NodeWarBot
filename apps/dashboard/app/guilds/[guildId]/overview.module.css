@@ -103,6 +103,49 @@
   gap: 12px;
 }
 
+.actionCell {
+  width: 1%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.actionCell > * {
+  margin-inline: auto;
+}
+
+.iconActionButton {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.archiveIconButton {
+  border-color: rgba(245, 158, 11, 0.28) !important;
+  color: #fcd38b !important;
+}
+
+.archiveIconButton:hover {
+  border-color: rgba(245, 158, 11, 0.48) !important;
+  background: rgba(245, 158, 11, 0.1) !important;
+}
+
+.deleteIconButton {
+  border-color: rgba(248, 113, 113, 0.28) !important;
+  color: #fecaca !important;
+}
+
+.deleteIconButton:hover {
+  border-color: rgba(248, 113, 113, 0.44) !important;
+  background: rgba(248, 113, 113, 0.1) !important;
+}
+
+.actionPlaceholder {
+  display: inline-block;
+  width: 36px;
+  height: 36px;
+}
+
 .actionPanel {
   display: grid;
   gap: 12px;
@@ -158,7 +201,9 @@
 }
 
 .editForm input,
-.compactForm input {
+.editForm select,
+.compactForm input,
+.compactForm select {
   height: 38px;
   min-height: 38px;
   border: 1px solid var(--border);
@@ -169,7 +214,9 @@
 }
 
 .editForm input:focus-visible,
-.compactForm input:focus-visible {
+.editForm select:focus-visible,
+.compactForm input:focus-visible,
+.compactForm select:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
   outline-offset: 2px;
 }
@@ -225,7 +272,7 @@
 
 .table {
   width: 100%;
-  min-width: 680px;
+  min-width: 880px;
   border-collapse: collapse;
 }
 
@@ -275,6 +322,11 @@
   background: rgba(239, 68, 68, 0.14);
 }
 
+.statusDraft {
+  color: var(--cyan);
+  background: rgba(56, 189, 248, 0.14);
+}
+
 .emptyPanel {
   display: grid;
   min-height: 180px;
@@ -285,13 +337,6 @@
 
 .emptyPanel p {
   max-width: 520px;
-}
-
-.detailGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 18px;
-  align-items: start;
 }
 
 .eventEditorGrid {
@@ -345,25 +390,6 @@
 .slotEditorStack {
   display: grid;
   gap: 12px;
-}
-
-.slotList,
-.sideList {
-  display: grid;
-  gap: 12px;
-}
-
-.slotCard {
-  display: grid;
-  gap: 10px;
-  border: 1px solid rgba(154, 170, 255, 0.1);
-  border-radius: 8px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.slotCard h3 {
-  margin: 0;
 }
 
 .slotCardCompact {
@@ -610,164 +636,6 @@
   font-weight: 800;
 }
 
-.emojiPicker {
-  display: contents;
-}
-
-.emojiControl {
-  display: flex;
-  align-self: start;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.emojiTrigger {
-  display: inline-flex;
-  min-height: 38px;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid rgba(154, 170, 255, 0.16);
-  border-radius: 8px;
-  padding: 0 10px;
-  color: var(--muted-strong);
-  background: rgba(5, 7, 17, 0.76);
-  font-weight: 800;
-}
-
-.emojiTrigger img {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-}
-
-.emojiTrigger span {
-  white-space: nowrap;
-}
-
-.emojiTrigger small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.emojiClear {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid rgba(154, 170, 255, 0.12);
-  border-radius: 8px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.emojiMenu {
-  position: static;
-  z-index: 1;
-  display: grid;
-  grid-column: 1 / -1;
-  width: 100%;
-  max-width: 100%;
-  max-height: 260px;
-  gap: 10px;
-  border: 1px solid rgba(154, 170, 255, 0.18);
-  border-radius: 8px;
-  padding: 10px;
-  background: rgba(8, 10, 24, 0.98);
-  box-shadow: inset 0 0 18px rgba(139, 92, 246, 0.08), 0 0 22px rgba(139, 92, 246, 0.12);
-  animation: editorReveal 180ms ease;
-}
-
-.emojiTabs {
-  display: flex;
-  gap: 6px;
-}
-
-.emojiTabs button {
-  border: 1px solid rgba(154, 170, 255, 0.12);
-  border-radius: 999px;
-  padding: 6px 9px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.04);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 900;
-  transition: border-color 140ms ease, color 140ms ease, background 140ms ease, transform 140ms ease;
-}
-
-.emojiTabs button:hover {
-  border-color: rgba(56, 189, 248, 0.28);
-  color: var(--text);
-  background: rgba(56, 189, 248, 0.08);
-  transform: translateY(-1px);
-}
-
-.emojiTabs button:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-cyan-accent) 72%, transparent);
-  outline-offset: 2px;
-}
-
-.emojiTabs button[aria-selected="true"] {
-  color: var(--text);
-  border-color: rgba(56, 189, 248, 0.32);
-  background: rgba(56, 189, 248, 0.12);
-}
-
-.searchField,
-.compactField {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-}
-
-.searchField {
-  position: relative;
-}
-
-.searchField svg {
-  position: absolute;
-  left: 10px;
-  pointer-events: none;
-}
-
-.compactField {
-  display: grid;
-}
-
-.searchField input,
-.compactField input {
-  min-height: 34px;
-  min-width: 0;
-  flex: 1;
-  border: 1px solid rgba(154, 170, 255, 0.14);
-  border-radius: 8px;
-  padding: 0 9px;
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.045);
-}
-
-.searchField input {
-  padding-left: 34px;
-}
-
-.emojiGrid {
-  display: grid;
-  max-height: 144px;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
-  padding-top: 6px;
-  padding-bottom: 10px;
-  overflow-y: auto;
-}
-
 @keyframes cardExpand {
   from {
     opacity: 0.94;
@@ -804,69 +672,6 @@
   }
 }
 
-.emojiGrid button {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  cursor: pointer;
-  place-items: center;
-  border: 1px solid rgba(154, 170, 255, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  transition: all 120ms ease;
-}
-
-.emojiGrid button:hover {
-  border-color: rgba(56, 189, 248, 0.4);
-  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.15);
-  transform: translateY(-1px);
-}
-
-.emojiGrid button:active {
-  transform: scale(0.95);
-}
-
-.emojiGrid img {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-}
-
-.emojiGrid p {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.emojiSkeleton {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.045), rgba(154, 170, 255, 0.12), rgba(255, 255, 255, 0.045));
-  background-size: 180% 100%;
-  animation: shimmer 1.1s ease-in-out infinite;
-}
-
-.retryButton {
-  border: 0;
-  margin-left: 8px;
-  padding: 0;
-  color: var(--cyan);
-  background: transparent;
-  font: inherit;
-  font-weight: 900;
-}
-
-@keyframes shimmer {
-  from {
-    background-position: 100% 0;
-  }
-
-  to {
-    background-position: -100% 0;
-  }
-}
 
 .identityCell,
 .classCell {
@@ -925,7 +730,6 @@
 @media (max-width: 900px) {
   .hero,
   .summaryGrid,
-  .detailGrid,
   .eventEditorGrid {
     grid-template-columns: 1fr;
   }
@@ -946,3 +750,4 @@
     grid-template-columns: 1fr;
   }
 }
+

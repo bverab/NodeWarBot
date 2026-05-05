@@ -21,6 +21,7 @@ import { guildRoutes, routes } from "@/constants/routes";
 import styles from "./Sidebar.module.css";
 
 type SidebarProps = {
+  activeHref?: string;
   activeGuildId?: string;
   avatarUrl?: string | null;
   displayName: string;
@@ -94,7 +95,7 @@ function isActiveRoute(pathname: string, href: string, exact = false) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function Sidebar({ activeGuildId, avatarUrl, displayName, preview = false }: SidebarProps) {
+export function Sidebar({ activeHref, activeGuildId, avatarUrl, displayName, preview = false }: SidebarProps) {
   const pathname = usePathname();
   const groups = activeGuildId ? getGuildGroups(activeGuildId) : baseGroups;
   const initial = displayName.slice(0, 1).toUpperCase();
@@ -108,7 +109,11 @@ export function Sidebar({ activeGuildId, avatarUrl, displayName, preview = false
           <div className={styles.group} key={group.label}>
             <span className={styles.groupLabel}>{group.label}</span>
             {group.items.map((item) => (
-              <NavItem {...item} active={isActiveRoute(pathname, item.href, item.exact)} key={item.label} />
+              <NavItem
+                {...item}
+                active={activeHref ? item.href === activeHref : isActiveRoute(pathname, item.href, item.exact)}
+                key={item.label}
+              />
             ))}
           </div>
         ))}

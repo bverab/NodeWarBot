@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { formatDateTime } from "@/lib/formatters";
 import { getGuildEventDetail } from "@/lib/server/dashboardData";
+import { ConfirmResourceAction } from "../../ConfirmResourceAction";
+import { PveEventSignupGrid } from "../../EventSignupSummary";
 import { EventActions } from "./EventActions";
 import { EventSlotGrid } from "./EventSlotGrid";
 import { GuildNotFound } from "../../GuildNotFound";
@@ -56,12 +58,17 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     );
   }
 
-  const totalCapacity = event.roleSlots.reduce((total, slot) => total + slot.max, 0);
+  const isPve = event.eventType === "pve";
+  const activeHref = isPve ? guildRoutes.pveEvents(activeGuild.id) : guildRoutes.events(activeGuild.id);
+  const totalCapacity = isPve
+    ? event.options.reduce((total, option) => total + option.capacity, 0)
+    : event.roleSlots.reduce((total, slot) => total + slot.max, 0);
   const totalRegistered = event.participantCount;
 
   return (
     <DashboardLayout
       activeGuild={activeGuild}
+      activeHref={activeHref}
       availableGuilds={availableGuilds}
       description="Read-only event details from Spectre bot storage."
       preview={preview}
@@ -76,7 +83,8 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
             <span className={styles.eyebrow}>{event.eventType} event</span>
             <h2>{event.name}</h2>
             <p>
-              Status: {event.status}. Closes {formatDateTime(event.closesAt)}. Expires {formatDateTime(event.expiresAt)}.
+              Status: {event.status === "draft" ? "Draft / Not published" : event.status}. Closes{" "}
+              {formatDateTime(event.closesAt)}. Expires {formatDateTime(event.expiresAt)}.
             </p>
           </div>
           <span className={styles.guildMark}>
@@ -109,28 +117,50 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               Open Discord message
             </Button>
           ) : null}
+          {activeGuild.manageable ? (
+            event.published ? (
+              <ConfirmResourceAction
+                actionLabel="Archive event"
+                body={`You are about to archive "${event.name}". It will no longer appear as active in the dashboard. Existing Discord messages will not be deleted in this phase.`}
+                confirmLabel="Archive event"
+                endpoint={`/api/guilds/${activeGuild.id}/events/${event.id}/archive`}
+                redirectTo={event.eventType === "pve" ? guildRoutes.pveEvents(activeGuild.id) : guildRoutes.events(activeGuild.id)}
+                resourceName={event.name}
+                title="Archive event?"
+              />
+            ) : (
+              <ConfirmResourceAction
+                actionLabel="Delete draft"
+                body={`You are about to delete the draft event "${event.name}". This event has not been published to Discord. This action cannot be undone.`}
+                confirmLabel="Delete draft"
+                endpoint={`/api/guilds/${activeGuild.id}/events/${event.id}/delete-draft`}
+                redirectTo={event.eventType === "pve" ? guildRoutes.pveEvents(activeGuild.id) : guildRoutes.events(activeGuild.id)}
+                resourceName={event.name}
+                title="Delete draft event?"
+              />
+            )
+          ) : null}
         </div>
 
         <div className={styles.eventEditorGrid}>
-          <section className={styles.editorMain} id="participants" aria-label="Event participants by slot">
+          <section className={styles.editorMain} id="participants" aria-label={isPve ? "PvE signups by option" : "Event participants by slot"}>
             <div className={styles.sectionHeader}>
               <div>
-                <span className={styles.eyebrow}>Slot grid</span>
-                <h3>Participants</h3>
+                <span className={styles.eyebrow}>{isPve ? "PvE options" : "Slot grid"}</span>
+                <h3>{isPve ? "Signups by time option" : "Participants"}</h3>
               </div>
               <span className={styles.status}>{totalRegistered}/{totalCapacity || "?"} signed</span>
             </div>
-            {event.roleSlots.length || event.eventType !== "pve" ? (
+            {isPve ? (
+              <PveEventSignupGrid
+                enrollments={event.enrollments}
+                fillers={event.fillers}
+                options={event.options}
+                showGlobalPanels={false}
+                waitlist={event.waitlist}
+              />
+            ) : event.roleSlots.length || event.eventType !== "pve" ? (
               <EventSlotGrid eventId={event.id} guildId={activeGuild.id} manageable={activeGuild.manageable} slots={event.roleSlots} />
-            ) : event.enrollments.length ? (
-              <Card className={styles.slotCardCompact}>
-                <div className={styles.slotHeader}><h3>PvE enrollments</h3><span>{event.enrollments.length}</span></div>
-                <div className={styles.participantList}>
-                  {event.enrollments.map((enrollment) => (
-                    <ParticipantChip key={enrollment.id} participant={enrollment} />
-                  ))}
-                </div>
-              </Card>
             ) : (
               <Card className={styles.emptyPanel}>
                 <span className={styles.eyebrow}>Participants</span>
@@ -186,7 +216,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
             </Card>
             <Card>
               <h3>Publication</h3>
-              <p>{event.messageId ? `Discord message ${event.messageId}` : "No Discord publication metadata recorded."}</p>
+              <p>{event.published ? `Discord message ${event.messageId ?? "not recorded"}` : "Draft / Not published. No Discord message was created from the web."}</p>
               {event.discordUrl ? (
                 <Button href={event.discordUrl} variant="ghost">
                   <ExternalLink size={16} aria-hidden="true" />

@@ -1,0 +1,119 @@
+.actionWrap {
+  display: inline-flex;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(1, 4, 14, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.modal {
+  display: grid;
+  width: min(1120px, 100%);
+  max-height: min(820px, calc(100vh - 48px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(154, 170, 255, 0.18);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(139, 92, 246, 0.14), transparent 36%),
+    radial-gradient(circle at 88% 4%, rgba(56, 189, 248, 0.12), transparent 34%),
+    rgba(8, 12, 28, 0.98);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
+.modalHeader,
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px;
+}
+
+.modalHeader {
+  border-bottom: 1px solid rgba(154, 170, 255, 0.12);
+}
+
+.modalHeader h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+}
+
+.modalHeader p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.modalMeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: capitalize;
+}
+
+.statusDraft {
+  color: var(--cyan);
+  background: rgba(56, 189, 248, 0.14);
+}
+
+.modalBody {
+  min-height: 260px;
+  overflow: auto;
+  padding: 18px 20px 20px;
+}
+
+.modalFooter {
+  border-top: 1px solid rgba(154, 170, 255, 0.12);
+}
+
+.error,
+.emptyState {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  justify-items: center;
+  color: var(--muted-strong);
+  text-align: center;
+}
+
+.error {
+  color: #ffb4c2;
+}
+
+@media (max-width: 720px) {
+  .overlay {
+    padding: 12px;
+  }
+
+  .modalHeader,
+  .modalFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .modalMeta {
+    justify-content: flex-start;
+  }
+}

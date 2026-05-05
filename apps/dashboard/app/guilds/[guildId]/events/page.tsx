@@ -1,10 +1,13 @@
-import { Pencil, Swords } from "lucide-react";
+import { Archive, Pencil, Plus, Swords, Trash2 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { formatDateTime } from "@/lib/formatters";
-import { getGuildEventsByType } from "@/lib/server/dashboardData";
+import { getGuildEventsByTypes } from "@/lib/server/dashboardData";
+import { ConfirmResourceAction } from "../ConfirmResourceAction";
+import { DisabledIconAction } from "../DisabledIconAction";
+import { EventQuickViewModal } from "../EventQuickViewModal";
 import { GuildNotFound } from "../GuildNotFound";
 import { RememberGuild } from "../RememberGuild";
 import { getGuildPageContext } from "../guildContext";
@@ -15,7 +18,11 @@ type PageProps = {
   searchParams?: Promise<{ preview?: string }>;
 };
 
-function statusClass(status: "open" | "closed" | "expired") {
+function statusClass(status: "draft" | "open" | "closed" | "expired") {
+  if (status === "draft") {
+    return styles.statusDraft;
+  }
+
   if (status === "open") {
     return styles.statusOpen;
   }
@@ -42,7 +49,7 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
     );
   }
 
-  const events = await getGuildEventsByType(activeGuild.id, "war");
+  const events = await getGuildEventsByTypes(activeGuild.id, ["war", "siege", "10v10"]);
 
   return (
     <DashboardLayout
@@ -61,14 +68,21 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
             <span className={styles.eyebrow}>Read-only event data</span>
             <h2>{events.length ? `${events.length} war events found` : "No war events found yet"}</h2>
             <p>
-              War and Siege events created by the Discord bot appear here for review. Use Edit to open the compact
-              event workspace.
+              War and Siege events created by the Discord bot or drafted from the web appear here. Use Edit to open the
+              compact event workspace.
             </p>
           </div>
           <span className={styles.guildMark}>
             <Swords size={30} aria-hidden="true" />
           </span>
         </Card>
+
+        <div className={styles.quickActions}>
+          <Button href={guildRoutes.newEvent(activeGuild.id)} variant="secondary">
+            <Plus size={16} aria-hidden="true" />
+            Create event
+          </Button>
+        </div>
 
         {events.length ? (
           <Card className={styles.tableCard}>
@@ -85,7 +99,10 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
                     <th>Time</th>
                     <th>Signups</th>
                     <th>Waitlist</th>
+                    <th>View signups</th>
                     <th>Edit</th>
+                    <th>Archive</th>
+                    <th>Delete</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -99,11 +116,73 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
                       <td>{event.time ? `${event.time} ${event.timezone}` : formatDateTime(event.closesAt)}</td>
                       <td>{event.participantCount}</td>
                       <td>{event.waitlistCount}</td>
-                      <td>
-                        <Button href={guildRoutes.eventDetail(activeGuild.id, event.id)} variant="ghost">
+                      <td className={styles.actionCell}>
+                        <EventQuickViewModal
+                          editHref={guildRoutes.eventDetail(activeGuild.id, event.id)}
+                          eventId={event.id}
+                          guildId={activeGuild.id}
+                          triggerClassName={styles.iconActionButton}
+                          triggerIconOnly
+                        />
+                      </td>
+                      <td className={styles.actionCell}>
+                        <Button
+                          aria-label={`Edit ${event.name}`}
+                          className={styles.iconActionButton}
+                          href={guildRoutes.eventDetail(activeGuild.id, event.id)}
+                          title={`Edit ${event.name}`}
+                          variant="ghost"
+                        >
                           <Pencil size={16} aria-hidden="true" />
-                          Edit
                         </Button>
+                      </td>
+                      <td className={styles.actionCell}>
+                        {activeGuild.manageable && event.published ? (
+                          <ConfirmResourceAction
+                            actionAriaLabel={`Archive ${event.name}`}
+                            actionClassName={`${styles.iconActionButton} ${styles.archiveIconButton}`}
+                            actionIcon={<Archive size={16} aria-hidden="true" />}
+                            actionLabel="Archive event"
+                            body={`You are about to archive "${event.name}". It will no longer appear as active in the dashboard. Existing Discord messages will not be deleted in this phase.`}
+                            confirmLabel="Archive event"
+                            endpoint={`/api/guilds/${activeGuild.id}/events/${event.id}/archive`}
+                            resourceName={event.name}
+                            title="Archive event?"
+                            triggerIconOnly
+                          />
+                        ) : (
+                          <DisabledIconAction
+                            ariaLabel={`Archive unavailable for ${event.name}`}
+                            className={`${styles.iconActionButton} ${styles.archiveIconButton}`}
+                            title="Drafts can be deleted directly."
+                          >
+                            <Archive size={16} aria-hidden="true" />
+                          </DisabledIconAction>
+                        )}
+                      </td>
+                      <td className={styles.actionCell}>
+                        {activeGuild.manageable && !event.published ? (
+                          <ConfirmResourceAction
+                            actionAriaLabel={`Delete draft ${event.name}`}
+                            actionClassName={`${styles.iconActionButton} ${styles.deleteIconButton}`}
+                            actionIcon={<Trash2 size={16} aria-hidden="true" />}
+                            actionLabel="Delete draft"
+                            body={`You are about to delete the draft event "${event.name}". This event has not been published to Discord. This action cannot be undone.`}
+                            confirmLabel="Delete draft"
+                            endpoint={`/api/guilds/${activeGuild.id}/events/${event.id}/delete-draft`}
+                            resourceName={event.name}
+                            title="Delete draft event?"
+                            triggerIconOnly
+                          />
+                        ) : (
+                          <DisabledIconAction
+                            ariaLabel={`Delete unavailable for ${event.name}`}
+                            className={`${styles.iconActionButton} ${styles.deleteIconButton}`}
+                            title="Published events can be archived, but Discord messages are not deleted in this phase."
+                          >
+                            <Trash2 size={16} aria-hidden="true" />
+                          </DisabledIconAction>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -115,7 +194,11 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
           <Card className={styles.emptyPanel}>
             <span className={styles.eyebrow}>Events</span>
             <h3>No active or archived events were found.</h3>
-            <p>Once the bot creates events for this guild, they will be listed here in read-only mode.</p>
+            <p>Create a draft from the dashboard or let the bot create events for this guild.</p>
+            <Button href={guildRoutes.newEvent(activeGuild.id)} variant="secondary">
+              <Plus size={16} aria-hidden="true" />
+              Create event
+            </Button>
           </Card>
         )}
       </div>

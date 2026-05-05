@@ -7,6 +7,7 @@ import styles from "./DashboardLayout.module.css";
 type DashboardLayoutProps = {
   children: ReactNode;
   title: string;
+  activeHref?: string;
   description?: string;
   userName?: string | null;
   userImage?: string | null;
@@ -18,6 +19,7 @@ type DashboardLayoutProps = {
 export function DashboardLayout({
   children,
   title,
+  activeHref,
   description,
   userName,
   userImage,
@@ -31,6 +33,7 @@ export function DashboardLayout({
   return (
     <div className={styles.layout}>
       <Sidebar
+        activeHref={activeHref}
         activeGuildId={activeGuild?.id}
         avatarUrl={userImage}
         displayName={displayName}
