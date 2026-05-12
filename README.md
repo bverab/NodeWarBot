@@ -194,6 +194,12 @@ Key npm DB scripts:
 
 SQLite is treated as the source of truth in current architecture.
 
+When the Prisma schema changes, run `npm run db:generate` and restart the bot
+process. The bot logs the resolved SQLite path on startup so the dashboard and
+bot can be verified against the same database file. For the default
+`DATABASE_URL="file:../data/nodewarbot.db"`, Prisma resolves the path relative
+to `prisma/schema.prisma`.
+
 ## Templates
 
 Templates are available for War/Siege and are intended to accelerate recurring setup.

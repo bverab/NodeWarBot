@@ -5,7 +5,7 @@ const {
   setSelectedEventContext
 } = require('../utils/eventAdminContextStore');
 const { getRoleByName, addParticipantToRole, pickWaitlistForRole } = require('../utils/warState');
-const { buildEventMessagePayload } = require('../services/eventRenderService');
+const { updateEventDiscordMessage } = require('../services/discordEventSyncService');
 const { sanitizeDisplayText } = require('../utils/textSafety');
 const { logWarn, logError } = require('../utils/appLogger');
 
@@ -66,35 +66,31 @@ async function resolveActiveWar(interaction) {
 }
 
 async function refreshWarMessage(interaction, war) {
-  try {
-    const channel = await interaction.guild.channels.fetch(war.channelId).catch(error => {
-      logWarn('No se pudo obtener canal para refrescar evento', {
-        action: 'refresh_event_message',
-        guildId: interaction.guildId,
-        userId: interaction.user?.id,
-        eventId: war.id,
-        channelId: war.channelId,
-        reason: error?.message || 'unknown'
-      });
-      return null;
-    });
-    if (!channel || !channel.messages?.fetch) {
-      logWarn('Canal no disponible para refrescar evento', {
-        action: 'refresh_event_message',
-        guildId: interaction.guildId,
-        userId: interaction.user?.id,
-        eventId: war.id,
-        channelId: war.channelId
-      });
-      return false;
-    }
+  const result = await updateEventDiscordMessage({
+    guild: interaction.guild,
+    client: interaction.client,
+    event: war
+  });
 
-    const message = await channel.messages.fetch(war.messageId);
-    await message.edit(await buildEventMessagePayload(war));
-    return true;
-  } catch (error) {
-    if (error?.code === 10008) return false;
-    logError('Error actualizando mensaje del evento', error, {
+  if (result.ok) return true;
+  if (result.status === 'missing_message') return false;
+
+  const meta = {
+    action: 'refresh_event_message',
+    guildId: interaction.guildId,
+    userId: interaction.user?.id,
+    eventId: war.id,
+    warId: war.id,
+    channelId: war.channelId,
+    messageId: war.messageId,
+    reason: result.errorMessage || result.status,
+    code: result.errorCode
+  };
+
+  if (result.status === 'missing_channel' || result.status === 'missing_access' || result.status === 'missing_permissions') {
+    logWarn('No se pudo refrescar mensaje del evento', meta);
+  } else {
+    logError('Error actualizando mensaje del evento', new Error(result.errorMessage || result.status), {
       action: 'refresh_event_message',
       guildId: interaction.guildId,
       userId: interaction.user?.id,
@@ -102,8 +98,9 @@ async function refreshWarMessage(interaction, war) {
       warId: war.id,
       messageId: war.messageId
     });
-    return false;
   }
+
+  return false;
 }
 
 function promoteFromWaitlist(state, roleName) {

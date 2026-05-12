@@ -26,6 +26,7 @@ const {
   setSelectedEventContext
 } = require('../../utils/eventAdminContextStore');
 const { refreshWarMessage, isAdminExecutor } = require('../../commands/eventadminShared');
+const { deleteEventDiscordMessage } = require('../../services/discordEventSyncService');
 const { normalizeClassIconSource } = require('../../utils/participantDisplayFormatter');
 const { listSeriesWars, removeSeriesDay } = require('../../services/recurrenceSeriesService');
 const { publishOrRefreshWarWithOptions } = require('../../services/eventPublicationService');
@@ -928,13 +929,11 @@ async function handleEventScheduleSeriesDelete(interaction) {
   try {
     const removed = await removeSeriesDay(war, interaction.channelId, target.id);
     if (removed.messageId) {
-      const channel = await interaction.guild?.channels?.fetch(removed.channelId).catch(() => null);
-      if (channel?.messages?.fetch) {
-        const message = await channel.messages.fetch(removed.messageId).catch(() => null);
-        if (message) {
-          await message.delete().catch(() => null);
-        }
-      }
+      await deleteEventDiscordMessage({
+        guild: interaction.guild,
+        client: interaction.client,
+        event: removed
+      }).catch(() => null);
     }
 
     const updatedSeries = listSeriesWars(war, interaction.channelId);

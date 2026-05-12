@@ -1,6 +1,7 @@
 import "server-only";
 import crypto from "node:crypto";
-import type { Event, EventEnrollment, EventFillerEntry, EventParticipant, EventRoleSlot, EventWaitlistEntry } from "@prisma/client";
+import type { Event, EventEnrollment, EventFillerEntry, EventParticipant, EventRoleSlot, EventSchedule, EventWaitlistEntry } from "@prisma/client";
+import { calculateEventLifecycleDates, calculateScheduledPublishAt, normalizeTimezone } from "@/lib/eventDateTime";
 import { fetchDiscordGuildMembers } from "@/lib/server/discordMembers";
 import { prisma } from "@/lib/server/prisma";
 
@@ -11,8 +12,16 @@ export type EventListItem = {
   type: string;
   status: "draft" | "open" | "closed" | "expired";
   published: boolean;
+  groupId: string | null;
+  dayOfWeek: number | null;
+  recurrenceMode: "once" | "recurring";
+  isRecurring: boolean;
   time: string | null;
   timezone: string;
+  autoPublishEnabled: boolean;
+  scheduledPublishAt: string | null;
+  publishError: string | null;
+  lastPublishAttemptAt: string | null;
   createdAt: string;
   closesAt: string;
   expiresAt: string;
@@ -34,6 +43,11 @@ export type EventDetail = EventListItem & {
     position: number;
     emoji: string | null;
     emojiSource: string | null;
+    allowedRoleIds: string[];
+    permissions: Array<{
+      discordRoleId: string | null;
+      discordRoleName: string | null;
+    }>;
     participants: Array<{
       id: string;
       userId: string;
@@ -103,6 +117,10 @@ export type EventMutationInput = {
   timezone?: string;
   duration?: number;
   closeBeforeMinutes?: number;
+  autoPublishEnabled?: boolean;
+  scheduledPublishAt?: Date | null;
+  publishError?: string | null;
+  lastPublishAttemptAt?: Date | null;
   closesAt?: Date;
   expiresAt?: Date;
   isClosed?: boolean;
@@ -123,6 +141,8 @@ export type CreateGuildEventInput = {
   accessRoleIds?: string[];
   notifyRoleIds?: string[];
   recurrence?: "single" | "weekly";
+  autoPublishEnabled?: boolean;
+  publishBeforeMinutes?: number;
   recap?: {
     enabled: boolean;
     minutesBeforeExpire: number;
@@ -151,6 +171,7 @@ export type RoleSlotMutationInput = {
   position?: number;
   emoji?: string | null;
   emojiSource?: string | null;
+  allowedRoleIds?: string[];
 };
 
 export type TemplateMutationInput = {
@@ -196,7 +217,7 @@ function toIso(value: Date) {
 }
 
 function getEventStatus(event: Pick<Event, "isClosed" | "expiresAt" | "closesAt" | "channelId" | "messageId">): EventListItem["status"] {
-  if (!event.channelId && !event.messageId) {
+  if (!event.messageId) {
     return "draft";
   }
 
@@ -205,6 +226,14 @@ function getEventStatus(event: Pick<Event, "isClosed" | "expiresAt" | "closesAt"
   }
 
   return event.expiresAt.getTime() < Date.now() || event.closesAt.getTime() < Date.now() ? "expired" : "open";
+}
+
+export function isEventPublishedForDashboard(event: Pick<Event, "messageId">) {
+  return Boolean(event.messageId);
+}
+
+export function canDeleteEventPermanently(event: Pick<Event, "messageId">) {
+  return !isEventPublishedForDashboard(event);
 }
 
 function isFillerEnrollment(enrollment: Pick<EventEnrollment, "enrollmentType">) {
@@ -227,6 +256,7 @@ function countFillers(event: {
 
 function toEventListItem(
   event: Event & {
+    schedule?: EventSchedule | null;
     participants?: EventParticipant[];
     enrollments?: EventEnrollment[];
     waitlist?: EventWaitlistEntry[];
@@ -239,9 +269,17 @@ function toEventListItem(
     eventType: event.eventType,
     type: event.type,
     status: getEventStatus(event),
-    published: Boolean(event.channelId || event.messageId),
+    published: isEventPublishedForDashboard(event),
+    groupId: event.groupId,
+    dayOfWeek: event.dayOfWeek,
+    recurrenceMode: event.schedule?.mode === "recurring" ? "recurring" : "once",
+    isRecurring: event.schedule?.mode === "recurring" && (Boolean(event.groupId) || Boolean(event.schedule.enabled)),
     time: event.time,
-    timezone: event.timezone,
+    timezone: normalizeTimezone(event.timezone),
+    autoPublishEnabled: Boolean(event.autoPublishEnabled),
+    scheduledPublishAt: event.scheduledPublishAt ? toIso(event.scheduledPublishAt) : null,
+    publishError: event.publishError,
+    lastPublishAttemptAt: event.lastPublishAttemptAt ? toIso(event.lastPublishAttemptAt) : null,
     createdAt: toIso(event.createdAt),
     closesAt: toIso(event.closesAt),
     expiresAt: toIso(event.expiresAt),
@@ -251,32 +289,6 @@ function toEventListItem(
     channelId: event.channelId,
     messageId: event.messageId
   };
-}
-
-function getTimeZoneOffsetMs(date: Date, timezone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).formatToParts(date);
-  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
-
-  return asUtc - date.getTime();
-}
-
-function zonedDateTimeToUtc(dateValue: string, timeValue: string, timezone: string) {
-  const [year, month, day] = dateValue.split("-").map(Number);
-  const [hour, minute] = timeValue.split(":").map(Number);
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  const offset = getTimeZoneOffsetMs(utcGuess, timezone);
-
-  return new Date(utcGuess.getTime() - offset);
 }
 
 type ParticipantSource = {
@@ -350,6 +362,7 @@ export async function getGuildEvents(guildId: string): Promise<EventListItem[]> 
     where: { guildId },
     orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
     include: {
+      schedule: true,
       participants: true,
       enrollments: true,
       waitlist: true,
@@ -366,6 +379,7 @@ export async function getGuildEventsByType(guildId: string, eventType: string): 
     where: { guildId, eventType },
     orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
     include: {
+      schedule: true,
       participants: true,
       enrollments: true,
       waitlist: true,
@@ -382,6 +396,7 @@ export async function getGuildEventsByTypes(guildId: string, eventTypes: string[
     where: { guildId, eventType: { in: eventTypes } },
     orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
     include: {
+      schedule: true,
       participants: true,
       enrollments: true,
       waitlist: true,
@@ -400,11 +415,13 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
       roleSlots: {
         orderBy: { position: "asc" },
         include: {
+          permissions: true,
           users: {
             orderBy: { joinedAt: "asc" }
           }
         }
       },
+      schedule: true,
       enrollments: {
         orderBy: { joinedAt: "asc" },
         include: {
@@ -440,13 +457,18 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
     creatorId: event.creatorId,
     duration: event.duration,
     closeBeforeMinutes: event.closeBeforeMinutes,
-    roleSlots: event.roleSlots.map((slot: EventRoleSlot & { users: EventParticipant[] }) => ({
+    roleSlots: event.roleSlots.map((slot: EventRoleSlot & { users: EventParticipant[]; permissions: Array<{ discordRoleId: string | null; discordRoleName: string | null }> }) => ({
       id: slot.id,
       name: slot.name,
       max: slot.max,
       position: slot.position,
       emoji: slot.emoji,
       emojiSource: slot.emojiSource,
+      allowedRoleIds: slot.permissions.map((permission) => permission.discordRoleId).filter((roleId): roleId is string => Boolean(roleId)),
+      permissions: slot.permissions.map((permission) => ({
+        discordRoleId: permission.discordRoleId,
+        discordRoleName: permission.discordRoleName
+      })),
       participants: slot.users.map((participant) => {
         const enriched = enrichParticipant(participant);
 
@@ -614,14 +636,14 @@ export async function deleteGuildDraftEvent(guildId: string, eventId: string) {
   return prisma.$transaction(async (tx) => {
     const event = await tx.event.findFirst({
       where: { id: eventId, guildId },
-      select: { id: true, channelId: true, messageId: true }
+      select: { id: true, messageId: true }
     });
 
     if (!event) {
       return { status: "not_found" as const };
     }
 
-    if (event.channelId || event.messageId) {
+    if (!canDeleteEventPermanently(event)) {
       return { status: "not_draft" as const };
     }
 
@@ -679,6 +701,7 @@ export async function archiveGuildTemplate(guildId: string, templateId: string) 
 
 export async function createGuildTemplate(guildId: string, input: CreateGuildTemplateInput) {
   const slots = [...input.slots].sort((left, right) => (left.position ?? 0) - (right.position ?? 0));
+  const timezone = normalizeTimezone(input.timezone);
 
   return prisma.$transaction(async (tx) => {
     await tx.guild.upsert({
@@ -693,7 +716,7 @@ export async function createGuildTemplate(guildId: string, input: CreateGuildTem
         name: input.name,
         eventType: input.eventType,
         typeDefault: input.typeDefault,
-        timezone: input.timezone,
+        timezone,
         time: input.time ?? null,
         duration: 70,
         closeBeforeMinutes: 0,
@@ -750,10 +773,26 @@ export async function getGuildGarmothProfiles(guildId: string) {
 }
 
 export async function createGuildEventDraft(guildId: string, creatorId: string | null, input: CreateGuildEventInput) {
-  const startsAt = zonedDateTimeToUtc(input.date, input.time, input.timezone);
-  const expiresAt = new Date(startsAt.getTime() + input.duration * 60_000);
-  const closesAt = new Date(expiresAt.getTime() - input.closeBeforeMinutes * 60_000);
-  const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: input.timezone, weekday: "short" })
+  const timezone = normalizeTimezone(input.timezone);
+  const lifecycleDates = calculateEventLifecycleDates({
+    date: input.date,
+    time: input.time,
+    timezone,
+    duration: input.duration,
+    closeBeforeMinutes: input.closeBeforeMinutes
+  });
+  if (!lifecycleDates) {
+    throw new Error("Invalid event date, time, timezone, duration, or close-before setting.");
+  }
+  const { startsAt, expiresAt, closesAt } = lifecycleDates;
+  const autoPublishEnabled = Boolean(input.autoPublishEnabled);
+  const scheduledPublishAt = autoPublishEnabled
+    ? calculateScheduledPublishAt({ startsAt, publishBeforeMinutes: input.publishBeforeMinutes ?? 60 })
+    : null;
+  if (autoPublishEnabled && !scheduledPublishAt) {
+    throw new Error("Invalid scheduled publish configuration.");
+  }
+  const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" })
     .formatToParts(startsAt)
     .find((part) => part.type === "weekday")?.value;
   const dayOfWeekIndex = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(dayOfWeek ?? "");
@@ -822,9 +861,12 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
     }
 
     const eventId = `web_${crypto.randomUUID()}`;
+    const isRecurring = input.recurrence === "weekly";
+    const groupId = isRecurring ? `web_series_${crypto.randomUUID()}` : null;
     const event = await tx.event.create({
       data: {
         id: eventId,
+        groupId,
         eventType: input.eventType,
         accessMode: "OPEN",
         name: input.name,
@@ -835,11 +877,15 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
         guildId,
         channelId: input.channelId ?? null,
         messageId: null,
-        dayOfWeek: dayOfWeekIndex >= 0 ? dayOfWeekIndex : null,
+        dayOfWeek: isRecurring && dayOfWeekIndex >= 0 ? dayOfWeekIndex : null,
         time: input.time,
-        timezone: input.timezone,
+        timezone,
         duration: input.duration,
         closeBeforeMinutes: input.closeBeforeMinutes,
+        autoPublishEnabled,
+        scheduledPublishAt,
+        publishError: null,
+        lastPublishAttemptAt: null,
         createdAt: new Date(),
         expiresAt,
         closesAt,
@@ -920,15 +966,13 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
       });
     }
 
-    if (input.recurrence === "weekly") {
-      await tx.eventSchedule.create({
-        data: {
-          eventId: event.id,
-          enabled: true,
-          mode: "recurring"
-        }
-      });
-    }
+    await tx.eventSchedule.create({
+      data: {
+        eventId: event.id,
+        enabled: isRecurring,
+        mode: isRecurring ? "recurring" : "once"
+      }
+    });
 
     if (input.recap?.enabled) {
       await tx.eventRecapConfig.create({
@@ -1052,12 +1096,100 @@ export async function updateGuildEventRoleSlot(guildId: string, eventId: string,
     return null;
   }
 
-  await prisma.eventRoleSlot.update({
-    where: { id: slot.id },
-    data: input
+  const { allowedRoleIds, ...slotPatch } = input;
+
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(slotPatch).length) {
+      await tx.eventRoleSlot.update({
+        where: { id: slot.id },
+        data: slotPatch
+      });
+    }
+
+    if (Array.isArray(allowedRoleIds)) {
+      const uniqueRoleIds = Array.from(new Set(allowedRoleIds.map(String).filter(Boolean)));
+      await tx.eventRolePermission.deleteMany({
+        where: { roleSlotId: slot.id }
+      });
+      if (uniqueRoleIds.length) {
+        await tx.eventRolePermission.createMany({
+          data: uniqueRoleIds.map((roleId) => ({
+            roleSlotId: slot.id,
+            discordRoleId: roleId,
+            discordRoleName: null
+          }))
+        });
+      }
+    }
   });
 
   return getGuildEventDetail(guildId, slot.eventId);
+}
+
+export async function updateGuildEventRoleSlotSeries(guildId: string, eventId: string, slotId: string, input: RoleSlotMutationInput) {
+  const slot = await prisma.eventRoleSlot.findFirst({
+    where: { id: slotId, eventId, event: { guildId } },
+    select: {
+      id: true,
+      position: true,
+      event: {
+        select: {
+          id: true,
+          groupId: true,
+          schedule: { select: { mode: true } }
+        }
+      }
+    }
+  });
+
+  if (!slot) {
+    return null;
+  }
+
+  if (!slot.event.groupId || slot.event.schedule?.mode !== "recurring") {
+    return updateGuildEventRoleSlot(guildId, eventId, slotId, input);
+  }
+
+  const targetSlots = await prisma.eventRoleSlot.findMany({
+    where: {
+      position: slot.position,
+      event: {
+        guildId,
+        groupId: slot.event.groupId
+      }
+    },
+    select: { id: true }
+  });
+  const { allowedRoleIds, ...slotPatch } = input;
+
+  await prisma.$transaction(async (tx) => {
+    for (const target of targetSlots) {
+      if (Object.keys(slotPatch).length) {
+        await tx.eventRoleSlot.update({
+          where: { id: target.id },
+          data: slotPatch
+        });
+      }
+
+      if (Array.isArray(allowedRoleIds)) {
+        const uniqueRoleIds = Array.from(new Set(allowedRoleIds.map(String).filter(Boolean)));
+        await tx.eventRolePermission.deleteMany({
+          where: { roleSlotId: target.id }
+        });
+        if (uniqueRoleIds.length) {
+          await tx.eventRolePermission.createMany({
+            data: uniqueRoleIds.map((roleId) => ({
+              roleSlotId: target.id,
+              discordRoleId: roleId,
+              discordRoleName: null
+            }))
+          });
+        }
+      }
+    }
+  });
+
+  return getGuildEventDetail(guildId, eventId);
 }
 
 export async function deleteGuildEventRoleSlot(guildId: string, eventId: string, slotId: string) {

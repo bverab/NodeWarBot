@@ -11,6 +11,8 @@ type Guild = GuildCardData & {
 type GuildResponse = {
   guilds: Guild[];
   error?: string;
+  warning?: string;
+  stale?: boolean;
 };
 
 type GuildsClientProps = {
@@ -22,6 +24,7 @@ export function GuildsClient({ preview = false }: GuildsClientProps) {
   const [error, setError] = useState<string | null>(null);
   const [lastGuildId, setLastGuildId] = useState<string | null>(null);
   const [loading, setLoading] = useState(!preview);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     setLastGuildId(window.localStorage.getItem("spectre:lastGuildId"));
@@ -33,6 +36,8 @@ export function GuildsClient({ preview = false }: GuildsClientProps) {
     }
 
     const run = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const response = await fetch("/api/guilds", { cache: "no-store" });
         if (!response.ok) {
@@ -48,6 +53,7 @@ export function GuildsClient({ preview = false }: GuildsClientProps) {
 
         const json = (await response.json()) as GuildResponse;
         setGuilds(json.guilds ?? []);
+        setError(json.warning ?? null);
       } catch {
         setError("Network error while loading Discord guilds.");
       } finally {
@@ -56,14 +62,23 @@ export function GuildsClient({ preview = false }: GuildsClientProps) {
     };
 
     void run();
-  }, [preview]);
+  }, [preview, retryToken]);
 
   if (loading) {
     return <LoadingState />;
   }
 
   if (error) {
-    return <ErrorState message={error} />;
+    if (guilds.length) {
+      return (
+        <>
+          <ErrorState message={error} onRetry={() => setRetryToken((current) => current + 1)} />
+          <GuildsPanel guilds={guilds} lastGuildId={lastGuildId} preview={preview} />
+        </>
+      );
+    }
+
+    return <ErrorState message={error} onRetry={() => setRetryToken((current) => current + 1)} />;
   }
 
   return <GuildsPanel guilds={guilds} lastGuildId={lastGuildId} preview={preview} />;

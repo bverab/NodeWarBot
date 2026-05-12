@@ -13,7 +13,7 @@ const {
   pickWaitlistForRole,
   getFakeUserIdFromName
 } = require('../utils/warState');
-const { buildWarMessagePayload } = require('../utils/warMessageBuilder');
+const { refreshWarMessage } = require('./eventadminShared');
 const { notifyPromotion } = require('../utils/promotionNotifier');
 
 // Comando de test local para simular usuarios y validar waitlist/promociones.
@@ -223,21 +223,6 @@ async function handleRemoveFakeUser(interaction) {
   }
 
   await interaction.editReply({ content: `**${fakeName}** removido del evento` });
-}
-
-async function refreshWarMessage(interaction, war) {
-  try {
-    const message = await interaction.channel.messages.fetch(war.messageId);
-    await message.edit(buildWarMessagePayload(war));
-    return true;
-  } catch (error) {
-    if (error?.code === 10008) {
-      return false;
-    }
-
-    console.error('Error actualizando mensaje del evento:', error);
-    return false;
-  }
 }
 
 async function resolveActiveWar(interaction) {

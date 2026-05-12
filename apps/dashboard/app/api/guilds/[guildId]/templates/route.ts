@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getGuildTemplates } from "@/lib/server/dashboardData";
 import { z } from "zod";
+import { normalizeTimezoneInfo } from "@/lib/eventDateTime";
 import { createGuildTemplate } from "@/lib/server/dashboardData";
 import { getGuildRoles } from "@/lib/server/discordGuildConfig";
 import { requireDashboardGuild, requireManageableDashboardGuild } from "@/lib/server/guildAccess";
@@ -14,14 +15,12 @@ const timeSchema = z.string().regex(/^\d{1,2}:\d{2}$/).refine((value) => {
   return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 }, "Time must use HH:mm format.");
 
-const timezoneSchema = z.string().min(1).max(64).refine((value) => {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());
-    return true;
-  } catch {
-    return false;
+const timezoneSchema = z.string().min(1).max(64).superRefine((value, context) => {
+  const timezoneInfo = normalizeTimezoneInfo(value);
+  if (timezoneInfo.source === "fallback" && value.trim()) {
+    context.addIssue({ code: "custom", message: "Timezone must be a valid IANA timezone." });
   }
-}, "Timezone must be a valid IANA timezone.");
+}).transform((value) => normalizeTimezoneInfo(value).timezone);
 
 const createTemplateSchema = z.object({
   name: z.string().trim().min(2).max(120),

@@ -34,6 +34,10 @@ model Event {
   timezone                String             @default("America/Bogota")
   duration                Int                @default(70)
   closeBeforeMinutes      Int                @default(0)
+  autoPublishEnabled      Boolean            @default(false)
+  scheduledPublishAt      DateTime?
+  publishError            String?
+  lastPublishAttemptAt    DateTime?
   createdAt               DateTime
   expiresAt               DateTime
   closesAt                DateTime
@@ -56,6 +60,7 @@ model Event {
   @@index([groupId])
   @@index([createdAt])
   @@index([channelId, createdAt])
+  @@index([autoPublishEnabled, scheduledPublishAt])
 }
 
 model EventOption {

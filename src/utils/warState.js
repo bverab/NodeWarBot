@@ -128,6 +128,10 @@ function normalizeWar(war = {}) {
     timezone: war.timezone || 'America/Bogota',
     duration,                                       // minutos
     closeBeforeMinutes,
+    autoPublishEnabled: Boolean(war.autoPublishEnabled),
+    scheduledPublishAt: Number.isFinite(war.scheduledPublishAt) ? war.scheduledPublishAt : null,
+    publishError: war.publishError || null,
+    lastPublishAttemptAt: Number.isFinite(war.lastPublishAttemptAt) ? war.lastPublishAttemptAt : null,
     notifyRoles: Array.isArray(war.notifyRoles) ? war.notifyRoles : [],  // Array de role IDs o user IDs
     accessMode: String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN',
     allowedUserIds: Array.isArray(war.allowedUserIds) ? war.allowedUserIds.map(String).filter(Boolean) : [],
@@ -152,7 +156,7 @@ function normalizeWar(war = {}) {
 function normalizeSchedule(schedule = {}) {
   return {
     enabled: Boolean(schedule.enabled),
-    mode: schedule.mode === 'once' ? 'once' : 'recurring',
+    mode: schedule.mode === 'recurring' ? 'recurring' : 'once',
     lastCreatedAt: schedule.lastCreatedAt || null,
     lastMessageIdDeleted: schedule.lastMessageIdDeleted || null
   };

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { filterChannelsBySearch } from "@/lib/channelSearch";
+import { buildEventDateTime, calculateScheduledPublishAt, formatDateTimeInTimezone, normalizeTimezone } from "@/lib/eventDateTime";
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
 import overviewStyles from "@/app/guilds/[guildId]/_styles/overview.module.css";
@@ -78,11 +79,13 @@ const eventTypes = [
 const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function todayForInput() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function weekdayForDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
   return Number.isNaN(date.getTime()) ? "selected weekday" : weekdays[date.getDay()];
 }
 
@@ -216,6 +219,7 @@ export function RoleMultiSelect({
   const selectedRoles = selected
     .map((roleId) => roles.find((role) => role.id === roleId))
     .filter((role): role is RoleOption => Boolean(role));
+  const unresolvedSelectedRoleIds = selected.filter((roleId) => !roles.some((role) => role.id === roleId));
   const filteredRoles = roles
     .filter((role) => role.name.toLowerCase().includes(query.toLowerCase()))
     .slice(0, 80);
@@ -247,7 +251,7 @@ export function RoleMultiSelect({
           <div className={selectorStyles.fieldHeading}>{label}</div>
           <span>{selected.length === 1 ? "1 role selected" : `${selected.length} roles selected`}</span>
         </div>
-        {selected.length ? <button onClick={() => onChange([])} type="button">Clear</button> : null}
+        {selected.length && roles.length ? <button onClick={() => onChange([])} type="button">Clear</button> : null}
       </div>
       <button className={`${selectorStyles.roleSelectTrigger} ${open ? selectorStyles.selectorOpen : ""}`} disabled={!roles.length} onClick={() => setOpen((current) => !current)} type="button">
         <span>{roles.length ? (selected.length ? `${selected.length} roles selected` : "Select roles") : loadError ?? emptyText}</span>
@@ -263,6 +267,14 @@ export function RoleMultiSelect({
             </button>
           ))}
           {selectedRoles.length > 10 ? <span>+{selectedRoles.length - 10}</span> : null}
+        </div>
+      ) : null}
+      {!selectedRoles.length && unresolvedSelectedRoleIds.length ? (
+        <div className={selectorStyles.selectedRoleChips}>
+          {unresolvedSelectedRoleIds.slice(0, 6).map((roleId) => (
+            <span key={roleId}>{roleId}</span>
+          ))}
+          {unresolvedSelectedRoleIds.length > 6 ? <span>+{unresolvedSelectedRoleIds.length - 6}</span> : null}
         </div>
       ) : null}
       {open && roles.length && typeof document !== "undefined" ? createPortal(
@@ -376,9 +388,12 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
   const [type, setType] = useState("Evento de guerra");
   const [date, setDate] = useState(todayForInput);
   const [time, setTime] = useState("20:00");
-  const [timezone, setTimezone] = useState("America/Bogota");
+  const [timezone, setTimezone] = useState("America/Santiago");
   const [duration, setDuration] = useState(70);
   const [closeBeforeMinutes, setCloseBeforeMinutes] = useState(0);
+  const [autoPublishEnabled, setAutoPublishEnabled] = useState(false);
+  const [publishBeforeMinutes, setPublishBeforeMinutes] = useState(60);
+  const [scheduleTouched, setScheduleTouched] = useState(false);
   const [manualSlots, setManualSlots] = useState<ManualSlot[]>([makeSlot(1)]);
   const [pveOptions, setPveOptions] = useState<PveOption[]>([makePveOption(1, "20:00"), makePveOption(2, "21:00")]);
   const [roles, setRoles] = useState<RoleOption[]>(initialRoles);
@@ -399,6 +414,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
   const [recapMessage, setRecapMessage] = useState("Resumen del evento");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     void Promise.all([
@@ -434,6 +451,13 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
   const slotCount = isPve ? pveOptions.length : mode === "template" ? selectedTemplate?.slotCount ?? 0 : manualSlots.length;
   const totalCapacity = mode === "manual" ? manualSlots.reduce((total, slot) => total + slot.max, 0) : null;
   const pveCapacity = pveOptions.reduce((total, option) => total + option.capacity, 0);
+  const scheduledPublishAt = useMemo(() => {
+    if (!autoPublishEnabled) {
+      return null;
+    }
+    const startsAt = buildEventDateTime({ date, time, timezone: normalizeTimezone(timezone) });
+    return startsAt ? calculateScheduledPublishAt({ startsAt, publishBeforeMinutes }) : null;
+  }, [autoPublishEnabled, date, publishBeforeMinutes, time, timezone]);
 
   const setEventTypeWithDefaults = (value: string) => {
     setEventType(value);
@@ -450,10 +474,33 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
     }
 
     setType(template.typeDefault);
-    setTimezone(template.timezone);
-    setTime(template.time ?? time);
-    setDuration(template.duration);
-    setCloseBeforeMinutes(template.closeBeforeMinutes);
+    if (!scheduleTouched) {
+      setTimezone(normalizeTimezone(template.timezone));
+      setTime(template.time ?? time);
+      setDuration(template.duration);
+      setCloseBeforeMinutes(template.closeBeforeMinutes);
+    }
+  };
+
+  const updateDate = (value: string) => {
+    setScheduleTouched(true);
+    setDate(value);
+  };
+  const updateTime = (value: string) => {
+    setScheduleTouched(true);
+    setTime(value);
+  };
+  const updateTimezone = (value: string) => {
+    setScheduleTouched(true);
+    setTimezone(value);
+  };
+  const updateDuration = (value: number) => {
+    setScheduleTouched(true);
+    setDuration(value);
+  };
+  const updateCloseBeforeMinutes = (value: number) => {
+    setScheduleTouched(true);
+    setCloseBeforeMinutes(value);
   };
 
   const addSlot = () => setManualSlots((current) => [...current, makeSlot(current.length + 1)]);
@@ -501,17 +548,30 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
     manageable &&
     !busy &&
     name.trim().length >= 2 &&
+    (!autoPublishEnabled || Boolean(finalChannelId)) &&
     (isPve ? pveOptions.every((option) => option.label.trim() && option.time) : mode === "template" ? Boolean(templateId) : manualSlots.every((slot) => slot.name.trim()));
   const goNext = () => setStepIndex((current) => Math.min(steps.length - 1, current + 1));
   const goBack = () => setStepIndex((current) => Math.max(0, current - 1));
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const openCreateConfirm = () => {
+    if (!canSubmit) {
+      setMessage(autoPublishEnabled && !finalChannelId ? "Select a Discord channel before enabling scheduled publish." : "Complete the required draft fields before creating the event.");
+      return;
+    }
+    setMessage(null);
+    setCreateConfirmOpen(true);
+  };
+
+  const submit = async () => {
+    if (submittingRef.current || busy) {
+      return;
+    }
     if (!canSubmit) {
       setMessage("Complete the required draft fields before creating the event.");
       return;
     }
 
+    submittingRef.current = true;
     setBusy(true);
     setMessage(null);
     try {
@@ -521,9 +581,11 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
         type,
         date,
         time,
-        timezone,
+        timezone: normalizeTimezone(timezone),
         duration,
         closeBeforeMinutes,
+        autoPublishEnabled,
+        publishBeforeMinutes,
         channelId: finalChannelId,
         accessRoleIds: accessRestrictionEnabled ? accessRoleIds : [],
         notifyRoleIds: mentionMode === "roles" ? notifyRoleIds : [],
@@ -555,17 +617,26 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
             : undefined
       });
 
+      setCreateConfirmOpen(false);
       router.push(guildRoutes.eventDetail(guildId, eventId));
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Draft event creation failed.");
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
 
+  const preventNativeSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (stepIndex === steps.length - 1) {
+      openCreateConfirm();
+    }
+  };
+
   return (
-    <form className={styles.createEventForm} onSubmit={(event) => void submit(event)}>
+    <form className={styles.createEventForm} onSubmit={preventNativeSubmit}>
       <Card className={styles.createEventCard}>
         <div className={styles.createMetaBar}>
           <span className={`${overviewStyles.status} ${overviewStyles.statusDraft}`}>Draft only</span>
@@ -631,14 +702,35 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
               <div className={styles.createSectionIntro}>
                 <span className={overviewStyles.eyebrow}>Schedule</span>
                 <h3>Date, time and lifecycle</h3>
-                <p>The draft stores the event time, expiry and close-before-expiry values used by the current event lifecycle.</p>
+                <p>This is the event start schedule. Creating the draft will not post to Discord; use Publish to Discord manually when it is ready.</p>
               </div>
               <div className={styles.scheduleGrid}>
-                <label>Date<input onChange={(event) => setDate(event.target.value)} required type="date" value={date} /></label>
-                <label>Time<input onChange={(event) => setTime(event.target.value)} pattern="\d{1,2}:\d{2}" required type="time" value={time} /></label>
-                <label>Timezone<input maxLength={64} onChange={(event) => setTimezone(event.target.value)} required value={timezone} /></label>
-                <label>Duration minutes<input max={1440} min={1} onChange={(event) => setDuration(Number(event.target.value))} required type="number" value={duration} /></label>
-                <label>Close before expiry<input max={duration} min={0} onChange={(event) => setCloseBeforeMinutes(Number(event.target.value))} type="number" value={closeBeforeMinutes} /></label>
+                <label>Event start date<input onChange={(event) => updateDate(event.target.value)} required type="date" value={date} /></label>
+                <label>Event start time<input onChange={(event) => updateTime(event.target.value)} required step={60} type="time" value={time} /></label>
+                <label>Timezone<input maxLength={64} onChange={(event) => updateTimezone(event.target.value)} required value={timezone} /></label>
+                <label>Event duration (minutes)<input max={1440} min={1} onChange={(event) => updateDuration(Number(event.target.value))} required type="number" value={duration} /></label>
+                <label>Close signups before end (minutes)<input max={duration} min={0} onChange={(event) => updateCloseBeforeMinutes(Number(event.target.value))} type="number" value={closeBeforeMinutes} /></label>
+                <div className={styles.segmentBlock}>
+                  <div className={styles.fieldHeading}>Publication</div>
+                  <div className={styles.segmentControl}>
+                    <button aria-pressed={!autoPublishEnabled} onClick={() => setAutoPublishEnabled(false)} type="button">Manual publish only</button>
+                    <button aria-pressed={autoPublishEnabled} onClick={() => setAutoPublishEnabled(true)} type="button">Schedule automatic publish</button>
+                  </div>
+                  <p className={styles.inlineHelp}>
+                    {autoPublishEnabled
+                      ? "Spectre will publish this event automatically before it starts."
+                      : "The event will remain as a draft until you publish it manually."}
+                  </p>
+                  {autoPublishEnabled ? (
+                    <label>
+                      Publish before event start (minutes)
+                      <input min={0} max={10080} onChange={(event) => setPublishBeforeMinutes(Math.max(0, Number(event.target.value)))} required type="number" value={publishBeforeMinutes} />
+                    </label>
+                  ) : null}
+                  {autoPublishEnabled && !finalChannelId ? (
+                    <p className={styles.inlineHelp}>Select a Discord channel before enabling scheduled publish.</p>
+                  ) : null}
+                </div>
                 <div className={styles.segmentBlock}>
                   <div className={styles.fieldHeading}>Recurrence</div>
                   <div className={styles.segmentControl}>
@@ -895,13 +987,21 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
               <div className={styles.createSectionIntro}>
                 <span className={overviewStyles.eyebrow}>Review</span>
                 <h3>Draft summary</h3>
-                <p>Review the database-only draft. The create action stores Prisma records and leaves Discord untouched.</p>
+                <p>This creates a draft. It will not be posted to Discord until you publish it manually.</p>
               </div>
               <div className={styles.reviewGrid}>
                 <div className={styles.reviewHero}>
                   <span className={`${overviewStyles.status} ${overviewStyles.statusDraft}`}>Draft / Not published</span>
+                  <span className={`${overviewStyles.status} ${autoPublishEnabled ? overviewStyles.statusOpen : overviewStyles.statusClosed}`}>
+                    {autoPublishEnabled ? "Scheduled" : "Manual publish required"}
+                  </span>
                   <h3>{name || "Untitled event"}</h3>
-                  <p>{type} - {eventType} - {date} {time} {timezone}</p>
+                  <p>{type} - {eventType} - starts {date} {time} {timezone}</p>
+                  <p>
+                    {autoPublishEnabled && scheduledPublishAt
+                      ? `Auto publish scheduled for ${formatDateTimeInTimezone(scheduledPublishAt, timezone)} ${timezone}`
+                      : "This is a draft. It will not be posted automatically. Use Publish to Discord when you are ready."}
+                  </p>
                 </div>
                 <div className={styles.reviewTile}><CalendarClock size={18} aria-hidden="true" /><strong>{duration} min</strong><span>Duration</span></div>
                 <div className={styles.reviewTile}><LayoutTemplate size={18} aria-hidden="true" /><strong>{slotCount || "No"} {isPve ? "options" : "slots"}</strong><span>{isPve ? `${pveCapacity} total capacity` : mode === "template" ? selectedTemplate?.name ?? "Template missing" : `${totalCapacity ?? 0} capacity`}</span></div>
@@ -945,7 +1045,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                 <ChevronRight size={16} aria-hidden="true" />
               </Button>
             ) : (
-              <Button disabled={!canSubmit} type="submit">
+              <Button disabled={!canSubmit} onClick={openCreateConfirm} type="button">
                 <Plus size={16} aria-hidden="true" />
                 {busy ? "Creating..." : "Create draft event"}
               </Button>
@@ -953,6 +1053,34 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
           </div>
         </div>
       </Card>
+      {createConfirmOpen && typeof document !== "undefined" ? createPortal(
+        <div
+          className={overviewStyles.modalOverlay}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !busy) {
+              setCreateConfirmOpen(false);
+            }
+          }}
+        >
+          <div aria-modal="true" className={overviewStyles.confirmModal} role="dialog" aria-labelledby="create-draft-title">
+            <div className={overviewStyles.modalHeader}>
+              <span className={overviewStyles.modalIcon}><Plus size={18} aria-hidden="true" /></span>
+              <div>
+                <h3 id="create-draft-title">Create event draft?</h3>
+                <p>This will create "{name || "Untitled event"}" as a draft in Spectre. It will not be published to Discord yet.</p>
+              </div>
+            </div>
+            <div className={overviewStyles.modalActions}>
+              <Button disabled={busy} onClick={() => setCreateConfirmOpen(false)} type="button" variant="ghost">Cancel</Button>
+              <Button disabled={busy} onClick={() => void submit()} type="button">
+                {busy ? "Creating..." : "Create draft"}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
     </form>
   );
 }

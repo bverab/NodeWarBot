@@ -166,6 +166,64 @@
   font-size: 13px;
 }
 
+.modalOverlay {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(1, 4, 12, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.confirmModal {
+  display: grid;
+  width: min(100%, 520px);
+  gap: 16px;
+  border: 1px solid rgba(154, 170, 255, 0.22);
+  border-radius: 10px;
+  padding: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.1), transparent 34%),
+    rgba(8, 10, 24, 0.98);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.44);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.modalIcon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--cyan);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.confirmModal h3 {
+  margin: 0 0 5px;
+  color: var(--text);
+}
+
+.confirmModal p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .editForm,
 .compactForm {
   display: grid;
@@ -177,6 +235,57 @@
   border-radius: 8px;
   padding: 16px;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.fieldLarge {
+  grid-column: 1 / -1;
+}
+
+.fieldHint {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.fieldHeading {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.segmentControl {
+  display: inline-flex;
+  width: fit-content;
+  flex-wrap: wrap;
+  gap: 6px;
+  border: 1px solid rgba(154, 170, 255, 0.12);
+  border-radius: 8px;
+  padding: 4px;
+  background: rgba(5, 7, 17, 0.54);
+}
+
+.segmentControl button {
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--muted-strong);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.segmentControl button[aria-pressed="true"] {
+  color: var(--text);
+  background: rgba(56, 189, 248, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.18);
 }
 
 .editForm label,
@@ -395,7 +504,7 @@
 .slotCardCompact {
   display: grid;
   min-height: 154px;
-  align-content: start;
+  align-content: stretch;
   gap: 10px;
   border: 1px solid rgba(154, 170, 255, 0.12);
   border-radius: 8px;
@@ -447,17 +556,28 @@
 }
 
 .slotHeader h3 {
-  display: inline-flex;
   min-width: 0;
   flex: 1 1 auto;
-  align-items: center;
-  gap: 7px;
-  overflow: hidden;
   margin: 0;
   color: var(--text);
   font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.slotTitle {
+  display: inline-flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.slotNameText {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .slotMeta {
@@ -468,20 +588,121 @@
   gap: 6px;
 }
 
+.slotHeaderMetaStack {
+  display: inline-grid;
+  min-width: 44px;
+  flex: 0 0 44px;
+  justify-items: stretch;
+  align-content: start;
+  gap: 4px;
+}
+
 .slotMeta span,
+.slotHeaderMetaStack span,
 .slotHeader > span {
   flex: 0 0 auto;
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 4px 7px;
   color: var(--cyan);
   background: rgba(56, 189, 248, 0.1);
   font-size: 12px;
   font-weight: 900;
+  line-height: 1;
+  text-align: center;
 }
 
 .orderBadge {
   color: #cab7ff !important;
   background: rgba(139, 92, 246, 0.16) !important;
+}
+
+.capacityBadge {
+  color: var(--cyan) !important;
+  background: rgba(56, 189, 248, 0.1) !important;
+}
+
+.slotRoleChips {
+  display: flex;
+  min-height: 24px;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.slotRoleChipsEmpty {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.slotRoleChip {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 24px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(154, 170, 255, 0.16);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #d9e4ff;
+  background: rgba(154, 170, 255, 0.095);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.slotRoleChip svg {
+  flex: 0 0 auto;
+  color: #cab7ff;
+}
+
+.slotRoleChipMore {
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.slotCardFooter {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.slotCardFooter .quickActions {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.slotDragCorner {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding-left: 4px;
+}
+
+.slotAddCard {
+  min-height: 154px;
+  align-content: center;
+  justify-items: start;
+  border-style: dashed;
+  border-color: rgba(154, 170, 255, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(139, 92, 246, 0.08), transparent 34%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.slotAddCard h3 {
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.slotAddCard p {
+  margin: 0;
+  max-width: 28ch;
 }
 
 .slotEmoji {

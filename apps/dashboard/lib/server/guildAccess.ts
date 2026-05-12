@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
-import { findActiveGuild, getDashboardGuilds } from "@/lib/dashboardGuilds";
+import { resolveDashboardGuildForServer } from "@/lib/server/dashboardGuildResolution";
 
 export async function requireDashboardGuild(guildId: string) {
   const session = await getServerAuthSession();
@@ -11,10 +11,23 @@ export async function requireDashboardGuild(guildId: string) {
     };
   }
 
-  const availableGuilds = await getDashboardGuilds(session);
-  const activeGuild = findActiveGuild(availableGuilds, guildId);
+  const guildResult = await resolveDashboardGuildForServer(session, guildId);
+  const availableGuilds = guildResult.guilds;
+  const activeGuild = guildResult.activeGuild;
 
   if (!activeGuild) {
+    if (guildResult.error) {
+      return {
+        error: NextResponse.json(
+          {
+            error: "Discord guild verification is temporarily unavailable. Retry in a moment.",
+            code: guildResult.error.code
+          },
+          { status: guildResult.error.status === 401 || guildResult.error.status === 403 ? 401 : 503 }
+        )
+      };
+    }
+
     return {
       error: NextResponse.json(
         { error: "Guild not found or Spectre is not installed for this server." },

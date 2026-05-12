@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { formatDateTime } from "@/lib/formatters";
 import { getGuildEventDetail } from "@/lib/server/dashboardData";
+import { getGuildRoles } from "@/lib/server/discordGuildConfig";
 import { ConfirmResourceAction } from "@/app/guilds/[guildId]/_components/actions/ConfirmResourceAction";
 import { PveEventSignupGrid } from "@/app/guilds/[guildId]/_components/signups/EventSignupSummary";
 import { EventActions } from "./EventActions";
@@ -22,20 +23,24 @@ type PageProps = {
 
 export default async function EventDetailPage({ params, searchParams }: PageProps) {
   const [{ guildId, eventId }, query] = await Promise.all([params, searchParams]);
-  const { activeGuild, availableGuilds, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
+  const { activeGuild, availableGuilds, guildResolutionError, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
 
   if (!activeGuild) {
     return (
       <GuildNotFound
         availableGuilds={availableGuilds}
         preview={preview}
+        resolutionError={guildResolutionError}
         userImage={session?.user?.image}
         userName={session?.user?.name ?? session?.user?.email}
       />
     );
   }
 
-  const event = await getGuildEventDetail(activeGuild.id, eventId);
+  const [event, roles] = await Promise.all([
+    getGuildEventDetail(activeGuild.id, eventId),
+    getGuildRoles(activeGuild.id)
+  ]);
 
   if (!event) {
     return (
@@ -83,9 +88,11 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
             <span className={styles.eyebrow}>{event.eventType} event</span>
             <h2>{event.name}</h2>
             <p>
-              Status: {event.status === "draft" ? "Draft / Not published" : event.status}. Closes{" "}
-              {formatDateTime(event.closesAt)}. Expires {formatDateTime(event.expiresAt)}.
+              Status: {event.status === "draft" ? "Draft / Not published" : event.status}. Starts{" "}
+              {event.time ? `${event.time} ${event.timezone}` : "not set"}. Closes {formatDateTime(event.closesAt, event.timezone)}.
+              Expires {formatDateTime(event.expiresAt, event.timezone)}.
             </p>
+            <p>{event.isRecurring ? "Recurring event. Part of recurring series." : "One-time event."}</p>
           </div>
           <span className={styles.guildMark}>
             <Swords size={30} aria-hidden="true" />
@@ -97,11 +104,14 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           guildId={activeGuild.id}
           initialChannelId={event.channelId}
           initialCloseBeforeMinutes={event.closeBeforeMinutes}
+          initialAutoPublishEnabled={event.autoPublishEnabled}
+          initialScheduledPublishAt={event.scheduledPublishAt}
           initialClosesAt={event.closesAt}
           initialDuration={event.duration}
           initialEventType={event.eventType}
           initialExpiresAt={event.expiresAt}
           initialMessageId={event.messageId}
+          initialIsRecurring={event.isRecurring}
           initialName={event.name}
           initialTime={event.time}
           initialTimezone={event.timezone}
@@ -130,13 +140,13 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               />
             ) : (
               <ConfirmResourceAction
-                actionLabel="Delete draft"
-                body={`You are about to delete the draft event "${event.name}". This event has not been published to Discord. This action cannot be undone.`}
-                confirmLabel="Delete draft"
+                actionLabel="Delete permanently"
+                body={`This will permanently delete "${event.name}" from Spectre. It is not currently linked to a Discord message. This action cannot be undone.`}
+                confirmLabel="Delete permanently"
                 endpoint={`/api/guilds/${activeGuild.id}/events/${event.id}/delete-draft`}
                 redirectTo={event.eventType === "pve" ? guildRoutes.pveEvents(activeGuild.id) : guildRoutes.events(activeGuild.id)}
                 resourceName={event.name}
-                title="Delete draft event?"
+                title="Delete event permanently?"
               />
             )
           ) : null}
@@ -160,7 +170,15 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 waitlist={event.waitlist}
               />
             ) : event.roleSlots.length || event.eventType !== "pve" ? (
-              <EventSlotGrid eventId={event.id} guildId={activeGuild.id} manageable={activeGuild.manageable} slots={event.roleSlots} />
+              <EventSlotGrid
+                eventId={event.id}
+                guildId={activeGuild.id}
+                isRecurring={event.isRecurring}
+                manageable={activeGuild.manageable}
+                roleLoadError={roles.length ? null : "No Discord roles could be loaded. Existing slot permissions will be preserved unless changed."}
+                roles={roles}
+                slots={event.roleSlots}
+              />
             ) : (
               <Card className={styles.emptyPanel}>
                 <span className={styles.eyebrow}>Participants</span>
@@ -211,12 +229,21 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               <p>Inscritos: {totalRegistered}/{totalCapacity || "?"}</p>
               <p>Creator: {event.creatorId ?? "Not recorded"}</p>
               <p>Repeats: schedule data is shown in Schedules.</p>
-              <p>Created: {formatDateTime(event.createdAt)}</p>
-              <p>Closes: {formatDateTime(event.closesAt)}</p>
+              <p>Created: {formatDateTime(event.createdAt, event.timezone)}</p>
+              <p>Starts: {event.time ? `${event.time} ${event.timezone}` : "Not set"}</p>
+              <p>Closes: {formatDateTime(event.closesAt, event.timezone)}</p>
+              <p>Expires: {formatDateTime(event.expiresAt, event.timezone)}</p>
             </Card>
             <Card>
               <h3>Publication</h3>
-              <p>{event.published ? `Discord message ${event.messageId ?? "not recorded"}` : "Draft / Not published. No Discord message was created from the web."}</p>
+              <p>
+                {event.published
+                  ? `Published. Discord message ${event.messageId ?? "not recorded"}`
+                  : event.autoPublishEnabled && event.scheduledPublishAt
+                    ? `Scheduled publish: ${formatDateTime(event.scheduledPublishAt, event.timezone)} ${event.timezone}`
+                    : "Draft / Not published. Manual publish."}
+              </p>
+              {event.publishError ? <p>Auto publish failed: {event.publishError}</p> : null}
               {event.discordUrl ? (
                 <Button href={event.discordUrl} variant="ghost">
                   <ExternalLink size={16} aria-hidden="true" />

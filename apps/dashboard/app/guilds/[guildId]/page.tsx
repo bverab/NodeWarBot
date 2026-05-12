@@ -22,13 +22,14 @@ type GuildDashboardPageProps = {
 
 export default async function GuildDashboardPage({ params, searchParams }: GuildDashboardPageProps) {
   const [{ guildId }, query] = await Promise.all([params, searchParams]);
-  const { activeGuild, availableGuilds, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
+  const { activeGuild, availableGuilds, guildResolutionError, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
 
   if (!activeGuild) {
     return (
       <GuildNotFound
         availableGuilds={availableGuilds}
         preview={preview}
+        resolutionError={guildResolutionError}
         userImage={session?.user?.image}
         userName={session?.user?.name ?? session?.user?.email}
       />

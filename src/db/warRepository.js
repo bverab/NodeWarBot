@@ -92,6 +92,10 @@ async function upsertWarTx(tx, warInput) {
       timezone: war.timezone,
       duration: war.duration,
       closeBeforeMinutes: war.closeBeforeMinutes,
+      autoPublishEnabled: Boolean(war.autoPublishEnabled),
+      scheduledPublishAt: war.scheduledPublishAt ? toDate(war.scheduledPublishAt) : null,
+      publishError: war.publishError || null,
+      lastPublishAttemptAt: war.lastPublishAttemptAt ? toDate(war.lastPublishAttemptAt) : null,
       createdAt: toDate(war.createdAt),
       expiresAt: toDate(war.expiresAt),
       closesAt: toDate(war.closesAt),
@@ -114,6 +118,10 @@ async function upsertWarTx(tx, warInput) {
       timezone: war.timezone,
       duration: war.duration,
       closeBeforeMinutes: war.closeBeforeMinutes,
+      autoPublishEnabled: Boolean(war.autoPublishEnabled),
+      scheduledPublishAt: war.scheduledPublishAt ? toDate(war.scheduledPublishAt) : null,
+      publishError: war.publishError || null,
+      lastPublishAttemptAt: war.lastPublishAttemptAt ? toDate(war.lastPublishAttemptAt) : null,
       createdAt: toDate(war.createdAt),
       expiresAt: toDate(war.expiresAt),
       closesAt: toDate(war.closesAt),
@@ -297,6 +305,10 @@ function mapDbEventToDomain(event) {
     timezone: event.timezone,
     duration: event.duration,
     closeBeforeMinutes: event.closeBeforeMinutes,
+    autoPublishEnabled: Boolean(event.autoPublishEnabled),
+    scheduledPublishAt: toNumber(event.scheduledPublishAt),
+    publishError: event.publishError || null,
+    lastPublishAttemptAt: toNumber(event.lastPublishAttemptAt),
     notifyRoles: event.notifyTargets.map(target => target.targetId),
     allowedUserIds: event.accessUsers.map(user => user.userId),
     allowedRoleIds: event.accessRoles.map(role => role.roleId),
@@ -308,7 +320,7 @@ function mapDbEventToDomain(event) {
     })),
     schedule: {
       enabled: Boolean(event.schedule?.enabled),
-      mode: event.schedule?.mode === 'once' ? 'once' : 'recurring',
+      mode: event.schedule?.mode === 'recurring' ? 'recurring' : 'once',
       lastCreatedAt: toNumber(event.schedule?.lastCreatedAt),
       lastMessageIdDeleted: toNumber(event.schedule?.lastMessageIdDeleted)
     },
@@ -358,6 +370,74 @@ async function readWarsFromSqlite() {
   });
 
   return events.map(mapDbEventToDomain);
+}
+
+async function loadDueScheduledPublishEvents(now = new Date(), retryDelayMs = 5 * 60 * 1000) {
+  const cutoff = new Date(now.getTime() - retryDelayMs);
+  const events = await prisma.event.findMany({
+    where: {
+      autoPublishEnabled: true,
+      scheduledPublishAt: { lte: now },
+      messageId: null,
+      isClosed: false,
+      OR: [
+        { lastPublishAttemptAt: null },
+        { lastPublishAttemptAt: { lt: cutoff } }
+      ]
+    },
+    include: {
+      roleSlots: {
+        include: {
+          users: true,
+          permissions: true
+        },
+        orderBy: { position: 'asc' }
+      },
+      waitlist: {
+        orderBy: { position: 'asc' }
+      },
+      notifyTargets: {
+        orderBy: { position: 'asc' }
+      },
+      accessRoles: {
+        orderBy: { position: 'asc' }
+      },
+      accessUsers: {
+        orderBy: { position: 'asc' }
+      },
+      fillers: {
+        orderBy: { joinedAt: 'asc' }
+      },
+      schedule: true,
+      recap: true
+    },
+    orderBy: { scheduledPublishAt: 'asc' },
+    take: 25
+  });
+
+  return events.map(mapDbEventToDomain);
+}
+
+async function markScheduledPublishAttempt(eventId, errorMessage, attemptedAt = new Date()) {
+  await prisma.event.updateMany({
+    where: { id: String(eventId), messageId: null },
+    data: {
+      lastPublishAttemptAt: attemptedAt,
+      publishError: errorMessage ? String(errorMessage).slice(0, 1000) : null
+    }
+  });
+}
+
+async function completeScheduledPublishIfUnpublished(eventId, messageId, attemptedAt = new Date()) {
+  return prisma.event.updateMany({
+    where: { id: String(eventId), messageId: null },
+    data: {
+      messageId: String(messageId),
+      autoPublishEnabled: false,
+      publishError: null,
+      lastPublishAttemptAt: attemptedAt
+    }
+  });
 }
 
 async function replaceAllWarsInSqlite(warsInput) {
@@ -426,6 +506,13 @@ async function initializeWarRepository() {
 
 function loadWars() {
   return deepClone(warsCache).map(normalizeWar);
+}
+
+async function loadWarsFresh() {
+  const normalized = normalizeWarsInput(await readWarsFromSqlite());
+  warsCache = normalized;
+  initialized = true;
+  return loadWars();
 }
 
 async function saveWars(wars) {
@@ -560,6 +647,10 @@ module.exports = {
   initializeWarRepository,
   waitForWarRepositoryIdle,
   readWarsFromSqlite,
+  loadWarsFresh,
+  loadDueScheduledPublishEvents,
+  markScheduledPublishAttempt,
+  completeScheduledPublishIfUnpublished,
   replaceAllWarsInSqlite,
   loadWars,
   saveWars,

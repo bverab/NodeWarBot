@@ -4,7 +4,11 @@ const {
   deleteWarByMessageId
 } = require('../services/warService');
 const { normalizeEventType } = require('../constants/eventTypes');
-const { buildEventMessagePayload, buildEventListText } = require('../services/eventRenderService');
+const { buildEventListText } = require('../services/eventRenderService');
+const {
+  updateEventDiscordMessage,
+  deleteEventDiscordMessage
+} = require('../services/discordEventSyncService');
 const pveService = require('../services/pveService');
 const {
   getRoleByName,
@@ -18,7 +22,7 @@ const {
 const { notifyPromotion } = require('../utils/promotionNotifier');
 const { sanitizeDisplayText, safeMessageContent } = require('../utils/textSafety');
 const { consumeRateLimit, buildInteractionRateKey } = require('../utils/rateLimiter');
-const { logError } = require('../utils/appLogger');
+const { logError, logWarn } = require('../utils/appLogger');
 
 // Maneja botones del mensaje publico del evento:
 // - Cerrar/abrir inscripciones
@@ -108,7 +112,7 @@ async function handleToggleClose(interaction) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
 
-  await interaction.message.edit(await buildEventMessagePayload(war));
+  await refreshPublicEventMessage(interaction, war);
   await interaction.followUp({
     content: war.isClosed ? 'Inscripciones cerradas' : 'Inscripciones abiertas',
     flags: 64
@@ -126,7 +130,7 @@ async function handleDeleteWar(interaction) {
   }
 
   await deleteWarByMessageId(interaction.message.id);
-  await interaction.message.delete().catch(() => null);
+  await deletePublicEventMessage(interaction, war);
   await interaction.followUp({ content: 'Evento eliminado', flags: 64 });
 }
 
@@ -276,7 +280,7 @@ async function handleJoinRole(interaction) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
 
-  await interaction.message.edit(await buildEventMessagePayload(war));
+  await refreshPublicEventMessage(interaction, war);
 
   const responseByType = {
     missing_role: 'El rol no existe',
@@ -326,7 +330,7 @@ async function handleJoinPveSlot(interaction) {
   if (result.ok) {
     const refreshed = getWarByMessageId(interaction.message.id);
     if (refreshed) {
-      await interaction.message.edit(await buildEventMessagePayload(refreshed));
+      await refreshPublicEventMessage(interaction, refreshed);
     }
     return;
   }
@@ -359,7 +363,7 @@ async function handleLeavePveSlot(interaction) {
   const left = await pveService.leaveSlot(event.id, interaction.user.id);
   const refreshed = getWarByMessageId(interaction.message.id);
   if (refreshed) {
-    await interaction.message.edit(await buildEventMessagePayload(refreshed));
+    await refreshPublicEventMessage(interaction, refreshed);
   }
   if (!left) {
     return await interaction.followUp({
@@ -367,6 +371,40 @@ async function handleLeavePveSlot(interaction) {
       flags: 64
     });
   }
+}
+
+async function refreshPublicEventMessage(interaction, event) {
+  const result = await updateEventDiscordMessage({
+    guild: interaction.guild,
+    client: interaction.client,
+    event
+  });
+
+  if (result.ok) return true;
+
+  throw new Error(`Failed to refresh public event message: ${result.errorMessage || result.status}`);
+}
+
+async function deletePublicEventMessage(interaction, event) {
+  const result = await deleteEventDiscordMessage({
+    guild: interaction.guild,
+    client: interaction.client,
+    event
+  });
+
+  if (result.ok || result.status === 'missing_message') return true;
+
+  logWarn('No se pudo borrar mensaje publico del evento', {
+    action: 'public_event_button_delete',
+    guildId: interaction.guildId,
+    userId: interaction.user?.id,
+    eventId: event.id,
+    channelId: event.channelId,
+    messageId: event.messageId,
+    reason: result.errorMessage || result.status,
+    code: result.errorCode
+  });
+  return false;
 }
 
 function promoteFromWaitlist(state, roleName) {

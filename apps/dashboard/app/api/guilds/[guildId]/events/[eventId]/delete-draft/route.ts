@@ -23,13 +23,13 @@ export async function POST(_request: Request, context: RouteContext) {
 
     if (result.status === "not_draft") {
       return NextResponse.json(
-        { error: "Only database-only drafts without Discord publication metadata can be deleted." },
+        { error: "Unpublish the Discord message before deleting this event." },
         { status: 409 }
       );
     }
 
     return NextResponse.json({ status: "deleted" }, { status: 200 });
   } catch {
-    return NextResponse.json({ error: "Failed to delete draft event." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to delete event." }, { status: 500 });
   }
 }

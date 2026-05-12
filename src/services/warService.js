@@ -23,6 +23,7 @@ module.exports = {
       throw error;
     }
   },
+  loadWarsFresh: withDbLog('loadWarsFresh', repository.loadWarsFresh),
   saveWars: withDbLog('saveWars', repository.saveWars),
   createWar: withDbLog('createWar', repository.createWar),
   getWarByMessageId: (...args) => {
@@ -42,6 +43,9 @@ module.exports = {
     }
   },
   updateWar: withDbLog('updateWar', repository.updateWar),
+  loadDueScheduledPublishEvents: withDbLog('loadDueScheduledPublishEvents', repository.loadDueScheduledPublishEvents),
+  markScheduledPublishAttempt: withDbLog('markScheduledPublishAttempt', repository.markScheduledPublishAttempt),
+  completeScheduledPublishIfUnpublished: withDbLog('completeScheduledPublishIfUnpublished', repository.completeScheduledPublishIfUnpublished),
   updateWarByMessageId: withDbLog('updateWarByMessageId', repository.updateWarByMessageId),
   deleteWarByMessageId: withDbLog('deleteWarByMessageId', repository.deleteWarByMessageId),
   getWarsByGroupId: (...args) => {

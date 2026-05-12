@@ -1,5 +1,9 @@
 const { normalizeEventType } = require('../constants/eventTypes');
-const { buildEventMessagePayload } = require('./eventRenderService');
+const {
+  publishEventToDiscord,
+  updateEventDiscordMessage,
+  deleteEventDiscordMessage
+} = require('./discordEventSyncService');
 const warService = require('./warService');
 const pveService = require('./pveService');
 const { safeMessageContent } = require('../utils/textSafety');
@@ -56,6 +60,7 @@ async function publishOrRefreshWar(interaction, war) {
 async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
   return await publishOrRefreshEventWithContext({
     guild: interaction.guild,
+    client: interaction.client,
     guildId: interaction.guildId,
     userId: interaction.user?.id
   }, war, options);
@@ -65,29 +70,6 @@ async function publishOrRefreshWarWithOptions(interaction, war, options = {}) {
 // A future HTTP API can pass an explicit Discord context (guild/client-derived
 // channel access) without constructing a Discord Interaction object.
 async function publishOrRefreshEventWithContext(discordContext, war, options = {}) {
-  const channel = await discordContext.guild?.channels?.fetch(war.channelId).catch(error => {
-    logWarn('Fallo resolviendo canal para publicacion', {
-      action: 'publish_or_refresh',
-      guildId: discordContext.guildId,
-      userId: discordContext.userId,
-      eventId: war.id,
-      channelId: war.channelId,
-      reason: error?.message || 'unknown'
-    });
-    return null;
-  });
-  if (!channel || !channel.send) {
-    logWarn('No se pudo publicar: canal inaccesible', {
-      action: 'publish_or_refresh',
-      guildId: discordContext.guildId,
-      userId: discordContext.userId,
-      eventId: war.id,
-      warId: war.id,
-      channelId: war.channelId
-    });
-    return { ok: false, status: 'error', reason: `No se pudo acceder al canal ${war.channelId}.` };
-  }
-
   const shouldActivate = Boolean(options.activate);
   const shouldResetRoster = Boolean(options.resetRoster);
   const nowMs = Date.now();
@@ -109,24 +91,16 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
   const mustRepublish = shouldActivate && (isExpired || !normalizedWar.messageId);
 
   if (normalizedWar.messageId && !mustRepublish) {
-    const existing = await channel.messages.fetch(normalizedWar.messageId).catch(error => {
-      logWarn('No se pudo obtener mensaje existente para actualizar', {
-        action: 'publish_or_refresh',
-        guildId: discordContext.guildId,
-        userId: discordContext.userId,
-        eventId: normalizedWar.id,
-        messageId: normalizedWar.messageId,
-        reason: error?.message || 'unknown'
-      });
-      return null;
-    });
-    if (existing) {
-      const payload = await buildEventMessagePayload(normalizedWar);
-      await existing.edit({
+    const updateResult = await updateEventDiscordMessage({
+      guild: discordContext.guild,
+      client: discordContext.client,
+      event: normalizedWar,
+      messageOptions: {
         content: safeMessageContent(content, 'Evento publicado manualmente'),
-        allowedMentions,
-        ...payload
-      });
+        allowedMentions
+      }
+    });
+    if (updateResult.ok) {
       const persisted = shouldActivate ? await warService.updateWar(normalizedWar) : normalizedWar;
       logInfo('Evento actualizado en mensaje existente', {
         action: 'publish_or_refresh',
@@ -138,30 +112,31 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
       });
       return { ok: true, status: 'updated', war: persisted };
     }
+
+    logWarn('No se pudo obtener mensaje existente para actualizar', {
+      action: 'publish_or_refresh',
+      guildId: discordContext.guildId,
+      userId: discordContext.userId,
+      eventId: normalizedWar.id,
+      messageId: normalizedWar.messageId,
+      reason: updateResult.errorMessage || updateResult.status
+    });
   }
 
-  if (mustRepublish && normalizedWar.messageId && channel.messages?.fetch) {
-    const stale = await channel.messages.fetch(normalizedWar.messageId).catch(error => {
-      logWarn('No se pudo obtener mensaje stale previo a republicacion', {
+  if (mustRepublish && normalizedWar.messageId) {
+    const deleteResult = await deleteEventDiscordMessage({
+      guild: discordContext.guild,
+      client: discordContext.client,
+      event: normalizedWar
+    });
+    if (!deleteResult.ok && deleteResult.status !== 'missing_message') {
+      logWarn('No se pudo borrar mensaje stale previo a republicacion', {
         action: 'publish_or_refresh',
         guildId: discordContext.guildId,
         userId: discordContext.userId,
         eventId: normalizedWar.id,
         messageId: normalizedWar.messageId,
-        reason: error?.message || 'unknown'
-      });
-      return null;
-    });
-    if (stale) {
-      await stale.delete().catch(error => {
-        logWarn('No se pudo borrar mensaje stale previo a republicacion', {
-          action: 'publish_or_refresh',
-          guildId: discordContext.guildId,
-          userId: discordContext.userId,
-          eventId: normalizedWar.id,
-          messageId: normalizedWar.messageId,
-          reason: error?.message || 'unknown'
-        });
+        reason: deleteResult.errorMessage || deleteResult.status
       });
     }
   }
@@ -197,14 +172,34 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
     await pveService.resetEventEnrollments(war.id);
   }
 
-  const payload = await buildEventMessagePayload(warForPublish);
-  const message = await channel.send({
-    content: safeMessageContent(content, 'Evento publicado manualmente'),
-    allowedMentions,
-    ...payload
+  const publishResult = await publishEventToDiscord({
+    guild: discordContext.guild,
+    client: discordContext.client,
+    event: warForPublish,
+    channelId: warForPublish.channelId,
+    messageOptions: {
+      content: safeMessageContent(content, 'Evento publicado manualmente'),
+      allowedMentions
+    }
   });
+  if (!publishResult.ok) {
+    logWarn('No se pudo publicar evento', {
+      action: 'publish_or_refresh',
+      guildId: discordContext.guildId,
+      userId: discordContext.userId,
+      eventId: warForPublish.id,
+      channelId: warForPublish.channelId,
+      reason: publishResult.errorMessage || publishResult.status
+    });
+    return {
+      ok: false,
+      status: publishResult.status,
+      reason: publishResult.errorMessage || publishResult.status,
+      errorCode: publishResult.errorCode
+    };
+  }
 
-  warForPublish.messageId = message.id;
+  warForPublish.messageId = publishResult.messageId;
   if (warForPublish.schedule) {
     warForPublish.schedule.lastCreatedAt = nowMs;
     if (warForPublish.schedule.mode === 'once') {

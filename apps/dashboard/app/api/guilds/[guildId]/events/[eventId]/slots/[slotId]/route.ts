@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { deleteGuildEventRoleSlot, updateGuildEventRoleSlot } from "@/lib/server/dashboardData";
+import { deleteGuildEventRoleSlot, updateGuildEventRoleSlot, updateGuildEventRoleSlotSeries } from "@/lib/server/dashboardData";
+import { getGuildRoles } from "@/lib/server/discordGuildConfig";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 import { parseRoleSlotPatch } from "@/lib/server/mutationValidation";
 
@@ -17,6 +18,8 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const body = (await request.json()) as Record<string, unknown>;
+    const recurrenceScope = body.recurrenceScope === "series" ? "series" : "single";
+    delete body.recurrenceScope;
     const result = parseRoleSlotPatch(body);
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
@@ -26,7 +29,20 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "No supported fields were provided." }, { status: 400 });
     }
 
-    const event = await updateGuildEventRoleSlot(guildId, eventId, slotId, result.patch);
+    if (Array.isArray(result.patch.allowedRoleIds)) {
+      const roles = await getGuildRoles(guildId);
+      const roleIds = new Set(roles.map((role) => role.id));
+      if (result.patch.allowedRoleIds.some((roleId) => !roleIds.has(roleId))) {
+        return NextResponse.json(
+          { error: "One or more selected roles are not available for this guild." },
+          { status: 400 }
+        );
+      }
+    }
+
+    const event = recurrenceScope === "series"
+      ? await updateGuildEventRoleSlotSeries(guildId, eventId, slotId, result.patch)
+      : await updateGuildEventRoleSlot(guildId, eventId, slotId, result.patch);
     if (!event) {
       return NextResponse.json({ error: "Slot not found for this guild event." }, { status: 404 });
     }

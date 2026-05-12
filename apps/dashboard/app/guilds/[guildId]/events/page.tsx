@@ -36,13 +36,14 @@ function statusClass(status: "draft" | "open" | "closed" | "expired") {
 
 export default async function EventsPage({ params, searchParams }: PageProps) {
   const [{ guildId }, query] = await Promise.all([params, searchParams]);
-  const { activeGuild, availableGuilds, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
+  const { activeGuild, availableGuilds, guildResolutionError, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
 
   if (!activeGuild) {
     return (
       <GuildNotFound
         availableGuilds={availableGuilds}
         preview={preview}
+        resolutionError={guildResolutionError}
         userImage={session?.user?.image}
         userName={session?.user?.name ?? session?.user?.email}
       />
@@ -111,7 +112,9 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
                       <td>{event.name}</td>
                       <td>{event.eventType || event.type}</td>
                       <td>
-                        <span className={`${styles.status} ${statusClass(event.status)}`}>{event.status}</span>
+                        <span className={`${styles.status} ${event.published ? statusClass(event.status) : event.autoPublishEnabled ? styles.statusOpen : statusClass(event.status)}`}>
+                          {event.published ? event.status : event.autoPublishEnabled ? "scheduled" : event.status}
+                        </span>
                       </td>
                       <td>{event.time ? `${event.time} ${event.timezone}` : formatDateTime(event.closesAt)}</td>
                       <td>{event.participantCount}</td>
@@ -163,22 +166,22 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
                       <td className={styles.actionCell}>
                         {activeGuild.manageable && !event.published ? (
                           <ConfirmResourceAction
-                            actionAriaLabel={`Delete draft ${event.name}`}
+                            actionAriaLabel={`Delete ${event.name} permanently`}
                             actionClassName={`${styles.iconActionButton} ${styles.deleteIconButton}`}
                             actionIcon={<Trash2 size={16} aria-hidden="true" />}
-                            actionLabel="Delete draft"
-                            body={`You are about to delete the draft event "${event.name}". This event has not been published to Discord. This action cannot be undone.`}
-                            confirmLabel="Delete draft"
+                            actionLabel="Delete permanently"
+                            body={`This will permanently delete "${event.name}" from Spectre. It is not currently linked to a Discord message. This action cannot be undone.`}
+                            confirmLabel="Delete permanently"
                             endpoint={`/api/guilds/${activeGuild.id}/events/${event.id}/delete-draft`}
                             resourceName={event.name}
-                            title="Delete draft event?"
+                            title="Delete event permanently?"
                             triggerIconOnly
                           />
                         ) : (
                           <DisabledIconAction
                             ariaLabel={`Delete unavailable for ${event.name}`}
                             className={`${styles.iconActionButton} ${styles.deleteIconButton}`}
-                            title="Published events can be archived, but Discord messages are not deleted in this phase."
+                            title="Unpublish from Discord before deleting this event."
                           >
                             <Trash2 size={16} aria-hidden="true" />
                           </DisabledIconAction>

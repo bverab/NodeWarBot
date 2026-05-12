@@ -1,5 +1,6 @@
 const { setupIntegrationSuite } = require('../helpers/dbTestHarness');
 const warService = require('../../src/services/warService');
+const { prisma } = require('../../src/db/client');
 const { buildWar } = require('../factories/warFactory');
 const {
   initScheduler,
@@ -212,5 +213,146 @@ describe('scheduler weekly recurrence integration', () => {
     expect(persistedSaturday.schedule.enabled).toBe(true);
     expect(persistedTuesday.messageId).toBeNull(); // expiro al llegar al slot de sabado siguiente
     expect(persistedSaturday.messageId).toMatch(/^scheduler_msg_\d+$/);
+  });
+
+  it('no crashea al expirar un evento con messageId stale', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-20T21:45:00.000Z'));
+
+    const staleWar = buildWar({
+      id: 'recurrence_stale_message_1',
+      messageId: 'stale_msg_1',
+      isClosed: false,
+      createdAt: Date.now() - 120000,
+      expiresAt: Date.now() - 60000,
+      closesAt: Date.now() - 90000,
+      schedule: {
+        enabled: true,
+        mode: 'recurring',
+        lastCreatedAt: Date.now() - 120000,
+        lastMessageIdDeleted: null
+      }
+    });
+    await warService.createWar(staleWar);
+
+    const mocks = createSchedulerMocks();
+    initScheduler(mocks.client);
+
+    await expect(checkAndExecuteEvents()).resolves.toBeUndefined();
+
+    const persisted = warService.loadWars().find(war => war.id === staleWar.id);
+    expect(persisted.messageId).toBeNull();
+    expect(persisted.isClosed).toBe(true);
+    expect(persisted.schedule.lastMessageIdDeleted).toBe(Date.now());
+  });
+
+  it('publica drafts web programados sin duplicar mensajes', async () => {
+    vi.useFakeTimers();
+    const dueAt = new Date('2026-05-05T22:00:00.000Z');
+    vi.setSystemTime(dueAt);
+
+    const scheduledWar = buildWar({
+      id: 'web_scheduled_publish_1',
+      messageId: null,
+      isClosed: false,
+      autoPublishEnabled: true,
+      scheduledPublishAt: dueAt.getTime() - 60_000,
+      lastPublishAttemptAt: null,
+      publishError: null,
+      schedule: {
+        enabled: false,
+        mode: 'recurring',
+        lastCreatedAt: null,
+        lastMessageIdDeleted: null
+      }
+    });
+    await warService.createWar(scheduledWar);
+
+    const mocks = createSchedulerMocks();
+    initScheduler(mocks.client);
+    await checkAndExecuteEvents();
+    await checkAndExecuteEvents();
+
+    const persisted = warService.loadWars().find(war => war.id === scheduledWar.id);
+    expect(mocks.getSentCount()).toBe(1);
+    expect(persisted.messageId).toBe('scheduler_msg_1');
+    expect(persisted.autoPublishEnabled).toBe(false);
+    expect(persisted.publishError).toBeNull();
+  });
+
+  it('loadDueScheduledPublishEvents incluye drafts web escritos directo en Prisma', async () => {
+    const dueAt = new Date('2026-05-05T22:00:00.000Z');
+    await prisma.guild.upsert({
+      where: { id: 'guild_1' },
+      update: {},
+      create: { id: 'guild_1' }
+    });
+    await prisma.event.create({
+      data: {
+        id: 'web_direct_due_1',
+        eventType: 'war',
+        accessMode: 'OPEN',
+        name: 'Web direct due',
+        type: 'Node War',
+        creatorId: 'user_1',
+        guildId: 'guild_1',
+        channelId: 'channel_1',
+        messageId: null,
+        dayOfWeek: 2,
+        time: '23:00',
+        timezone: 'America/Santiago',
+        duration: 60,
+        closeBeforeMinutes: 0,
+        autoPublishEnabled: true,
+        scheduledPublishAt: new Date(dueAt.getTime() - 60_000),
+        createdAt: new Date(dueAt.getTime() - 120_000),
+        closesAt: dueAt,
+        expiresAt: new Date(dueAt.getTime() + 60 * 60_000),
+        isClosed: false,
+        roleSlots: {
+          create: [{ position: 0, name: 'Flex', max: 5 }]
+        }
+      }
+    });
+
+    const due = await warService.loadDueScheduledPublishEvents(dueAt);
+
+    expect(due.some(event => event.id === 'web_direct_due_1')).toBe(true);
+  });
+
+  it('guarda error controlado si falla auto publish programado', async () => {
+    vi.useFakeTimers();
+    const dueAt = new Date('2026-05-05T22:00:00.000Z');
+    vi.setSystemTime(dueAt);
+
+    const scheduledWar = buildWar({
+      id: 'web_scheduled_publish_error_1',
+      messageId: null,
+      isClosed: false,
+      autoPublishEnabled: true,
+      scheduledPublishAt: dueAt.getTime() - 60_000,
+      lastPublishAttemptAt: null,
+      publishError: null,
+      schedule: {
+        enabled: false,
+        mode: 'recurring',
+        lastCreatedAt: null,
+        lastMessageIdDeleted: null
+      }
+    });
+    await warService.createWar(scheduledWar);
+
+    const client = {
+      channels: {
+        fetch: async () => null
+      }
+    };
+    initScheduler(client);
+    await checkAndExecuteEvents();
+
+    const persisted = warService.loadWars().find(war => war.id === scheduledWar.id);
+    expect(persisted.messageId).toBeNull();
+    expect(persisted.publishError).toBeTruthy();
+    expect(persisted.lastPublishAttemptAt).toBe(dueAt.getTime());
   });
 });

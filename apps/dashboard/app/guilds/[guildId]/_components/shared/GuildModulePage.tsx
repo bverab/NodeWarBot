@@ -27,13 +27,14 @@ export async function GuildModulePage({
   body,
   icon: Icon
 }: GuildModulePageProps) {
-  const { activeGuild, availableGuilds, session } = await getGuildPageContext(guildId, preview);
+  const { activeGuild, availableGuilds, guildResolutionError, session } = await getGuildPageContext(guildId, preview);
 
   if (!activeGuild) {
     return (
       <GuildNotFound
         availableGuilds={availableGuilds}
         preview={preview}
+        resolutionError={guildResolutionError}
         userImage={session?.user?.image}
         userName={session?.user?.name ?? session?.user?.email}
       />

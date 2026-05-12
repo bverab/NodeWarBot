@@ -1,8 +1,35 @@
 import type { EventMutationInput, RoleSlotMutationInput, TemplateMutationInput } from "@/lib/server/dashboardData";
+import { buildEventDateTime, normalizeTimezoneInfo } from "@/lib/eventDateTime";
 
-export function parseOptionalDate(value: unknown) {
+export const PUBLISHED_EVENT_LOCKED_FIELDS = [
+  "eventType",
+  "time",
+  "timezone",
+  "duration",
+  "closeBeforeMinutes",
+  "autoPublishEnabled",
+  "scheduledPublishAt",
+  "publishBeforeMinutes",
+  "publishError",
+  "lastPublishAttemptAt",
+  "closesAt",
+  "expiresAt",
+  "channelId",
+  "messageId"
+] as const;
+
+export function getLockedPublishedEventPatchFields(body: Record<string, unknown>) {
+  return PUBLISHED_EVENT_LOCKED_FIELDS.filter((field) => Object.prototype.hasOwnProperty.call(body, field));
+}
+
+export function parseOptionalDate(value: unknown, timezone?: string | null) {
   if (typeof value !== "string" || !value.trim()) {
     return undefined;
+  }
+
+  const localMatch = value.trim().match(/^(\d{4}-\d{2}-\d{2})T(\d{1,2}:\d{2})$/);
+  if (localMatch && timezone) {
+    return buildEventDateTime({ date: localMatch[1], time: localMatch[2], timezone: normalizeTimezoneInfo(timezone).timezone });
   }
 
   const date = new Date(value);
@@ -46,15 +73,38 @@ export function readTime(value: unknown) {
     return undefined;
   }
 
-  const trimmed = value.trim();
-  if (!trimmed) {
+  const normalized = normalizeTimeInput(value);
+  if (normalized === undefined) {
     return null;
   }
 
-  return /^\d{1,2}:\d{2}$/.test(trimmed) ? trimmed : "INVALID";
+  return normalized ?? "INVALID";
 }
 
-export function parseEventPatch(body: Record<string, unknown>) {
+export function normalizeTimeInput(value: unknown) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const match = trimmed.match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!match) {
+    return null;
+  }
+
+  const hour = Number(match[1]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    return null;
+  }
+
+  return `${String(hour).padStart(2, "0")}:${match[2]}`;
+}
+
+export function parseEventPatch(body: Record<string, unknown>, options: { timezone?: string | null } = {}) {
   const patch: EventMutationInput = {};
 
   const name = readString(body.name, 120);
@@ -67,8 +117,7 @@ export function parseEventPatch(body: Record<string, unknown>) {
 
   for (const [key, max] of [
     ["eventType", 32],
-    ["type", 64],
-    ["timezone", 64]
+    ["type", 64]
   ] as const) {
     const value = readString(body[key], max);
     if (value !== undefined) {
@@ -77,6 +126,15 @@ export function parseEventPatch(body: Record<string, unknown>) {
       }
       patch[key] = value;
     }
+  }
+
+  const timezone = readString(body.timezone, 64);
+  if (timezone !== undefined) {
+    const timezoneInfo = normalizeTimezoneInfo(timezone);
+    if (timezoneInfo.source === "fallback" && timezone.trim()) {
+      return { error: "Timezone must be a valid IANA timezone." } as const;
+    }
+    patch.timezone = timezoneInfo.timezone;
   }
 
   const time = readTime(body.time);
@@ -97,6 +155,11 @@ export function parseEventPatch(body: Record<string, unknown>) {
     patch.closeBeforeMinutes = closeBeforeMinutes;
   }
 
+  const autoPublishEnabled = readBoolean(body.autoPublishEnabled);
+  if (autoPublishEnabled !== undefined) {
+    patch.autoPublishEnabled = autoPublishEnabled;
+  }
+
   const isClosed = readBoolean(body.isClosed);
   if (isClosed !== undefined) {
     patch.isClosed = isClosed;
@@ -112,7 +175,8 @@ export function parseEventPatch(body: Record<string, unknown>) {
     patch.messageId = messageId;
   }
 
-  const closesAt = parseOptionalDate(body.closesAt);
+  const patchTimezone = typeof patch.timezone === "string" ? patch.timezone : normalizeTimezoneInfo(options.timezone).timezone;
+  const closesAt = parseOptionalDate(body.closesAt, patchTimezone);
   if (closesAt === null) {
     return { error: "Invalid closesAt date." } as const;
   }
@@ -120,7 +184,7 @@ export function parseEventPatch(body: Record<string, unknown>) {
     patch.closesAt = closesAt;
   }
 
-  const expiresAt = parseOptionalDate(body.expiresAt);
+  const expiresAt = parseOptionalDate(body.expiresAt, patchTimezone);
   if (expiresAt === null) {
     return { error: "Invalid expiresAt date." } as const;
   }
@@ -144,8 +208,7 @@ export function parseTemplatePatch(body: Record<string, unknown>) {
 
   for (const [key, max] of [
     ["eventType", 32],
-    ["typeDefault", 64],
-    ["timezone", 64]
+    ["typeDefault", 64]
   ] as const) {
     const value = readString(body[key], max);
     if (value !== undefined) {
@@ -154,6 +217,15 @@ export function parseTemplatePatch(body: Record<string, unknown>) {
       }
       patch[key] = value;
     }
+  }
+
+  const timezone = readString(body.timezone, 64);
+  if (timezone !== undefined) {
+    const timezoneInfo = normalizeTimezoneInfo(timezone);
+    if (timezoneInfo.source === "fallback" && timezone.trim()) {
+      return { error: "Timezone must be a valid IANA timezone." } as const;
+    }
+    patch.timezone = timezoneInfo.timezone;
   }
 
   const time = readTime(body.time);
@@ -211,6 +283,16 @@ export function parseRoleSlotPatch(body: Record<string, unknown>, requireNameAnd
   const emojiSource = readNullableString(body.emojiSource, 64);
   if (emojiSource !== undefined) {
     patch.emojiSource = emojiSource;
+  }
+
+  if (Array.isArray(body.allowedRoleIds)) {
+    const roleIds = body.allowedRoleIds
+      .map((roleId) => (typeof roleId === "string" ? roleId.trim() : ""))
+      .filter(Boolean);
+    if (roleIds.some((roleId) => !/^\d{5,32}$/.test(roleId))) {
+      return { error: "Allowed role IDs must be valid Discord role IDs." } as const;
+    }
+    patch.allowedRoleIds = Array.from(new Set(roleIds)).slice(0, 25);
   }
 
   if (requireNameAndMax && (!patch.name || !patch.max)) {

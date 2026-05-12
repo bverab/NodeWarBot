@@ -1,3 +1,5 @@
+"use client";
+
 import { RefreshCw, Shield } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { routes } from "@/constants/routes";
@@ -5,16 +7,24 @@ import { EmptyState } from "./EmptyState";
 
 type ErrorStateProps = {
   message: string;
+  onRetry?: () => void;
 };
 
-export function ErrorState({ message }: ErrorStateProps) {
+export function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
     <EmptyState
       action={
-        <Button href={routes.login}>
-          <RefreshCw size={17} aria-hidden="true" />
-          Reconnect
-        </Button>
+        onRetry ? (
+          <Button onClick={onRetry} type="button">
+            <RefreshCw size={17} aria-hidden="true" />
+            Retry
+          </Button>
+        ) : (
+          <Button href={routes.login}>
+            <RefreshCw size={17} aria-hidden="true" />
+            Reconnect
+          </Button>
+        )
       }
       eyebrow="Access state"
       icon={Shield}

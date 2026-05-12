@@ -20,10 +20,10 @@ type PageProps = {
 
 export default async function PveEventsPage({ params, searchParams }: PageProps) {
   const [{ guildId }, query] = await Promise.all([params, searchParams]);
-  const { activeGuild, availableGuilds, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
+  const { activeGuild, availableGuilds, guildResolutionError, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
 
   if (!activeGuild) {
-    return <GuildNotFound availableGuilds={availableGuilds} preview={preview} userImage={session?.user?.image} userName={session?.user?.name ?? session?.user?.email} />;
+    return <GuildNotFound availableGuilds={availableGuilds} preview={preview} resolutionError={guildResolutionError} userImage={session?.user?.image} userName={session?.user?.name ?? session?.user?.email} />;
   }
 
   const events = await getGuildEventsByType(activeGuild.id, "pve");
@@ -68,7 +68,11 @@ export default async function PveEventsPage({ params, searchParams }: PageProps)
                   {events.map((event) => (
                     <tr key={event.id}>
                       <td>{event.name}</td>
-                      <td><span className={`${styles.status} ${event.status === "draft" ? styles.statusDraft : ""}`}>{event.status}</span></td>
+                      <td>
+                        <span className={`${styles.status} ${event.status === "draft" ? styles.statusDraft : ""}`}>
+                          {event.published ? event.status : event.autoPublishEnabled ? "scheduled" : event.status}
+                        </span>
+                      </td>
                       <td>{event.time ? `${event.time} ${event.timezone}` : formatDateTime(event.closesAt)}</td>
                       <td>{event.participantCount}</td>
                       <td>{event.fillerCount}</td>
@@ -119,22 +123,22 @@ export default async function PveEventsPage({ params, searchParams }: PageProps)
                       <td className={styles.actionCell}>
                         {activeGuild.manageable && !event.published ? (
                           <ConfirmResourceAction
-                            actionAriaLabel={`Delete draft ${event.name}`}
+                            actionAriaLabel={`Delete ${event.name} permanently`}
                             actionClassName={`${styles.iconActionButton} ${styles.deleteIconButton}`}
                             actionIcon={<Trash2 size={16} aria-hidden="true" />}
-                            actionLabel="Delete draft"
-                            body={`You are about to delete the draft PvE event "${event.name}". This event has not been published to Discord. This action cannot be undone.`}
-                            confirmLabel="Delete draft"
+                            actionLabel="Delete permanently"
+                            body={`This will permanently delete "${event.name}" from Spectre. It is not currently linked to a Discord message. This action cannot be undone.`}
+                            confirmLabel="Delete permanently"
                             endpoint={`/api/guilds/${activeGuild.id}/events/${event.id}/delete-draft`}
                             resourceName={event.name}
-                            title="Delete draft event?"
+                            title="Delete event permanently?"
                             triggerIconOnly
                           />
                         ) : (
                           <DisabledIconAction
                             ariaLabel={`Delete unavailable for ${event.name}`}
                             className={`${styles.iconActionButton} ${styles.deleteIconButton}`}
-                            title="Published events can be archived, but Discord messages are not deleted in this phase."
+                            title="Unpublish from Discord before deleting this event."
                           >
                             <Trash2 size={16} aria-hidden="true" />
                           </DisabledIconAction>

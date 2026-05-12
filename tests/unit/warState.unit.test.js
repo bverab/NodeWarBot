@@ -13,7 +13,14 @@ describe('warState utils', () => {
     expect(war.duration).toBeGreaterThan(0);
     expect(Array.isArray(war.roles)).toBe(true);
     expect(war.schedule).toBeTruthy();
+    expect(war.schedule.mode).toBe('once');
     expect(war.recap).toBeTruthy();
+  });
+
+  it('mantiene recurring solo cuando el schedule lo declara explicitamente', () => {
+    expect(normalizeWar({ id: 'single_missing_schedule' }).schedule.mode).toBe('once');
+    expect(normalizeWar({ id: 'single_once', schedule: { mode: 'once', enabled: false } }).schedule.mode).toBe('once');
+    expect(normalizeWar({ id: 'weekly', schedule: { mode: 'recurring', enabled: true } }).schedule.mode).toBe('recurring');
   });
 
   it('garantiza unicidad de usuario al remover de todos los roles', () => {

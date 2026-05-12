@@ -9,17 +9,20 @@ import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 type GuildNotFoundProps = {
   availableGuilds: DashboardGuildSummary[];
   preview?: boolean;
+  resolutionError?: string | null;
   userImage?: string | null;
   userName?: string | null;
 };
 
-export function GuildNotFound({ availableGuilds, preview = false, userImage, userName }: GuildNotFoundProps) {
+export function GuildNotFound({ availableGuilds, preview = false, resolutionError = null, userImage, userName }: GuildNotFoundProps) {
+  const transient = Boolean(resolutionError);
+
   return (
     <DashboardLayout
       availableGuilds={availableGuilds}
       preview={preview}
-      title="Guild not found"
-      description="Spectre could not resolve this Discord server for your dashboard session."
+      title={transient ? "Guild verification unavailable" : "Guild not found"}
+      description={transient ? "Spectre could not verify Discord guild access right now." : "Spectre could not resolve this Discord server for your dashboard session."}
       userImage={userImage}
       userName={userName}
     >
@@ -28,12 +31,13 @@ export function GuildNotFound({ availableGuilds, preview = false, userImage, use
           <AlertTriangle size={26} aria-hidden="true" />
         </span>
         <span className={styles.eyebrow}>Access check</span>
-        <h3>Bot may not be installed in this guild.</h3>
+        <h3>{transient ? "Discord guild verification failed temporarily." : "Bot may not be installed in this guild."}</h3>
         <p>
-          The server is not part of the shared guild set returned by Discord OAuth and the Spectre bot token. Reconnect
-          or choose another available guild.
+          {transient
+            ? resolutionError
+            : "The server is not part of the shared guild set returned by Discord OAuth and the Spectre bot token. Reconnect or choose another available guild."}
         </p>
-        <Button href={routes.guilds}>Back to guilds</Button>
+        <Button href={transient ? routes.guilds : routes.guilds}>{transient ? "Retry guilds" : "Back to guilds"}</Button>
       </Card>
     </DashboardLayout>
   );

@@ -1,5 +1,10 @@
 const { normalizeEventType } = require('../constants/eventTypes');
-const { buildEventMessagePayload, buildEventReadOnlyPayload, getEventMentionableUserIds } = require('./eventRenderService');
+const { buildEventReadOnlyPayload, getEventMentionableUserIds } = require('./eventRenderService');
+const {
+  publishEventToDiscord,
+  updateEventDiscordMessage,
+  deleteEventDiscordMessage
+} = require('./discordEventSyncService');
 const warService = require('./warService');
 const { shouldExecute } = require('../utils/cronHelper');
 const pveService = require('./pveService');
@@ -8,6 +13,8 @@ const { logInfo, logWarn, logError } = require('../utils/appLogger');
 
 let schedulerInstance = null;
 let checkInterval = null;
+let scheduledPublishRunning = false;
+let scheduledPublishPromise = null;
 
 /**
  * Inicializa el scheduler - debe llamarse una sola vez en index.js
@@ -50,6 +57,8 @@ function stopScheduler() {
     checkInterval = null;
   }
   schedulerInstance = null;
+  scheduledPublishRunning = false;
+  scheduledPublishPromise = null;
   logInfo('Scheduler detenido');
 }
 
@@ -64,6 +73,8 @@ async function checkAndExecuteEvents() {
     const wars = warService.loadWars();
     const nowMs = Date.now();
     const now = new Date(nowMs);
+
+    await processScheduledWebPublishes(now);
 
     for (const war of wars) {
       if (war.messageId && !war.isClosed && Number.isFinite(war.closesAt) && nowMs >= war.closesAt) {
@@ -99,6 +110,156 @@ async function checkAndExecuteEvents() {
   }
 }
 
+async function processScheduledWebPublishes(now = new Date()) {
+  const { client } = schedulerInstance || {};
+  if (!client) return;
+  if (scheduledPublishRunning) {
+    return scheduledPublishPromise;
+  }
+
+  scheduledPublishRunning = true;
+  scheduledPublishPromise = (async () => {
+    logInfo('[scheduler:auto-publish] cycle started', {
+      now: now.toISOString()
+    });
+    const candidates = await warService.loadDueScheduledPublishEvents(now);
+    logInfo('[scheduler:auto-publish] due events loaded', {
+      count: candidates.length,
+      events: candidates.slice(0, 10).map(event => ({
+        eventId: event.id,
+        title: event.name,
+        guildId: event.guildId,
+        channelId: event.channelId,
+        scheduledPublishAt: event.scheduledPublishAt ? new Date(event.scheduledPublishAt).toISOString() : null
+      }))
+    });
+    for (const event of candidates) {
+      await publishScheduledWebEvent(event, now);
+    }
+  })();
+
+  try {
+    await scheduledPublishPromise;
+  } finally {
+    scheduledPublishRunning = false;
+    scheduledPublishPromise = null;
+  }
+}
+
+async function publishScheduledWebEvent(event, now = new Date()) {
+  const { client } = schedulerInstance || {};
+  if (!client) return;
+
+  const attemptedAt = now instanceof Date ? now : new Date(now);
+  if (!event.channelId) {
+    const errorMessage = 'Select a Discord channel before enabling scheduled publish.';
+    logWarn('[scheduler:auto-publish] skipped event without channel', {
+      eventId: event.id,
+      title: event.name,
+      scheduledPublishAt: event.scheduledPublishAt ? new Date(event.scheduledPublishAt).toISOString() : null
+    });
+    await warService.markScheduledPublishAttempt(event.id, errorMessage, attemptedAt);
+    await warService.updateWar({ ...event, publishError: errorMessage, lastPublishAttemptAt: attemptedAt.getTime() });
+    return;
+  }
+
+  try {
+    const { content, allowedMentions } = buildScheduledPublicationMentions(event);
+    const publishResult = await publishEventToDiscord({
+      client,
+      event,
+      channelId: event.channelId,
+      messageOptions: {
+        content,
+        allowedMentions
+      }
+    });
+
+    if (!publishResult.ok) {
+      const errorMessage = publishResult.errorMessage || publishResult.status || 'Scheduled publish failed.';
+      await warService.markScheduledPublishAttempt(
+        event.id,
+        errorMessage,
+        attemptedAt
+      );
+      await warService.updateWar({ ...event, publishError: errorMessage, lastPublishAttemptAt: attemptedAt.getTime() });
+      logWarn('[scheduler:auto-publish] publish failed', {
+        action: 'scheduler_web_auto_publish',
+        eventId: event.id,
+        guildId: event.guildId,
+        channelId: event.channelId,
+        reason: publishResult.errorMessage || publishResult.status
+      });
+      return;
+    }
+
+    const persisted = await warService.completeScheduledPublishIfUnpublished(event.id, publishResult.messageId, attemptedAt);
+    if (!persisted.count) {
+      await deleteEventDiscordMessage({
+        client,
+        event: {
+          ...event,
+          messageId: publishResult.messageId,
+          channelId: publishResult.channelId || event.channelId
+        }
+      });
+      logWarn('[scheduler:auto-publish] compensated duplicate publish race', {
+        action: 'scheduler_web_auto_publish_compensate',
+        eventId: event.id,
+        guildId: event.guildId,
+        messageId: publishResult.messageId
+      });
+      return;
+    }
+
+    await warService.updateWar({
+      ...event,
+      messageId: publishResult.messageId,
+      autoPublishEnabled: false,
+      publishError: null,
+      lastPublishAttemptAt: attemptedAt.getTime()
+    });
+
+    logInfo('[scheduler:auto-publish] published event', {
+      action: 'scheduler_web_auto_publish',
+      eventId: event.id,
+      guildId: event.guildId,
+      channelId: event.channelId,
+      messageId: publishResult.messageId
+    });
+  } catch (error) {
+    const errorMessage = error?.message || 'Scheduled publish failed.';
+    await warService.markScheduledPublishAttempt(event.id, errorMessage, attemptedAt);
+    await warService.updateWar({ ...event, publishError: errorMessage, lastPublishAttemptAt: attemptedAt.getTime() });
+    logError('Error en auto publish web programado', error, {
+      action: 'scheduler_web_auto_publish',
+      eventId: event.id,
+      guildId: event.guildId,
+      channelId: event.channelId
+    });
+  }
+}
+
+function buildScheduledPublicationMentions(event) {
+  const isRestrictedPve = normalizeEventType(event.eventType) === 'pve'
+    && String(event.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
+  const notifyTargets = isRestrictedPve
+    ? Array.from(new Set((Array.isArray(event.allowedUserIds) ? event.allowedUserIds : []).map(String).filter(Boolean)))
+    : Array.from(new Set((Array.isArray(event.notifyRoles) ? event.notifyRoles : []).map(String).filter(Boolean)));
+  const content = notifyTargets.length > 0
+    ? (isRestrictedPve
+      ? notifyTargets.map(userId => `<@${userId}>`).join(' ')
+      : notifyTargets.map(roleId => `<@&${roleId}>`).join(' '))
+    : 'Evento publicado automaticamente';
+
+  return {
+    content: safeMessageContent(content, 'Evento publicado automaticamente'),
+    allowedMentions: notifyTargets.length > 0
+      ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
+      : { parse: [] }
+  };
+}
+
 /**
  * Obtiene string de fecha (YYYY-MM-DD)
  */
@@ -116,31 +277,18 @@ async function executeWarPublication(war) {
   const { client } = schedulerInstance;
 
   try {
-    const channel = await client.channels.fetch(war.channelId).catch(() => null);
-    if (!channel) {
-      logWarn('No se encontro canal para evento programado', {
-        action: 'scheduler_publish',
-        eventId: war.id,
-        warId: war.id,
-        guildId: war.guildId,
-        channelId: war.channelId
-      });
-      return;
-    }
-
     if (war.messageId) {
-      try {
-        const oldMessage = await channel.messages.fetch(war.messageId);
-        await oldMessage.delete();
+      const deleteResult = await deleteEventDiscordMessage({ client, event: war });
+      if (deleteResult.ok) {
         logInfo('Mensaje anterior eliminado en scheduler', { warId: war.id, messageId: war.messageId });
-      } catch (error) {
+      } else if (deleteResult.status !== 'missing_message') {
         logWarn('No se pudo eliminar mensaje anterior en scheduler', {
           action: 'scheduler_publish',
           eventId: war.id,
           guildId: war.guildId,
           warId: war.id,
           messageId: war.messageId,
-          reason: error?.message || 'unknown'
+          reason: deleteResult.errorMessage || deleteResult.status
         });
       }
     }
@@ -188,16 +336,29 @@ async function executeWarPublication(war) {
       await pveService.resetEventEnrollments(war.id);
     }
 
-    const payload = await buildEventMessagePayload(warForPublication);
-    const message = await channel.send({
-      content: safeMessageContent(publishContent, 'Evento creado automaticamente'),
-      allowedMentions: notifyTargets.length > 0
-        ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
-        : { parse: [] },
-      ...payload
+    const publishResult = await publishEventToDiscord({
+      client,
+      event: warForPublication,
+      messageOptions: {
+        content: safeMessageContent(publishContent, 'Evento creado automaticamente'),
+        allowedMentions: notifyTargets.length > 0
+          ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
+          : { parse: [] }
+      }
     });
+    if (!publishResult.ok) {
+      logWarn('No se encontro canal para evento programado', {
+        action: 'scheduler_publish',
+        eventId: war.id,
+        warId: war.id,
+        guildId: war.guildId,
+        channelId: war.channelId,
+        reason: publishResult.errorMessage || publishResult.status
+      });
+      return;
+    }
 
-    warForPublication.messageId = message.id;
+    warForPublication.messageId = publishResult.messageId;
     warForPublication.schedule.lastCreatedAt = publicationTimestamp;
     if (warForPublication.schedule?.mode === 'once') {
       warForPublication.schedule.enabled = false;
@@ -210,7 +371,7 @@ async function executeWarPublication(war) {
       warId: war.id,
       guildId: war.guildId,
       channelId: war.channelId,
-      messageId: message.id
+      messageId: publishResult.messageId
     });
   } catch (error) {
     logError('Error publicando evento programado', error, {
@@ -289,24 +450,19 @@ async function closeWarSignups(war) {
   const { client } = schedulerInstance;
 
   try {
-    const channel = await client.channels.fetch(war.channelId).catch(() => null);
     war.isClosed = true;
 
-    if (channel && channel.messages?.fetch && war.messageId) {
-      try {
-        const message = await channel.messages.fetch(war.messageId);
-        await message.edit(await buildEventMessagePayload(war));
-      } catch (error) {
-        if (error?.code !== 10008) {
-          logWarn('No se pudo actualizar cierre de inscripciones', {
-            action: 'scheduler_close_signups',
-            eventId: war.id,
-            warId: war.id,
-            guildId: war.guildId,
-            channelId: war.channelId,
-            reason: error?.message || 'unknown'
-          });
-        }
+    if (war.messageId) {
+      const updateResult = await updateEventDiscordMessage({ client, event: war });
+      if (!updateResult.ok && updateResult.status !== 'missing_message') {
+        logWarn('No se pudo actualizar cierre de inscripciones', {
+          action: 'scheduler_close_signups',
+          eventId: war.id,
+          warId: war.id,
+          guildId: war.guildId,
+          channelId: war.channelId,
+          reason: updateResult.errorMessage || updateResult.status
+        });
       }
     }
 
@@ -326,29 +482,16 @@ async function expireWarMessage(war) {
   const { client } = schedulerInstance;
 
   try {
-    const channel = await client.channels.fetch(war.channelId).catch(() => null);
-    if (!channel) {
-      war.messageId = null;
-      war.isClosed = true;
-      war.schedule.lastMessageIdDeleted = Date.now();
-      await warService.updateWar(war);
-      return;
-    }
-
-    try {
-      const message = await channel.messages.fetch(war.messageId);
-      await message.delete();
-    } catch (error) {
-      if (error?.code !== 10008) {
-        logWarn('No se pudo eliminar evento expirado', {
-          action: 'scheduler_expire_event',
-          eventId: war.id,
-          warId: war.id,
-          guildId: war.guildId,
-          channelId: war.channelId,
-          reason: error?.message || 'unknown'
-        });
-      }
+    const deleteResult = await deleteEventDiscordMessage({ client, event: war });
+    if (!deleteResult.ok && deleteResult.status !== 'missing_message' && deleteResult.status !== 'missing_channel') {
+      logWarn('No se pudo eliminar evento expirado', {
+        action: 'scheduler_expire_event',
+        eventId: war.id,
+        warId: war.id,
+        guildId: war.guildId,
+        channelId: war.channelId,
+        reason: deleteResult.errorMessage || deleteResult.status
+      });
     }
 
     war.messageId = null;
@@ -388,5 +531,6 @@ module.exports = {
   initScheduler,
   stopScheduler,
   checkAndExecuteEvents,
+  processScheduledWebPublishes,
   getSchedulerStatus
 };

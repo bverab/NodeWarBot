@@ -1,5 +1,6 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card } from "@/components/ui/Card";
+import { normalizeTimezone } from "@/lib/eventDateTime";
 import { getGuildTemplates } from "@/lib/server/dashboardData";
 import { getGuildPostChannels, getGuildRoles } from "@/lib/server/discordGuildConfig";
 import { GuildNotFound } from "@/app/guilds/[guildId]/_components/shared/GuildNotFound";
@@ -15,13 +16,14 @@ type PageProps = {
 
 export default async function NewEventPage({ params, searchParams }: PageProps) {
   const [{ guildId }, query] = await Promise.all([params, searchParams]);
-  const { activeGuild, availableGuilds, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
+  const { activeGuild, availableGuilds, guildResolutionError, preview, session } = await getGuildPageContext(guildId, query?.preview === "1");
 
   if (!activeGuild) {
     return (
       <GuildNotFound
         availableGuilds={availableGuilds}
         preview={preview}
+        resolutionError={guildResolutionError}
         userImage={session?.user?.image}
         userName={session?.user?.name ?? session?.user?.email}
       />
@@ -63,7 +65,7 @@ export default async function NewEventPage({ params, searchParams }: PageProps) 
               name: template.name,
               eventType: template.eventType,
               typeDefault: template.typeDefault,
-              timezone: template.timezone,
+              timezone: normalizeTimezone(template.timezone),
               time: template.time,
               duration: template.duration,
               closeBeforeMinutes: template.closeBeforeMinutes,
