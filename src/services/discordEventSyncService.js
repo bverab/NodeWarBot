@@ -198,7 +198,8 @@ async function updateEventDiscordMessage({ guild = null, client = null, event, m
   }
 
   try {
-    const payload = await buildEventMessagePayload(event);
+    const payloadEvent = loadFreshEventForRender(event) || event;
+    const payload = await buildEventMessagePayload(payloadEvent);
     await messageResult.message.edit({
       ...messageOptions,
       ...payload
@@ -217,6 +218,16 @@ async function updateEventDiscordMessage({ guild = null, client = null, event, m
       messageId: messageResult.messageId,
       ...normalizeDiscordError(error)
     });
+  }
+}
+
+function loadFreshEventForRender(event) {
+  if (!event?.id) return null;
+  try {
+    const warService = require('./warService');
+    return warService.loadWars().find(entry => entry.id === String(event.id)) || null;
+  } catch {
+    return null;
   }
 }
 

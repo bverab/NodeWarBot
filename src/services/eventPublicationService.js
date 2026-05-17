@@ -8,6 +8,13 @@ const warService = require('./warService');
 const pveService = require('./pveService');
 const { safeMessageContent } = require('../utils/textSafety');
 const { logWarn, logInfo } = require('../utils/appLogger');
+const {
+  applyLifecycleToWar,
+  deriveLifecycleForExistingEvent,
+  deriveLifecycleForScheduledEvent,
+  formatTimeInEventZone,
+  validateFutureLifecycle
+} = require('../utils/eventLifecycleTimes');
 
 function normalizeNotifyRoles(war) {
   if (normalizeEventType(war.eventType) === 'pve' && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED') {
@@ -89,6 +96,22 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
   const { content, allowedMentions } = buildPublicationMentions(war);
   const isExpired = Number.isFinite(normalizedWar.expiresAt) && normalizedWar.expiresAt > 0 && nowMs >= normalizedWar.expiresAt;
   const mustRepublish = shouldActivate && (isExpired || !normalizedWar.messageId);
+  if (shouldActivate && !mustRepublish) {
+    if (
+      !Number.isFinite(normalizedWar.closesAt)
+      || !Number.isFinite(normalizedWar.expiresAt)
+      || normalizedWar.closesAt >= normalizedWar.expiresAt
+      || normalizedWar.closesAt <= nowMs
+      || normalizedWar.expiresAt <= nowMs
+    ) {
+      return {
+        ok: false,
+        status: 'invalid_lifecycle',
+        reason: 'Signup Close Time y Event End Time deben estar en el futuro, y Signup Close Time debe ser menor que Event End Time.',
+        errorCode: null
+      };
+    }
+  }
 
   if (normalizedWar.messageId && !mustRepublish) {
     const updateResult = await updateEventDiscordMessage({
@@ -141,18 +164,35 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
     }
   }
 
-  const durationMinutes = Number.isFinite(normalizedWar.duration) && normalizedWar.duration > 0 ? normalizedWar.duration : 70;
-  const closeBeforeMinutes = Number.isFinite(normalizedWar.closeBeforeMinutes) && normalizedWar.closeBeforeMinutes >= 0
-    ? Math.floor(normalizedWar.closeBeforeMinutes)
-    : 0;
-  const expiresAt = nowMs + durationMinutes * 60 * 1000;
-  const closesAt = Math.max(nowMs, expiresAt - closeBeforeMinutes * 60 * 1000);
+  const lifecycle = Number.isInteger(normalizedWar.dayOfWeek) && normalizedWar.time
+    ? deriveLifecycleForScheduledEvent({
+        dayOfWeek: normalizedWar.dayOfWeek,
+        publishTime: normalizedWar.time,
+        signupCloseTime: formatTimeInEventZone(normalizedWar.closesAt, normalizedWar.timezone, normalizedWar.time || '22:30'),
+        eventEndTime: formatTimeInEventZone(normalizedWar.expiresAt, normalizedWar.timezone, '23:00'),
+        timezone: normalizedWar.timezone,
+        now: new Date(nowMs)
+      })
+    : deriveLifecycleForExistingEvent({
+        event: normalizedWar,
+        publishTime: normalizedWar.time || formatTimeInEventZone(normalizedWar.createdAt, normalizedWar.timezone, '22:00'),
+        signupCloseTime: formatTimeInEventZone(normalizedWar.closesAt, normalizedWar.timezone, normalizedWar.time || '22:30'),
+        eventEndTime: formatTimeInEventZone(normalizedWar.expiresAt, normalizedWar.timezone, '23:00'),
+        timezone: normalizedWar.timezone,
+        now: new Date(nowMs)
+      });
+  const validation = validateFutureLifecycle(lifecycle, new Date(nowMs));
+  if (!validation.ok) {
+    return {
+      ok: false,
+      status: 'invalid_lifecycle',
+      reason: validation.message,
+      errorCode: null
+    };
+  }
 
-  const warForPublish = {
+  const warForPublish = applyLifecycleToWar({
     ...normalizedWar,
-    createdAt: nowMs,
-    expiresAt,
-    closesAt,
     isClosed: false,
     waitlist: shouldResetRoster ? [] : (Array.isArray(war.waitlist) ? war.waitlist : []),
     roles: Array.isArray(war.roles)
@@ -166,7 +206,7 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
       threadId: null,
       lastPostedAt: null
     }
-  };
+  }, lifecycle);
 
   if (normalizeEventType(war.eventType) === 'pve' && shouldResetRoster) {
     await pveService.resetEventEnrollments(war.id);

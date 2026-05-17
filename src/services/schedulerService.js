@@ -10,6 +10,11 @@ const { shouldExecute } = require('../utils/cronHelper');
 const pveService = require('./pveService');
 const { safeMessageContent, neutralizeMassMentions } = require('../utils/textSafety');
 const { logInfo, logWarn, logError } = require('../utils/appLogger');
+const {
+  applyLifecycleToWar,
+  deriveLifecycleForScheduledEvent,
+  formatTimeInEventZone
+} = require('../utils/eventLifecycleTimes');
 
 let schedulerInstance = null;
 let checkInterval = null;
@@ -294,10 +299,6 @@ async function executeWarPublication(war) {
     }
 
     const publicationTimestamp = Date.now();
-    const durationMinutes = Number.isFinite(war.duration) && war.duration > 0 ? war.duration : 70;
-    const closeBeforeMinutes = Number.isFinite(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0
-      ? Math.floor(war.closeBeforeMinutes)
-      : 0;
     const isRestrictedPve = normalizeEventType(war.eventType) === 'pve'
       && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
     const notifyTargets = isRestrictedPve
@@ -309,14 +310,26 @@ async function executeWarPublication(war) {
         : notifyTargets.map(roleId => `<@&${roleId}>`).join(' '))
       : 'Evento creado automaticamente';
 
-    const expiresAt = publicationTimestamp + durationMinutes * 60 * 1000;
-    const closesAt = Math.max(publicationTimestamp, expiresAt - closeBeforeMinutes * 60 * 1000);
+    const lifecycle = deriveLifecycleForScheduledEvent({
+      dayOfWeek: war.dayOfWeek,
+      publishTime: war.time,
+      signupCloseTime: formatTimeInEventZone(war.closesAt, war.timezone, war.time || '22:30'),
+      eventEndTime: formatTimeInEventZone(war.expiresAt, war.timezone, '23:00'),
+      timezone: war.timezone,
+      now: new Date(publicationTimestamp - 60_000)
+    });
+    if (!lifecycle) {
+      logWarn('No se pudo calcular ciclo absoluto para evento programado', {
+        action: 'scheduler_publish_lifecycle',
+        eventId: war.id,
+        guildId: war.guildId,
+        channelId: war.channelId
+      });
+      return;
+    }
 
-    const warForPublication = {
+    const warForPublication = applyLifecycleToWar({
       ...war,
-      createdAt: publicationTimestamp,
-      expiresAt,
-      closesAt,
       isClosed: false,
       recap: {
         ...(war.recap || {}),
@@ -330,7 +343,7 @@ async function executeWarPublication(war) {
             users: []
           }))
         : []
-    };
+    }, lifecycle);
 
     if (normalizeEventType(war.eventType) === 'pve') {
       await pveService.resetEventEnrollments(war.id);

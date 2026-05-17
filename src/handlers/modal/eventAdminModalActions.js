@@ -8,6 +8,13 @@ const { getSelectedEventContext, setSelectedEventContext } = require('../../util
 const { refreshWarMessage } = require('../../commands/eventadminShared');
 const { isValidTime } = require('../../utils/cronHelper');
 const {
+  applyLifecycleToWar,
+  deriveLifecycleForExistingEvent,
+  deriveLifecycleForScheduledEvent,
+  formatTimeInEventZone,
+  validateFutureLifecycle
+} = require('../../utils/eventLifecycleTimes');
+const {
   buildEventDataEditorPayload,
   buildEventMentionsEditorPayload,
   buildSeriesScheduleManagerPayload,
@@ -170,24 +177,15 @@ async function handleEventEditDataBasicModal(interaction) {
     maxLength: 100,
     allowEmpty: true
   });
-  const durationRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_data_duration'), {
-    maxLength: 4,
-    fallback: ''
-  }).value;
   const name = nameInput.value;
   const type = typeInput.value || '';
-  const duration = Number.parseInt(durationRaw, 10);
   if (!name) return await safeModalReply(interaction, { content: 'Nombre invalido.' });
-  if (!Number.isInteger(duration) || duration < 1 || duration > 1440) {
-    return await safeModalReply(interaction, { content: 'Duracion invalida. Debe estar entre 1 y 1440.' });
-  }
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
   for (const war of targets) {
     war.name = name;
     war.type = type || war.type;
-    war.duration = duration;
     const updated = await updateWar(war);
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
@@ -211,28 +209,40 @@ async function handleEventEditCloseModal(interaction) {
   const context = getSelectedWarContext(interaction);
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
-  const closeRaw = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_close_value'), {
-    maxLength: 4,
+  const signupCloseTime = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_signup_close_time'), {
+    maxLength: 5,
     fallback: ''
   }).value;
-  const closeBefore = Number.parseInt(closeRaw, 10);
-  const duration = Number.isInteger(context.war.duration) ? context.war.duration : 1440;
-  if (!Number.isInteger(closeBefore) || closeBefore < 0 || closeBefore >= duration) {
-    return await safeModalReply(interaction, { content: `Cierre invalido. Usa 0 a ${Math.max(0, duration - 1)}.` });
+  const eventEndTime = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_event_end_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
+
+  if (!isValidTime(signupCloseTime) || !isValidTime(eventEndTime)) {
+    return await safeModalReply(interaction, { content: 'Horas invalidas. Usa HH:mm.' });
   }
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
   for (const war of targets) {
-    war.closeBeforeMinutes = closeBefore;
-    const updated = await updateWar(war);
+    const lifecycle = deriveLifecycleForExistingEvent({
+      event: war,
+      publishTime: formatTimeInEventZone(war.createdAt, war.timezone, war.time || '22:00'),
+      signupCloseTime,
+      eventEndTime,
+      timezone: war.timezone
+    });
+    const validation = validateLifecycleForEdit(war, lifecycle, { allowPastPublish: true });
+    if (!validation.ok) return await safeModalReply(interaction, { content: validation.message });
+
+    const updated = await updateWar(applyLifecycleToWar(war, lifecycle));
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
 
   const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
   const refreshed = refreshedWars.find(war => war.id === context.war.id) || context.war;
   const scopeLabel = context.context.scope === 'series' ? 'toda la serie' : 'esta ocurrencia';
-  const notice = `Cierre de inscripciones actualizado (${scopeLabel}).`;
+  const notice = `Cierre y fin del evento actualizados (${scopeLabel}).`;
   if (shouldOfferPostEditDecision(refreshedWars)) {
     await showPostEditActivationDecision(interaction, refreshed, {
       eventIds: refreshedWars.map(war => war.id),
@@ -305,10 +315,21 @@ async function handleEventEditScheduleModal(interaction) {
     maxLength: 2,
     fallback: ''
   }).value;
+  const signupCloseTime = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_signup_close_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
+  const eventEndTime = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_event_end_time'), {
+    maxLength: 5,
+    fallback: ''
+  }).value;
   const day = Number.parseInt(dayRaw, 10);
 
   if (!isValidTime(time)) {
     return await safeModalReply(interaction, { content: 'Hora invalida. Usa HH:mm.' });
+  }
+  if (!isValidTime(signupCloseTime) || !isValidTime(eventEndTime)) {
+    return await safeModalReply(interaction, { content: 'Signup Close Time y Event End Time deben usar HH:mm.' });
   }
   if (!Number.isInteger(day) || day < 0 || day > 6) {
     return await safeModalReply(interaction, { content: 'Dia invalido. Usa un numero entre 0 y 6.' });
@@ -322,14 +343,24 @@ async function handleEventEditScheduleModal(interaction) {
     if (!war.schedule) {
       war.schedule = { enabled: false, mode: 'recurring' };
     }
-    const updated = await updateWar(war);
+    const lifecycle = deriveLifecycleForScheduledEvent({
+      dayOfWeek: war.dayOfWeek,
+      publishTime: war.time,
+      signupCloseTime,
+      eventEndTime,
+      timezone: war.timezone
+    });
+    const validation = validateLifecycleForEdit(war, lifecycle);
+    if (!validation.ok) return await safeModalReply(interaction, { content: validation.message });
+
+    const updated = await updateWar(applyLifecycleToWar(war, lifecycle));
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
 
   const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
   const refreshed = refreshedWars.find(war => war.id === context.war.id) || context.war;
   const scopeLabel = context.context.scope === 'series' ? 'toda la serie' : 'esta ocurrencia';
-  const notice = `Horario actualizado (${scopeLabel}): dia ${day}, ${time}.`;
+  const notice = `Horario actualizado (${scopeLabel}): dia ${day}, publica ${time}, cierra ${signupCloseTime}, termina ${eventEndTime}.`;
   if (shouldOfferPostEditDecision(refreshedWars)) {
     await showPostEditActivationDecision(interaction, refreshed, {
       eventIds: refreshedWars.map(war => war.id),
@@ -729,6 +760,28 @@ function getScopeTargets(baseWar, scope, channelId) {
     war.groupId === baseWar.groupId && war.channelId === channelId
   );
   return sameSeries.length ? sameSeries : [baseWar];
+}
+
+function validateLifecycleForEdit(war, lifecycle, options = {}) {
+  if (!war.messageId && !war.autoPublishEnabled) {
+    if (!lifecycle) return { ok: false, message: 'Horario invalido. Usa HH:mm.' };
+    if (lifecycle.signupCloseAt.getTime() >= lifecycle.eventEndAt.getTime()) {
+      return { ok: false, message: 'Signup Close Time debe ser menor que Event End Time.' };
+    }
+    return { ok: true, message: null };
+  }
+  if (options.allowPastPublish) {
+    if (!lifecycle) return { ok: false, message: 'Horario invalido. Usa HH:mm.' };
+    const nowMs = Date.now();
+    if (lifecycle.signupCloseAt.getTime() >= lifecycle.eventEndAt.getTime()) {
+      return { ok: false, message: 'Signup Close Time debe ser menor que Event End Time.' };
+    }
+    if (lifecycle.signupCloseAt.getTime() <= nowMs || lifecycle.eventEndAt.getTime() <= nowMs) {
+      return { ok: false, message: 'Signup Close Time y Event End Time deben estar en el futuro.' };
+    }
+    return { ok: true, message: null };
+  }
+  return validateFutureLifecycle(lifecycle);
 }
 
 function parseRoleIconInput(value, guild) {

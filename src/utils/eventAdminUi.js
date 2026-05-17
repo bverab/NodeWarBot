@@ -639,16 +639,18 @@ function buildCancelConfirmPayload(war) {
 }
 
 function buildEventDataEditorPayload(war, scope, notice = '') {
-  const closeBefore = Number.isInteger(war.closeBeforeMinutes) ? war.closeBeforeMinutes : 0;
   const recapMinutes = Number.isInteger(war.recap?.minutesBeforeExpire) ? war.recap.minutesBeforeExpire : 0;
   const recapMessage = String(war.recap?.messageText || '').trim() || 'Sin mensaje';
+  const signupClose = Number.isFinite(war.closesAt) ? `<t:${Math.floor(war.closesAt / 1000)}:t>` : '--:--';
+  const eventEnd = Number.isFinite(war.expiresAt) ? `<t:${Math.floor(war.expiresAt / 1000)}:t>` : '--:--';
 
   const embed = new EmbedBuilder()
     .setTitle(`Editar datos: ${war.name || 'Evento'}`)
     .setDescription([
       `${getModeLabel(war)} • ${getStatusLabel(war)}`,
       getTimeReference(war),
-      `Cierre de inscripciones: ${closeBefore} min antes`,
+      `Cierre de inscripciones: ${signupClose}`,
+      `Fin del evento: ${eventEnd}`,
       `Borrado hilo final: ${recapMinutes} min`,
       `Mensaje hilo final: ${truncate(recapMessage, 120)}`
     ].join('\n'))

@@ -28,6 +28,7 @@ const {
 const { refreshWarMessage, isAdminExecutor } = require('../../commands/eventadminShared');
 const { deleteEventDiscordMessage } = require('../../services/discordEventSyncService');
 const { normalizeClassIconSource } = require('../../utils/participantDisplayFormatter');
+const { formatTimeInEventZone } = require('../../utils/eventLifecycleTimes');
 const { listSeriesWars, removeSeriesDay } = require('../../services/recurrenceSeriesService');
 const { publishOrRefreshWarWithOptions } = require('../../services/eventPublicationService');
 const { moveRoleIndex } = require('../../services/roleOrderService');
@@ -1340,18 +1341,9 @@ async function showEditDataBasicModal(interaction, war) {
     .setMaxLength(100)
     .setValue(String(war.type || '').slice(0, 100));
 
-  const durationInput = new TextInputBuilder()
-    .setCustomId('panel_event_edit_data_duration')
-    .setLabel('Duracion en minutos (1-1440)')
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true)
-    .setMaxLength(4)
-    .setValue(String(Number.isInteger(war.duration) ? war.duration : 70));
-
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
-    new ActionRowBuilder().addComponents(typeInput),
-    new ActionRowBuilder().addComponents(durationInput)
+    new ActionRowBuilder().addComponents(typeInput)
   );
 
   await interaction.showModal(modal);
@@ -1360,15 +1352,26 @@ async function showEditDataBasicModal(interaction, war) {
 async function showEditCloseModal(interaction, war) {
   const modal = new ModalBuilder().setCustomId('panel_event_edit_close_modal').setTitle(`Cierre: ${trimTitle(war.name)}`);
 
-  const closeInput = new TextInputBuilder()
-    .setCustomId('panel_event_edit_close_value')
-    .setLabel('Minutos antes de iniciar (0 = no cerrar)')
+  const signupCloseInput = new TextInputBuilder()
+    .setCustomId('panel_event_edit_signup_close_time')
+    .setLabel('Signup Close Time (HH:mm)')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
-    .setMaxLength(4)
-    .setValue(String(Number.isInteger(war.closeBeforeMinutes) ? war.closeBeforeMinutes : 0));
+    .setMaxLength(5)
+    .setValue(formatTimeInEventZone(war.closesAt, war.timezone, war.time || '22:30'));
 
-  modal.addComponents(new ActionRowBuilder().addComponents(closeInput));
+  const eventEndInput = new TextInputBuilder()
+    .setCustomId('panel_event_edit_event_end_time')
+    .setLabel('Event End Time (HH:mm)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(5)
+    .setValue(formatTimeInEventZone(war.expiresAt, war.timezone, '23:00'));
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(signupCloseInput),
+    new ActionRowBuilder().addComponents(eventEndInput)
+  );
   await interaction.showModal(modal);
 }
 
@@ -1417,9 +1420,27 @@ async function showEditScheduleModal(interaction, war) {
     .setMaxLength(1)
     .setValue(Number.isInteger(war.dayOfWeek) ? String(war.dayOfWeek) : '0');
 
+  const signupCloseInput = new TextInputBuilder()
+    .setCustomId('panel_event_edit_signup_close_time')
+    .setLabel('Signup Close Time (HH:mm)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(5)
+    .setValue(formatTimeInEventZone(war.closesAt, war.timezone, war.time || '22:30'));
+
+  const eventEndInput = new TextInputBuilder()
+    .setCustomId('panel_event_edit_event_end_time')
+    .setLabel('Event End Time (HH:mm)')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(5)
+    .setValue(formatTimeInEventZone(war.expiresAt, war.timezone, '23:00'));
+
   modal.addComponents(
     new ActionRowBuilder().addComponents(timeInput),
-    new ActionRowBuilder().addComponents(dayInput)
+    new ActionRowBuilder().addComponents(dayInput),
+    new ActionRowBuilder().addComponents(signupCloseInput),
+    new ActionRowBuilder().addComponents(eventEndInput)
   );
 
   await interaction.showModal(modal);
