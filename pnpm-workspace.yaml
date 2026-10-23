@@ -1,0 +1,32 @@
+packages:
+  - apps/*
+
+# Supply-chain hardening. Replaces the former .npmrc: pnpm only reads auth and
+# registry settings from .npmrc, so every other setting must live here.
+
+# Only install versions published at least 7 days ago (value in minutes).
+minimumReleaseAge: 10080
+
+# Fail if a package's trust evidence (e.g. provenance) is weaker than in its
+# earlier releases, a common sign of a hijacked publish.
+trustPolicy: no-downgrade
+# Skip that check for versions published over a year ago (value in minutes):
+# hijacked publishes get caught within days, and several long-standing
+# dependencies (e.g. chokidar@4.0.3, undici-types@6.21.0) predate provenance.
+trustPolicyIgnoreAfter: 525600
+
+# Save exact versions when adding dependencies.
+savePrefix: ''
+
+# Dependency install scripts are denied (same as the former ignore-scripts=true).
+# Unlisted packages with install scripts make `pnpm install` fail until reviewed
+# with `pnpm approve`. The Prisma client is generated with `pnpm db:generate`.
+allowBuilds:
+  '@prisma/client': false
+  '@prisma/engines': false
+  prisma: false
+
+# Agent skills bundled by dependencies are not installed.
+permissions:
+  dotenv:
+    skills: false

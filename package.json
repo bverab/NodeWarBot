@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Bot para NodeWars del juego Black Desert Online, formato OpenSource",
   "main": "index.js",
+  "packageManager": "pnpm@12.14.0",
   "scripts": {
     "start": "node src/index.js",
     "register": "node src/register-commands.js",

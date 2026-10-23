@@ -13,11 +13,16 @@ It is additive and does not move or modify the current bot runtime in repository
 
 ## Install Dependencies
 
-From repository root:
+The dashboard is part of the root pnpm workspace. From repository root:
 
 ```bash
-npm install --prefix apps/dashboard
+pnpm install
+pnpm db:generate
 ```
+
+`pnpm install` installs the bot and the dashboard together. `pnpm db:generate` is
+required because the dashboard reads the bot's database through the shared Prisma
+client, and dependency install scripts are disabled (see the root README).
 
 ## Required Environment Variables
 
@@ -47,7 +52,7 @@ Notes:
 From repository root:
 
 ```bash
-npm run dev --prefix apps/dashboard
+pnpm --filter @spectre/dashboard dev
 ```
 
 Then open:
