@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/apiGuards";
 import { calculateEventLifecycleDates, formatDateTimeInTimezone } from "@/lib/eventDateTime";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { createGuildEventDraft, getGuildEvents } from "@/lib/server/dashboardData";
 import { createVerifiedGuildsCookie } from "@/lib/server/dashboardGuildVerificationCookie";
 import { createEventSchema, formatCreateEventIssues } from "@/lib/server/createEventValidation";
@@ -42,7 +43,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const body = (await request.json()) as unknown;
+    const body: unknown = await request.json().catch(() => null);
     const parsed = createEventSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -105,12 +106,16 @@ export async function POST(request: Request, context: RouteContext) {
     const event = await createGuildEventDraft(guildId, getSessionUserId(access.session), parsed.data);
 
     const response = NextResponse.json({ eventId: event.id }, { status: 201 });
-    const cookie = createVerifiedGuildsCookie(access.availableGuilds);
-    response.cookies.set(cookie.name, cookie.value, cookie.options);
+    // Only guilds that Discord has just verified may be signed. Guilds that came out of the cookie itself (or stale data)
+    // must not be re-signed, otherwise the cookie would renew itself without ever asking Discord again.
+    if (access.guildSource === "discord" && !access.guildsStale) {
+      const cookie = createVerifiedGuildsCookie(access.availableGuilds, getSessionUserId(access.session));
+      if (cookie) {
+        response.cookies.set(cookie.name, cookie.value, cookie.options);
+      }
+    }
     return response;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create draft event.";
-    const status = message.includes("Template not found") || message.includes("At least one slot") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return errorResponse(error, "Failed to create draft event.");
   }
 }

@@ -1,9 +1,10 @@
 import "server-only";
 import crypto from "node:crypto";
-import type { Event, EventEnrollment, EventFillerEntry, EventParticipant, EventRoleSlot, EventSchedule, EventWaitlistEntry } from "@prisma/client";
+import type { Prisma, Event, EventEnrollment, EventFillerEntry, EventParticipant, EventRoleSlot, EventSchedule, EventWaitlistEntry } from "@prisma/client";
 import { calculateEventLifecycleDates, calculateScheduledPublishAt, normalizeTimezone } from "@/lib/eventDateTime";
 import { fetchDiscordGuildMembers } from "@/lib/server/discordMembers";
 import { prisma } from "@/lib/server/prisma";
+import { InputError } from "./apiErrors";
 
 export type EventListItem = {
   id: string;
@@ -254,14 +255,70 @@ function countFillers(event: {
   return (event.fillers?.length ?? 0) + (event.enrollments?.filter(isFillerEnrollment).length ?? 0);
 }
 
-function toEventListItem(
-  event: Event & {
-    schedule?: EventSchedule | null;
-    participants?: EventParticipant[];
-    enrollments?: EventEnrollment[];
-    waitlist?: EventWaitlistEntry[];
-    fillers?: EventFillerEntry[];
+type EventListCounts = Pick<EventListItem, "participantCount" | "waitlistCount" | "fillerCount">;
+
+// Counts from relations that were loaded in full (event detail).
+function countsFromRelations(event: {
+  participants?: EventParticipant[];
+  enrollments?: EventEnrollment[];
+  waitlist?: EventWaitlistEntry[];
+  fillers?: EventFillerEntry[];
+}): EventListCounts {
+  return {
+    participantCount: countParticipants(event),
+    waitlistCount: event.waitlist?.length ?? 0,
+    fillerCount: countFillers(event)
+  };
+}
+
+type EventAggregateCounts = { _count: { participants: number; waitlist: number; fillers: number } };
+type EnrollmentCounts = { primary: number; filler: number };
+
+// Counts from COUNT queries, so lists never load every participant row just to show a number.
+function countsFromAggregates(event: EventAggregateCounts, enrollments: EnrollmentCounts | undefined): EventListCounts {
+  return {
+    participantCount: event._count.participants + (enrollments?.primary ?? 0),
+    waitlistCount: event._count.waitlist,
+    fillerCount: event._count.fillers + (enrollments?.filler ?? 0)
+  };
+}
+
+// _count cannot split one relation by type, so enrollments (PRIMARY vs FILLER) are counted with one grouped query.
+async function getEnrollmentCountsByEvent(eventIds: string[]) {
+  const counts = new Map<string, EnrollmentCounts>();
+  if (!eventIds.length) {
+    return counts;
   }
+
+  const rows = await prisma.eventEnrollment.groupBy({
+    by: ["eventId", "enrollmentType"],
+    where: { eventId: { in: eventIds } },
+    _count: { _all: true }
+  });
+
+  for (const row of rows) {
+    const entry = counts.get(row.eventId) ?? { primary: 0, filler: 0 };
+    if (isFillerEnrollment(row)) {
+      entry.filler += row._count._all;
+    } else {
+      entry.primary += row._count._all;
+    }
+    counts.set(row.eventId, entry);
+  }
+
+  return counts;
+}
+
+async function toEventListItems(events: Array<Event & EventAggregateCounts & { schedule?: EventSchedule | null }>) {
+  const enrollmentCounts = await getEnrollmentCountsByEvent(events.map((event) => event.id));
+  return events.map((event) => toEventListItem(event, countsFromAggregates(event, enrollmentCounts.get(event.id))));
+}
+
+const EVENT_COUNTS_SELECT = { participants: true, waitlist: true, fillers: true } as const;
+
+function toEventListItem(
+  event: Event & { schedule?: EventSchedule | null },
+  counts: EventListCounts
 ): EventListItem {
   return {
     id: event.id,
@@ -283,9 +340,9 @@ function toEventListItem(
     createdAt: toIso(event.createdAt),
     closesAt: toIso(event.closesAt),
     expiresAt: toIso(event.expiresAt),
-    participantCount: countParticipants(event),
-    waitlistCount: event.waitlist?.length ?? 0,
-    fillerCount: countFillers(event),
+    participantCount: counts.participantCount,
+    waitlistCount: counts.waitlistCount,
+    fillerCount: counts.fillerCount,
     channelId: event.channelId,
     messageId: event.messageId
   };
@@ -357,55 +414,55 @@ async function getParticipantProfiles(guildId: string, participants: Participant
   };
 }
 
-export async function getGuildEvents(guildId: string): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where: { guildId },
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
-    },
-    take: 100
+const EVENT_LIST_LIMIT = 100;
+
+// Open events come first, closing soonest first (what is about to happen). Closed events follow, most recent first,
+// so that the `take` limit never hides the latest ones behind years of old history.
+async function findEventsOpenFirst<Include extends Prisma.EventInclude>(
+  where: Prisma.EventWhereInput,
+  include: Include,
+  take: number
+) {
+  const open = await prisma.event.findMany({
+    where: { AND: [where, { isClosed: false }] },
+    orderBy: [{ closesAt: "asc" }, { createdAt: "desc" }],
+    include,
+    take
   });
 
-  return events.map(toEventListItem);
+  const remaining = take - open.length;
+  const closed = remaining > 0
+    ? await prisma.event.findMany({
+        where: { AND: [where, { isClosed: true }] },
+        orderBy: [{ closesAt: "desc" }, { createdAt: "desc" }],
+        include,
+        take: remaining
+      })
+    : [];
+
+  return [...open, ...closed];
+}
+
+async function listGuildEvents(where: { guildId: string; eventType?: string | { in: string[] } }): Promise<EventListItem[]> {
+  const events = await findEventsOpenFirst(
+    where,
+    { schedule: true, _count: { select: EVENT_COUNTS_SELECT } },
+    EVENT_LIST_LIMIT
+  );
+
+  return toEventListItems(events);
+}
+
+export async function getGuildEvents(guildId: string): Promise<EventListItem[]> {
+  return listGuildEvents({ guildId });
 }
 
 export async function getGuildEventsByType(guildId: string, eventType: string): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where: { guildId, eventType },
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
-    },
-    take: 100
-  });
-
-  return events.map(toEventListItem);
+  return listGuildEvents({ guildId, eventType });
 }
 
 export async function getGuildEventsByTypes(guildId: string, eventTypes: string[]): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where: { guildId, eventType: { in: eventTypes } },
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
-    },
-    take: 100
-  });
-
-  return events.map(toEventListItem);
+  return listGuildEvents({ guildId, eventType: { in: eventTypes } });
 }
 
 export async function getGuildEventDetail(guildId: string, eventId: string): Promise<EventDetail | null> {
@@ -444,7 +501,7 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
     return null;
   }
 
-  const base = toEventListItem(event);
+  const base = toEventListItem(event, countsFromRelations(event));
   const enrichParticipant = await getParticipantProfiles(guildId, [
     ...event.roleSlots.flatMap((slot) => slot.users),
     ...event.enrollments,
@@ -552,18 +609,18 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
 
 export async function getGuildOverview(guildId: string): Promise<OverviewData> {
   const now = new Date();
-  const [events, scheduledEvents, templates, garmothProfiles] = await Promise.all([
-    prisma.event.findMany({
-      where: { guildId },
-      orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-      include: {
-        participants: true,
-        enrollments: true,
-        waitlist: true,
-        fillers: true
-      },
-      take: 12
-    }),
+  const [
+    events,
+    scheduledEvents,
+    templates,
+    garmothProfiles,
+    activeEvents,
+    upcomingEvents,
+    totalEvents,
+    participantRows,
+    enrollmentRows
+  ] = await Promise.all([
+    findEventsOpenFirst({ guildId }, { _count: { select: EVENT_COUNTS_SELECT } }, 12),
     prisma.eventSchedule.count({
       where: {
         enabled: true,
@@ -575,29 +632,33 @@ export async function getGuildOverview(guildId: string): Promise<OverviewData> {
     }),
     prisma.garmothProfile.count({
       where: { guildId }
+    }),
+    prisma.event.count({
+      where: { guildId, isClosed: false, closesAt: { gte: now }, expiresAt: { gte: now } }
+    }),
+    prisma.event.count({
+      where: { guildId, expiresAt: { gte: now } }
+    }),
+    prisma.event.count({
+      where: { guildId }
+    }),
+    prisma.eventParticipant.count({
+      where: { event: { guildId } }
+    }),
+    prisma.eventEnrollment.count({
+      where: { event: { guildId } }
     })
   ]);
 
-  const allCounts = await prisma.event.findMany({
-    where: { guildId },
-    select: {
-      isClosed: true,
-      closesAt: true,
-      expiresAt: true,
-      participants: { select: { id: true } },
-      enrollments: { select: { id: true } }
-    }
-  });
-
   return {
-    activeEvents: allCounts.filter((event) => !event.isClosed && event.closesAt >= now && event.expiresAt >= now).length,
-    upcomingEvents: allCounts.filter((event) => event.expiresAt >= now).length,
-    totalEvents: allCounts.length,
-    totalParticipants: allCounts.reduce((total, event) => total + event.participants.length + event.enrollments.length, 0),
+    activeEvents,
+    upcomingEvents,
+    totalEvents,
+    totalParticipants: participantRows + enrollmentRows,
     scheduledEvents,
     templates,
     garmothProfiles,
-    recentEvents: events.map(toEventListItem)
+    recentEvents: await toEventListItems(events)
   };
 }
 
@@ -782,7 +843,7 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
     closeBeforeMinutes: input.closeBeforeMinutes
   });
   if (!lifecycleDates) {
-    throw new Error("Invalid event date, time, timezone, duration, or close-before setting.");
+    throw new InputError("Invalid event date, time, timezone, duration, or close-before setting.");
   }
   const { startsAt, expiresAt, closesAt } = lifecycleDates;
   const autoPublishEnabled = Boolean(input.autoPublishEnabled);
@@ -790,7 +851,7 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
     ? calculateScheduledPublishAt({ startsAt, publishBeforeMinutes: input.publishBeforeMinutes ?? 60 })
     : null;
   if (autoPublishEnabled && !scheduledPublishAt) {
-    throw new Error("Invalid scheduled publish configuration.");
+    throw new InputError("Invalid scheduled publish configuration.");
   }
   const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" })
     .formatToParts(startsAt)
@@ -831,7 +892,7 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
       });
 
       if (!template) {
-        throw new Error("Template not found for this guild and event type.");
+        throw new InputError("Template not found for this guild and event type.");
       }
 
       templateDefaults = {
@@ -853,11 +914,11 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
       : [];
 
     if (!isPve && !slots.length) {
-      throw new Error("At least one slot is required to create a draft event.");
+      throw new InputError("At least one slot is required to create a draft event.");
     }
 
     if (isPve && !pveOptions.length && !slots.length) {
-      throw new Error("At least one PvE time option is required to create a draft event.");
+      throw new InputError("At least one PvE time option is required to create a draft event.");
     }
 
     const eventId = `web_${crypto.randomUUID()}`;
@@ -1311,9 +1372,32 @@ export async function updateGuildTemplateRoleSlot(guildId: string, templateId: s
     return null;
   }
 
-  await prisma.eventTemplateRoleSlot.update({
-    where: { id: slot.id },
-    data: input
+  // allowedRoleIds is not a column of the slot: it lives in its own permissions table (same split as event slots).
+  const { allowedRoleIds, ...slotPatch } = input;
+
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(slotPatch).length) {
+      await tx.eventTemplateRoleSlot.update({
+        where: { id: slot.id },
+        data: slotPatch
+      });
+    }
+
+    if (Array.isArray(allowedRoleIds)) {
+      const uniqueRoleIds = Array.from(new Set(allowedRoleIds.map(String).filter(Boolean)));
+      await tx.eventTemplateRolePermission.deleteMany({
+        where: { roleSlotId: slot.id }
+      });
+      if (uniqueRoleIds.length) {
+        await tx.eventTemplateRolePermission.createMany({
+          data: uniqueRoleIds.map((roleId) => ({
+            roleSlotId: slot.id,
+            discordRoleId: roleId,
+            discordRoleName: null
+          }))
+        });
+      }
+    }
   });
 
   return getGuildTemplateDetail(guildId, slot.templateId);

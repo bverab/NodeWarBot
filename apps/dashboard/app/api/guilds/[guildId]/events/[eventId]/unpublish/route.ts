@@ -44,7 +44,7 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 
   const deleteResult = await deleteEventDiscordMessage({
-    guild: createDiscordRestGuildAdapter(guildId),
+    guild: createDiscordRestGuildAdapter(guildId, { validatedChannel: permissionCheck.channel }),
     event
   });
   const recoverableMissingMessage = deleteResult.status === "missing_message" || deleteResult.errorCode === "10008";

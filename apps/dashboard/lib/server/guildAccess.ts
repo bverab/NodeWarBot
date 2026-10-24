@@ -11,6 +11,14 @@ export async function requireDashboardGuild(guildId: string) {
     };
   }
 
+  // Guild access is verified with the user's Discord token; a Google sign-in can never satisfy it.
+  // A missing provider is a session issued before the provider was stored, and is accepted as before.
+  if (session.provider === "google") {
+    return {
+      error: NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    };
+  }
+
   const guildResult = await resolveDashboardGuildForServer(session, guildId);
   const availableGuilds = guildResult.guilds;
   const activeGuild = guildResult.activeGuild;
@@ -39,7 +47,9 @@ export async function requireDashboardGuild(guildId: string) {
   return {
     activeGuild,
     availableGuilds,
-    session
+    session,
+    guildSource: guildResult.source,
+    guildsStale: guildResult.stale
   };
 }
 
