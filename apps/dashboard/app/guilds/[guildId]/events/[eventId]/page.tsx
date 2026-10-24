@@ -117,6 +117,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           initialTimezone={event.timezone}
           initialType={event.type}
           isClosed={event.status === "closed"}
+          isEnded={!event.published && !event.canDelete}
           manageable={activeGuild.manageable}
         />
 
@@ -138,7 +139,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 resourceName={event.name}
                 title="Archive event?"
               />
-            ) : (
+            ) : event.canDelete ? (
               <ConfirmResourceAction
                 actionLabel="Delete permanently"
                 body={`This will permanently delete "${event.name}" from Spectre. It is not currently linked to a Discord message. This action cannot be undone.`}
@@ -148,7 +149,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 resourceName={event.name}
                 title="Delete event permanently?"
               />
-            )
+            ) : null
           ) : null}
         </div>
 
@@ -239,9 +240,11 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               <p>
                 {event.published
                   ? `Published. Discord message ${event.messageId ?? "not recorded"}`
-                  : event.autoPublishEnabled && event.scheduledPublishAt
-                    ? `Scheduled publish: ${formatDateTime(event.scheduledPublishAt, event.timezone)} ${event.timezone}`
-                    : "Draft / Not published. Manual publish."}
+                  : !event.canDelete
+                    ? "Ended. The Discord message was removed when the event expired."
+                    : event.autoPublishEnabled && event.scheduledPublishAt
+                      ? `Scheduled publish: ${formatDateTime(event.scheduledPublishAt, event.timezone)} ${event.timezone}`
+                      : "Draft / Not published. Manual publish."}
               </p>
               {event.publishError ? <p>Auto publish failed: {event.publishError}</p> : null}
               {event.discordUrl ? (

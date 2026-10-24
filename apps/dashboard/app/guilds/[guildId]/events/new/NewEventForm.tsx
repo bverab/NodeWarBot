@@ -8,6 +8,7 @@ import { ChannelSelect, RoleMultiSelect, type ChannelOption, type RoleOption } f
 import selectorStyles from "@/components/dashboard/selectors/GuildSelectors.module.css";
 import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid";
 import { Button } from "@/components/ui/Button";
+import { MAX_SLOT_NAME_LENGTH } from "@/lib/slotLimits";
 import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { buildEventDateTime, calculateScheduledPublishAt, formatDateTimeInTimezone, getTimezoneInputError, normalizeTimezone } from "@/lib/eventDateTime";
@@ -607,7 +608,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                         </div>
                       </div>
                       <div className={styles.slotConfigGrid}>
-                        <label>Name<input maxLength={80} onChange={(event) => updateSlot(slot.id, { name: event.target.value })} required value={slot.name} /></label>
+                        <label>Name<input maxLength={MAX_SLOT_NAME_LENGTH} onChange={(event) => updateSlot(slot.id, { name: event.target.value })} required value={slot.name} /></label>
                         <label>Capacity<input max={100} min={1} onChange={(event) => updateSlot(slot.id, { max: Number(event.target.value) })} required type="number" value={slot.max} /></label>
                         <label className={styles.fieldLarge}>
                           Icon

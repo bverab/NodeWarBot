@@ -1,6 +1,7 @@
 import type { EventMutationInput, RoleSlotMutationInput, TemplateMutationInput } from "@/lib/server/dashboardData";
 import { buildEventDateTime, normalizeTimezoneInfo } from "@/lib/eventDateTime";
 import { isDiscordSnowflake } from "../discordSnowflake";
+import { MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE } from "../slotLimits";
 
 export const PUBLISHED_EVENT_LOCKED_FIELDS = [
   "eventType",
@@ -336,10 +337,14 @@ export function parseRoleSlotPatch(body: Record<string, unknown>, requireNameAnd
 
   const patch: RoleSlotMutationInput = {};
 
-  const name = readString(body.name, 80);
+  // Not cut to a limit like the other text fields: a name the bot would trim must be rejected, not silently shortened.
+  const name = typeof body.name === "string" ? body.name.trim() : undefined;
   if (name !== undefined) {
     if (name.length < 1) {
       return { error: "Slot name cannot be empty." } as const;
+    }
+    if (name.length > MAX_SLOT_NAME_LENGTH) {
+      return { error: SLOT_NAME_TOO_LONG_MESSAGE } as const;
     }
     patch.name = name;
   }

@@ -5,6 +5,7 @@ import { calculateEventLifecycleDates, calculateScheduledPublishAt, normalizeTim
 import { fetchDiscordGuildMembers } from "@/lib/server/discordMembers";
 import { prisma } from "@/lib/server/prisma";
 import { InputError } from "./apiErrors";
+import { MAX_SLOT_NAME_LENGTH } from "../slotLimits";
 
 export type EventListItem = {
   id: string;
@@ -13,6 +14,8 @@ export type EventListItem = {
   type: string;
   status: "draft" | "open" | "closed" | "expired";
   published: boolean;
+  // False for published events and for ended ones (see isEventEnded): only real drafts can be deleted permanently.
+  canDelete: boolean;
   groupId: string | null;
   dayOfWeek: number | null;
   recurrenceMode: "once" | "recurring";
@@ -217,24 +220,35 @@ function toIso(value: Date) {
   return value.toISOString();
 }
 
-function getEventStatus(event: Pick<Event, "isClosed" | "expiresAt" | "closesAt" | "channelId" | "messageId">): EventListItem["status"] {
+// An event without a Discord message is normally a draft. It is not one when it is closed and past its end: that is what
+// is left after the bot expires an event (it deletes the message, sets messageId = null and isClosed = true). Such an
+// event has history (roster, waitlist) and must not look like, or be deletable as, a never-published draft.
+export function isEventEnded(event: Pick<Event, "isClosed" | "expiresAt">, now = Date.now()) {
+  return event.isClosed && event.expiresAt.getTime() <= now;
+}
+
+export function getEventStatus(
+  event: Pick<Event, "isClosed" | "expiresAt" | "closesAt" | "messageId">,
+  now = Date.now()
+): EventListItem["status"] {
   if (!event.messageId) {
-    return "draft";
+    return isEventEnded(event, now) ? "closed" : "draft";
   }
 
   if (event.isClosed) {
     return "closed";
   }
 
-  return event.expiresAt.getTime() < Date.now() || event.closesAt.getTime() < Date.now() ? "expired" : "open";
+  return event.expiresAt.getTime() < now || event.closesAt.getTime() < now ? "expired" : "open";
 }
 
 export function isEventPublishedForDashboard(event: Pick<Event, "messageId">) {
   return Boolean(event.messageId);
 }
 
-export function canDeleteEventPermanently(event: Pick<Event, "messageId">) {
-  return !isEventPublishedForDashboard(event);
+// Only real drafts can be deleted permanently: not published events and not ended ones.
+export function canDeleteEventPermanently(event: Pick<Event, "messageId" | "isClosed" | "expiresAt">, now = Date.now()) {
+  return !isEventPublishedForDashboard(event) && !isEventEnded(event, now);
 }
 
 function isFillerEnrollment(enrollment: Pick<EventEnrollment, "enrollmentType">) {
@@ -327,6 +341,7 @@ function toEventListItem(
     type: event.type,
     status: getEventStatus(event),
     published: isEventPublishedForDashboard(event),
+    canDelete: canDeleteEventPermanently(event),
     groupId: event.groupId,
     dayOfWeek: event.dayOfWeek,
     recurrenceMode: event.schedule?.mode === "recurring" ? "recurring" : "once",
@@ -697,15 +712,20 @@ export async function deleteGuildDraftEvent(guildId: string, eventId: string) {
   return prisma.$transaction(async (tx) => {
     const event = await tx.event.findFirst({
       where: { id: eventId, guildId },
-      select: { id: true, messageId: true }
+      select: { id: true, messageId: true, isClosed: true, expiresAt: true }
     });
 
     if (!event) {
       return { status: "not_found" as const };
     }
 
-    if (!canDeleteEventPermanently(event)) {
+    if (isEventPublishedForDashboard(event)) {
       return { status: "not_draft" as const };
+    }
+
+    // The bot leaves expired events without a message: they keep their roster and are not drafts.
+    if (!canDeleteEventPermanently(event)) {
+      return { status: "ended" as const };
     }
 
     await tx.event.delete({ where: { id: event.id } });
@@ -893,6 +913,15 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
 
       if (!template) {
         throw new InputError("Template not found for this guild and event type.");
+      }
+
+      // Templates saved before the 60 character limit may hold longer names. They are not cut silently (two of them could
+      // collapse into the same name): the template has to be fixed first.
+      const tooLongSlot = template.roleSlots.find((slot) => slot.name.length > MAX_SLOT_NAME_LENGTH);
+      if (tooLongSlot) {
+        throw new InputError(
+          `Template slot "${tooLongSlot.name.slice(0, 30)}..." is longer than ${MAX_SLOT_NAME_LENGTH} characters. Shorten it in the template before creating events from it.`
+        );
       }
 
       templateDefaults = {
@@ -1106,6 +1135,18 @@ async function touchEvents(tx: Prisma.TransactionClient, eventIds: string[]) {
   await tx.event.updateMany({ where: { id: { in: ids } }, data: { updatedAt: new Date() } });
 }
 
+// An event published from the web must leave the trace the bot leaves when it publishes: schedule.lastCreatedAt. The
+// bot's weekly recurrence skips an event whose lastCreatedAt is today; without it, it could delete a same-day web
+// publication to post its own. A missing schedule row is created the way the bot reads a missing one (disabled, once).
+function publishedScheduleWrite(publishedAt: Date) {
+  return {
+    upsert: {
+      create: { enabled: false, mode: "once", lastCreatedAt: publishedAt },
+      update: { lastCreatedAt: publishedAt }
+    }
+  };
+}
+
 export async function updateGuildEvent(guildId: string, eventId: string, input: EventMutationInput) {
   const event = await prisma.event.findFirst({
     where: { id: eventId, guildId },
@@ -1118,10 +1159,40 @@ export async function updateGuildEvent(guildId: string, eventId: string, input: 
 
   await prisma.event.update({
     where: { id: event.id },
-    data: input
+    // Linking an existing Discord message makes the event published, so it is recorded like a publication.
+    data: typeof input.messageId === "string" ? { ...input, schedule: publishedScheduleWrite(new Date()) } : input
   });
 
   return getGuildEventDetail(guildId, event.id);
+}
+
+// Stores the result of a web publication: message, channel and publish time, in one transaction. Returns false when the
+// event is not a draft of that guild any more (another request published it first), without changing anything.
+export async function markEventPublished(
+  guildId: string,
+  eventId: string,
+  input: { channelId: string; messageId: string; publishedAt?: Date }
+) {
+  const publishedAt = input.publishedAt ?? new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.event.updateMany({
+      where: { id: eventId, guildId, messageId: null },
+      data: { channelId: input.channelId, messageId: input.messageId }
+    });
+
+    if (updated.count !== 1) {
+      return false;
+    }
+
+    await tx.eventSchedule.upsert({
+      where: { eventId },
+      create: { eventId, enabled: false, mode: "once", lastCreatedAt: publishedAt },
+      update: { lastCreatedAt: publishedAt }
+    });
+
+    return true;
+  });
 }
 
 export async function setGuildEventClosed(guildId: string, eventId: string, isClosed: boolean) {
