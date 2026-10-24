@@ -20,7 +20,7 @@ async function notifyPromotion(interaction, war, promotedUser) {
   try {
     await interaction.channel.send({
       content: `<@${promotedUser.userId}> ${dmContent}`,
-      allowedMentions: { parse: ['users'] }
+      allowedMentions: { parse: [], users: [String(promotedUser.userId)] }
     });
   } catch {
     console.log(`No se pudo enviar fallback en canal para ${promotedUser.userId}`);
