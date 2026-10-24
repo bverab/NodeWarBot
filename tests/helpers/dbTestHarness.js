@@ -57,8 +57,10 @@ async function clearDatabase() {
 function setupIntegrationSuite() {
   beforeAll(async () => {
     fs.mkdirSync(testDataDir, { recursive: true });
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
+    for (const file of [testDbPath, `${testDbPath}-wal`, `${testDbPath}-shm`]) {
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+      }
     }
 
     __resetWarRepositoryForTests();
