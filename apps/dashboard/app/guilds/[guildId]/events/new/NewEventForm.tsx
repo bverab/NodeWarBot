@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { filterChannelsBySearch } from "@/lib/channelSearch";
-import { buildEventDateTime, calculateScheduledPublishAt, formatDateTimeInTimezone, normalizeTimezone } from "@/lib/eventDateTime";
+import { buildEventDateTime, calculateScheduledPublishAt, formatDateTimeInTimezone, getTimezoneInputError, normalizeTimezone } from "@/lib/eventDateTime";
+import { suggestNextOptionTime } from "@/lib/pveOptionTimes";
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
 import overviewStyles from "@/app/guilds/[guildId]/_styles/overview.module.css";
@@ -451,11 +452,12 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
   const slotCount = isPve ? pveOptions.length : mode === "template" ? selectedTemplate?.slotCount ?? 0 : manualSlots.length;
   const totalCapacity = mode === "manual" ? manualSlots.reduce((total, slot) => total + slot.max, 0) : null;
   const pveCapacity = pveOptions.reduce((total, option) => total + option.capacity, 0);
+  const timezoneError = getTimezoneInputError(timezone);
   const scheduledPublishAt = useMemo(() => {
     if (!autoPublishEnabled) {
       return null;
     }
-    const startsAt = buildEventDateTime({ date, time, timezone: normalizeTimezone(timezone) });
+    const startsAt = buildEventDateTime({ date, time, timezone: timezone.trim() });
     return startsAt ? calculateScheduledPublishAt({ startsAt, publishBeforeMinutes }) : null;
   }, [autoPublishEnabled, date, publishBeforeMinutes, time, timezone]);
 
@@ -523,7 +525,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
       return next.map((item, itemIndex) => ({ ...item, position: itemIndex + 1 }));
     });
   };
-  const addPveOption = () => setPveOptions((current) => [...current, makePveOption(current.length + 1, time)]);
+  const addPveOption = () =>
+    setPveOptions((current) => [...current, makePveOption(current.length + 1, suggestNextOptionTime(current.map((option) => option.time), time))]);
   const removePveOption = (optionId: string) => {
     setPveOptions((current) => current.filter((option) => option.id !== optionId).map((option, index) => ({ ...option, position: index + 1 })));
   };
@@ -548,6 +551,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
     manageable &&
     !busy &&
     name.trim().length >= 2 &&
+    !timezoneError &&
     (!autoPublishEnabled || Boolean(finalChannelId)) &&
     (isPve ? pveOptions.every((option) => option.label.trim() && option.time) : mode === "template" ? Boolean(templateId) : manualSlots.every((slot) => slot.name.trim()));
   const goNext = () => setStepIndex((current) => Math.min(steps.length - 1, current + 1));
@@ -555,7 +559,13 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
 
   const openCreateConfirm = () => {
     if (!canSubmit) {
-      setMessage(autoPublishEnabled && !finalChannelId ? "Select a Discord channel before enabling scheduled publish." : "Complete the required draft fields before creating the event.");
+      setMessage(
+        timezoneError
+          ? timezoneError
+          : autoPublishEnabled && !finalChannelId
+            ? "Select a Discord channel before enabling scheduled publish."
+            : "Complete the required draft fields before creating the event."
+      );
       return;
     }
     setMessage(null);
@@ -581,7 +591,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
         type,
         date,
         time,
-        timezone: normalizeTimezone(timezone),
+        // Sent as typed (already checked above): the server validates it and rejects a zone it does not know.
+        timezone: timezone.trim(),
         duration,
         closeBeforeMinutes,
         autoPublishEnabled,
@@ -707,7 +718,11 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
               <div className={styles.scheduleGrid}>
                 <label>Event start date<input onChange={(event) => updateDate(event.target.value)} required type="date" value={date} /></label>
                 <label>Event start time<input onChange={(event) => updateTime(event.target.value)} required step={60} type="time" value={time} /></label>
-                <label>Timezone<input maxLength={64} onChange={(event) => updateTimezone(event.target.value)} required value={timezone} /></label>
+                <label>
+                  Timezone
+                  <input aria-describedby={timezoneError ? "event-timezone-error" : undefined} aria-invalid={timezoneError ? true : undefined} maxLength={64} onChange={(event) => updateTimezone(event.target.value)} required value={timezone} />
+                  {timezoneError ? <small className={styles.fieldError} id="event-timezone-error" role="alert">{timezoneError}</small> : null}
+                </label>
                 <label>Event duration (minutes)<input max={1440} min={1} onChange={(event) => updateDuration(Number(event.target.value))} required type="number" value={duration} /></label>
                 <label>Close signups before end (minutes)<input max={duration} min={0} onChange={(event) => updateCloseBeforeMinutes(Number(event.target.value))} type="number" value={closeBeforeMinutes} /></label>
                 <div className={styles.segmentBlock}>
@@ -988,6 +1003,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                 <span className={overviewStyles.eyebrow}>Review</span>
                 <h3>Draft summary</h3>
                 <p>This creates a draft. It will not be posted to Discord until you publish it manually.</p>
+                {timezoneError ? <p className={styles.fieldError} role="alert">{timezoneError} Fix it in the Schedule step.</p> : null}
               </div>
               <div className={styles.reviewGrid}>
                 <div className={styles.reviewHero}>
