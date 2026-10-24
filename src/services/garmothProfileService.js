@@ -1,27 +1,26 @@
 const { parseGarmothProfileHtml } = require('../utils/garmothProfileParser');
+const { validateAndNormalizeGarmothProfileUrl, isAllowedGarmothFetchUrl } = require('../utils/garmothUrlHelper');
 
 const DEFAULT_TIMEOUT_MS = 10000;
+const MAX_REDIRECTS = 3;
+const MAX_BODY_BYTES = 3 * 1024 * 1024;
 
 async function refreshGarmothLink(link, options = {}) {
   const now = Number.isFinite(options.now) ? options.now : Date.now();
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : DEFAULT_TIMEOUT_MS;
 
   if (!link?.garmothProfileUrl) {
-    return {
-      ok: false,
-      syncStatus: 'failed',
-      syncErrorMessage: 'No hay URL de perfil vinculada.',
-      lastSyncAt: now,
-      patch: {
-        lastSyncAt: now,
-        syncStatus: 'failed',
-        syncErrorMessage: 'No hay URL de perfil vinculada.'
-      }
-    };
+    return buildFailedResult(now, 'No hay URL de perfil vinculada.');
+  }
+
+  // La URL guardada pudo llegar por otra via (importaciones, dashboard): se revalida antes de salir a la red.
+  const validation = validateAndNormalizeGarmothProfileUrl(link.garmothProfileUrl);
+  if (!validation.ok) {
+    return buildFailedResult(now, `La URL vinculada no es un perfil valido de Garmoth: ${validation.reason}.`);
   }
 
   try {
-    const html = await fetchProfileHtml(link.garmothProfileUrl, timeoutMs);
+    const html = await fetchProfileHtml(validation.url, timeoutMs, options.fetchImpl);
     const parsed = parseGarmothProfileHtml(html);
     const data = parsed.data || {};
     const hasCoreName = isFilled(data.characterName);
@@ -36,12 +35,16 @@ async function refreshGarmothLink(link, options = {}) {
     const patch = {
       lastSyncAt: now,
       syncStatus,
-      syncErrorMessage,
-      // Always refresh semantic fields, even to null, to avoid keeping stale/bad numeric values.
-      characterName: data.characterName ?? null,
-      className: data.className ?? null,
-      spec: data.spec ?? null
+      syncErrorMessage
     };
+
+    // Si el parseo no obtuvo nada, se conservan los datos ya sincronizados en vez de pisarlos con null.
+    // Con datos parciales se refrescan los campos semanticos (incluso a null) para no dejar valores viejos o invalidos.
+    if (syncStatus !== 'failed') {
+      patch.characterName = data.characterName ?? null;
+      patch.className = data.className ?? null;
+      patch.spec = data.spec ?? null;
+    }
 
     if (data.classId !== null) patch.classId = data.classId;
     if (data.specRaw !== null) patch.specRaw = data.specRaw;
@@ -56,46 +59,105 @@ async function refreshGarmothLink(link, options = {}) {
       parsedMeta: parsed.meta || null
     };
   } catch (error) {
-    const message = normalizeErrorMessage(error);
-    return {
-      ok: false,
-      syncStatus: 'failed',
-      syncErrorMessage: message,
-      lastSyncAt: now,
-      patch: {
-        lastSyncAt: now,
-        syncStatus: 'failed',
-        syncErrorMessage: message
-      }
-    };
+    return buildFailedResult(now, normalizeErrorMessage(error));
   }
 }
 
-async function fetchProfileHtml(url, timeoutMs) {
-  if (typeof fetch !== 'function') {
+function buildFailedResult(now, message) {
+  return {
+    ok: false,
+    syncStatus: 'failed',
+    syncErrorMessage: message,
+    lastSyncAt: now,
+    patch: {
+      lastSyncAt: now,
+      syncStatus: 'failed',
+      syncErrorMessage: message
+    }
+  };
+}
+
+async function fetchProfileHtml(url, timeoutMs, fetchImpl = globalThis.fetch) {
+  if (typeof fetchImpl !== 'function') {
     throw new Error('Fetch no esta disponible en este entorno de Node.js.');
   }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'NodeWarBot/1.0 (+manual garmoth refresh)',
-        Accept: 'text/html,application/xhtml+xml'
-      },
-      redirect: 'follow',
-      signal: controller.signal
-    });
+    let currentUrl = url;
+    // Las redirecciones se siguen a mano para validar cada destino ANTES de pedirlo.
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+      if (!isAllowedGarmothFetchUrl(currentUrl)) {
+        throw new Error('Redireccion a un host que no es de Garmoth.');
+      }
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+      const response = await fetchImpl(currentUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'NodeWarBot/1.0 (+manual garmoth refresh)',
+          Accept: 'text/html,application/xhtml+xml'
+        },
+        redirect: 'manual',
+        signal: controller.signal
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers?.get?.('location');
+        if (!location) throw new Error(`HTTP ${response.status} sin destino de redireccion.`);
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+      }
+
+      if (response.url && !isAllowedGarmothFetchUrl(response.url)) {
+        throw new Error('La respuesta final no proviene de un host de Garmoth.');
+      }
+
+      return await readBodyWithLimit(response, MAX_BODY_BYTES);
     }
 
-    return await response.text();
+    throw new Error('Demasiadas redirecciones al consultar Garmoth.');
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+function bodyTooLargeError() {
+  return new Error('La respuesta de Garmoth es demasiado grande (maximo 3 MB).');
+}
+
+async function readBodyWithLimit(response, maxBytes) {
+  const declared = Number.parseInt(response.headers?.get?.('content-length') || '', 10);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw bodyTooLargeError();
+  }
+
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) throw bodyTooLargeError();
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let received = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > maxBytes) throw bodyTooLargeError();
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } catch (error) {
+    await reader.cancel().catch(() => null);
+    throw error;
   }
 }
 

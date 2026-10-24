@@ -42,6 +42,17 @@ function isGarmothHost(hostname) {
   return hostname === 'garmoth.com' || hostname.endsWith('.garmoth.com');
 }
 
+// Para peticiones salientes (incluidas redirecciones): solo https y solo hosts de Garmoth.
+function isAllowedGarmothFetchUrl(rawUrl) {
+  try {
+    const parsed = new URL(String(rawUrl || ''));
+    return parsed.protocol === 'https:' && isGarmothHost(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 module.exports = {
-  validateAndNormalizeGarmothProfileUrl
+  validateAndNormalizeGarmothProfileUrl,
+  isAllowedGarmothFetchUrl
 };
