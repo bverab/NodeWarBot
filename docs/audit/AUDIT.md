@@ -286,6 +286,12 @@ Estos puntos cambian reglas del producto o requieren información que no está e
     terminar ese mismo día), o hay que exigir un margen mínimo? Hoy `validateFutureLifecycle` lo
     rechaza para `/event publish`.
 
+15. **Borradores semanales creados en la web**: el dashboard los guarda como "serie recurrente
+    habilitada" con `time` = hora de **inicio** del evento. El bot los publica solo a esa hora (también
+    ocurría antes, tras cada reinicio del bot). ¿Deben publicarse automáticamente, y a qué hora (inicio
+    o una hora de publicación propia)? Mientras tanto, el bot ya no puede borrar una publicación viva
+    del mismo día (hallazgo H1 de la revisión final).
+
 ### Hallazgos nuevos durante la implementación
 
 - **NEW-1 [Alto]** · Los eventos creados con `/event create` se publican con cierre y fin a la hora del
