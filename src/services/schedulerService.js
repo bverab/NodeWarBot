@@ -69,6 +69,13 @@ function stopScheduler() {
 }
 
 /**
+ * Resuelve cuando termina el tick en curso (o de inmediato si no hay ninguno).
+ */
+function waitForSchedulerIdle() {
+  return tickPromise ? tickPromise.catch(() => null) : Promise.resolve();
+}
+
+/**
  * Verifica y ejecuta eventos que deben publicarse.
  * Si ya hay un tick en curso devuelve esa misma promesa (no se solapan).
  */
@@ -96,6 +103,9 @@ async function runSchedulerTick() {
     }
 
     for (const war of wars) {
+      // stopScheduler durante el tick: termina el evento en curso y no sigue con el resto.
+      if (!schedulerInstance) break;
+
       if (war.messageId && !war.isClosed && Number.isFinite(war.closesAt) && nowMs >= war.closesAt) {
         await closeWarSignups(war);
       }
@@ -302,7 +312,8 @@ function getDateString(date) {
  * Ejecuta la publicacion de un evento
  */
 async function executeWarPublication(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     if (war.messageId) {
@@ -438,7 +449,8 @@ function shouldPublishRecapThread(war, nowMs) {
 }
 
 async function publishRecapThread(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     const channel = await client.channels.fetch(war.channelId).catch(() => null);
@@ -483,7 +495,8 @@ async function publishRecapThread(war) {
 }
 
 async function closeWarSignups(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     war.isClosed = true;
@@ -514,7 +527,8 @@ async function closeWarSignups(war) {
 }
 
 async function expireWarMessage(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     const deleteResult = await deleteEventDiscordMessage({ client, event: war });
@@ -565,6 +579,7 @@ function getSchedulerStatus() {
 module.exports = {
   initScheduler,
   stopScheduler,
+  waitForSchedulerIdle,
   checkAndExecuteEvents,
   processScheduledWebPublishes,
   getSchedulerStatus

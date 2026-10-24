@@ -6,8 +6,11 @@ const modalHandler = require('./handlers/modalHandler');
 const interactionHandler = require('./handlers/interactionHandler');
 const { initScheduler } = require('./services/schedulerService');
 const { primeApplicationEmojiCache } = require('./utils/applicationEmojiResolver');
-const { initializePersistence, shutdownPersistence } = require('./db/init');
+const { initializePersistence } = require('./db/init');
+const { validateEnvironment, shutdown, replyWithInteractionError } = require('./services/botLifecycleService');
 const { logInfo, logWarn, logError } = require('./utils/appLogger');
+
+const FORCED_EXIT_TIMEOUT_MS = 10_000;
 
 const SCHEDULE_CUSTOM_IDS = new Set(['schedule_war_mode', 'schedule_war_days', 'schedule_war_mentions']);
 const INTERACTION_HANDLER_CUSTOM_IDS = new Set([
@@ -55,6 +58,7 @@ const INTERACTION_HANDLER_CUSTOM_IDS = new Set([
 // - Enruta interacciones (slash, botones, modales, menus)
 // - Inicia scheduler de publicaciones automaticas
 async function main() {
+  validateEnvironment();
   await initializePersistence();
 
   const client = new Client({
@@ -134,49 +138,35 @@ async function main() {
         commandName: interaction.commandName || null
       });
 
-      if (interaction.replied || interaction.deferred) {
-        return;
-      }
-
-      try {
-        await interaction.reply({
-          content: 'Error ejecutando el comando',
-          flags: 64,
-          allowedMentions: { parse: [] }
-        });
-      } catch (replyError) {
-        if (replyError?.code === 40060 || replyError?.code === 10062) {
-          logWarn('No se pudo responder error global de interaccion', {
-            action: 'interaction_error_reply',
-            guildId: interaction.guildId,
-            userId: interaction.user?.id,
-            eventId: interaction.message?.id || null,
-            code: replyError.code
-          });
-          return;
-        }
-
-        logError('Error al responder fallback global de interaccion', replyError, {
-          action: 'interaction_error_reply',
-          guildId: interaction.guildId,
-          userId: interaction.user?.id,
-          eventId: interaction.message?.id || null
-        });
-      }
+      await replyWithInteractionError(interaction);
     }
   });
 
   await client.login(process.env.TOKEN);
 }
 
+function shutdownAndExit(exitCode) {
+  setTimeout(() => process.exit(exitCode), FORCED_EXIT_TIMEOUT_MS).unref();
+  shutdown({ client: global.discordClient }).finally(() => process.exit(exitCode));
+}
+
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => {
-    shutdownPersistence().finally(() => process.exit(0));
+    logInfo(`Senal ${signal} recibida, cerrando bot`, { action: 'shutdown' });
+    shutdownAndExit(0);
   });
 }
 
-main().catch(async error => {
+process.on('unhandledRejection', reason => {
+  logError('Promesa rechazada sin manejar', reason, { action: 'unhandled_rejection' });
+});
+
+process.on('uncaughtException', error => {
+  logError('Excepcion no capturada, cerrando bot', error, { action: 'uncaught_exception' });
+  shutdownAndExit(1);
+});
+
+main().catch(error => {
   logError('Error fatal iniciando el bot', error, { action: 'startup' });
-  await shutdownPersistence();
-  process.exit(1);
+  shutdownAndExit(1);
 });
