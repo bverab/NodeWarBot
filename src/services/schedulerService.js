@@ -464,6 +464,7 @@ async function closeWarSignups(war) {
 
   try {
     war.isClosed = true;
+    await warService.updateWar(war);
 
     if (war.messageId) {
       const updateResult = await updateEventDiscordMessage({ client, event: war });
@@ -478,8 +479,6 @@ async function closeWarSignups(war) {
         });
       }
     }
-
-    await warService.updateWar(war);
   } catch (error) {
     logError('Error al cerrar inscripciones', error, {
       action: 'scheduler_close_signups',

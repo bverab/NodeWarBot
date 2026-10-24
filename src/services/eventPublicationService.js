@@ -114,6 +114,8 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
   }
 
   if (normalizedWar.messageId && !mustRepublish) {
+    // El render lee la cache: al activar se persiste antes de editar el mensaje.
+    const persisted = shouldActivate ? await warService.updateWar(normalizedWar) : normalizedWar;
     const updateResult = await updateEventDiscordMessage({
       guild: discordContext.guild,
       client: discordContext.client,
@@ -124,7 +126,6 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
       }
     });
     if (updateResult.ok) {
-      const persisted = shouldActivate ? await warService.updateWar(normalizedWar) : normalizedWar;
       logInfo('Evento actualizado en mensaje existente', {
         action: 'publish_or_refresh',
         guildId: discordContext.guildId,
