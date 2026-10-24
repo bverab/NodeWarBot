@@ -192,15 +192,12 @@ async function editSeriesDay(baseWar, channelId, targetEventId, time, dayOfWeek)
     clonedSlots = await pveService.getEventSlots(target.id);
   }
 
-  const index = wars.findIndex(war => war.id === target.id);
-  const updated = normalizeWar({
+  const updated = await warService.replaceWarId(target.id, normalizeWar({
     ...target,
     id: nextId,
     time,
     dayOfWeek
-  });
-  wars[index] = updated;
-  await warService.saveWars(wars);
+  }));
   if (clonedSlots) {
     await pveService.saveEventSlots(
       updated.id,
@@ -230,8 +227,7 @@ async function removeSeriesDay(baseWar, channelId, targetEventId) {
     throw new Error('No puedes eliminar el ultimo dia de la serie.');
   }
 
-  const filtered = wars.filter(war => war.id !== target.id);
-  await warService.saveWars(filtered);
+  await warService.deleteWarById(target.id);
   return target;
 }
 

@@ -20,11 +20,29 @@ async function handleScheduleView(interaction, deps) {
     return `- \`${war.id}\` | **${war.name}** | ${dayNames[war.dayOfWeek] || '?'} ${war.time} (${war.timezone}) | ${mode}`;
   });
 
-  return await safeEphemeralReply(interaction, `Programaciones activas (${wars.length}):\n${lines.join('\n')}`);
+  return await safeEphemeralReply(interaction, buildListReply(`Programaciones activas (${wars.length}):`, lines, wars.length));
+}
+
+function buildListReply(header, lines, totalCount, maxLength = 2000) {
+  let content = header;
+  let shown = 0;
+  for (const line of lines) {
+    const remaining = totalCount - shown - 1;
+    const suffix = remaining > 0 ? `\n... y ${remaining} mas` : '';
+    if (content.length + 1 + line.length + suffix.length > maxLength) break;
+    content += `\n${line}`;
+    shown += 1;
+  }
+  const hidden = totalCount - shown;
+  return hidden > 0 ? `${content}\n... y ${hidden} mas` : content;
 }
 
 async function handleScheduleCancel(interaction, deps) {
-  const { warService, safeEphemeralReply, getSanitizedOption } = deps;
+  const { warService, safeEphemeralReply, getSanitizedOption, isAdminExecutor } = deps;
+  if (!isAdminExecutor(interaction)) {
+    return await safeEphemeralReply(interaction, 'Solo Admin puede gestionar eventos.');
+  }
+
   const id = getSanitizedOption(interaction, 'id', { required: true, maxLength: 64 });
   const wars = warService.loadWars();
   const target = wars.find(war => war.id === id && war.channelId === interaction.channelId);
@@ -35,8 +53,7 @@ async function handleScheduleCancel(interaction, deps) {
     );
   }
 
-  const filtered = wars.filter(war => !(war.id === id && war.channelId === interaction.channelId));
-  await warService.saveWars(filtered);
+  await warService.deleteWarById(target.id);
 
   return await safeEphemeralReply(interaction, `Programacion cancelada: \`${id}\``);
 }

@@ -515,6 +515,7 @@ async function loadWarsFresh() {
   return loadWars();
 }
 
+// Reemplaza TODA la base de eventos (incluye PvE por cascada). Solo para tests e importacion.
 async function saveWars(wars) {
   const normalized = normalizeWarsInput(wars);
   await withGlobalWriteLock(async () => {
@@ -581,6 +582,39 @@ async function updateWarByMessageId(messageId, updater) {
 
   if (!normalized) return { war: null, result: null };
   return { war: normalized, result };
+}
+
+async function deleteWarById(eventId) {
+  const id = String(eventId);
+  let deleted = false;
+  await withEventLock(id, async () => {
+    const result = await prisma.event.deleteMany({ where: { id } });
+    deleted = result.count > 0;
+    warsCache = warsCache.filter(war => war.id !== id);
+  });
+  return deleted;
+}
+
+async function replaceWarId(oldId, newWar) {
+  const previousId = String(oldId);
+  const normalized = normalizeWar(newWar);
+  const [firstLock, secondLock] = [previousId, normalized.id].sort();
+
+  const task = async () => {
+    // Borra primero: la copia conserva el messageId, que es unico.
+    await prisma.$transaction(async tx => {
+      await tx.event.deleteMany({ where: { id: previousId } });
+      await upsertWarTx(tx, normalized);
+    });
+    const next = warsCache.filter(war => war.id !== normalized.id);
+    const index = next.findIndex(war => war.id === previousId);
+    if (index >= 0) next[index] = normalized;
+    else next.push(normalized);
+    warsCache = next;
+  };
+
+  await withEventLock(firstLock, () => (firstLock === secondLock ? task() : withEventLock(secondLock, task)));
+  return normalized;
 }
 
 async function deleteWarByMessageId(messageId) {
@@ -659,6 +693,8 @@ module.exports = {
   getLatestWarByChannelId,
   updateWar,
   updateWarByMessageId,
+  deleteWarById,
+  replaceWarId,
   deleteWarByMessageId,
   getWarsByGroupId,
   getWarByGroupAndDay,
