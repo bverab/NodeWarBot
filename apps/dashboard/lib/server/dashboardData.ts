@@ -255,14 +255,70 @@ function countFillers(event: {
   return (event.fillers?.length ?? 0) + (event.enrollments?.filter(isFillerEnrollment).length ?? 0);
 }
 
-function toEventListItem(
-  event: Event & {
-    schedule?: EventSchedule | null;
-    participants?: EventParticipant[];
-    enrollments?: EventEnrollment[];
-    waitlist?: EventWaitlistEntry[];
-    fillers?: EventFillerEntry[];
+type EventListCounts = Pick<EventListItem, "participantCount" | "waitlistCount" | "fillerCount">;
+
+// Counts from relations that were loaded in full (event detail).
+function countsFromRelations(event: {
+  participants?: EventParticipant[];
+  enrollments?: EventEnrollment[];
+  waitlist?: EventWaitlistEntry[];
+  fillers?: EventFillerEntry[];
+}): EventListCounts {
+  return {
+    participantCount: countParticipants(event),
+    waitlistCount: event.waitlist?.length ?? 0,
+    fillerCount: countFillers(event)
+  };
+}
+
+type EventAggregateCounts = { _count: { participants: number; waitlist: number; fillers: number } };
+type EnrollmentCounts = { primary: number; filler: number };
+
+// Counts from COUNT queries, so lists never load every participant row just to show a number.
+function countsFromAggregates(event: EventAggregateCounts, enrollments: EnrollmentCounts | undefined): EventListCounts {
+  return {
+    participantCount: event._count.participants + (enrollments?.primary ?? 0),
+    waitlistCount: event._count.waitlist,
+    fillerCount: event._count.fillers + (enrollments?.filler ?? 0)
+  };
+}
+
+// _count cannot split one relation by type, so enrollments (PRIMARY vs FILLER) are counted with one grouped query.
+async function getEnrollmentCountsByEvent(eventIds: string[]) {
+  const counts = new Map<string, EnrollmentCounts>();
+  if (!eventIds.length) {
+    return counts;
   }
+
+  const rows = await prisma.eventEnrollment.groupBy({
+    by: ["eventId", "enrollmentType"],
+    where: { eventId: { in: eventIds } },
+    _count: { _all: true }
+  });
+
+  for (const row of rows) {
+    const entry = counts.get(row.eventId) ?? { primary: 0, filler: 0 };
+    if (isFillerEnrollment(row)) {
+      entry.filler += row._count._all;
+    } else {
+      entry.primary += row._count._all;
+    }
+    counts.set(row.eventId, entry);
+  }
+
+  return counts;
+}
+
+async function toEventListItems(events: Array<Event & EventAggregateCounts & { schedule?: EventSchedule | null }>) {
+  const enrollmentCounts = await getEnrollmentCountsByEvent(events.map((event) => event.id));
+  return events.map((event) => toEventListItem(event, countsFromAggregates(event, enrollmentCounts.get(event.id))));
+}
+
+const EVENT_COUNTS_SELECT = { participants: true, waitlist: true, fillers: true } as const;
+
+function toEventListItem(
+  event: Event & { schedule?: EventSchedule | null },
+  counts: EventListCounts
 ): EventListItem {
   return {
     id: event.id,
@@ -284,9 +340,9 @@ function toEventListItem(
     createdAt: toIso(event.createdAt),
     closesAt: toIso(event.closesAt),
     expiresAt: toIso(event.expiresAt),
-    participantCount: countParticipants(event),
-    waitlistCount: event.waitlist?.length ?? 0,
-    fillerCount: countFillers(event),
+    participantCount: counts.participantCount,
+    waitlistCount: counts.waitlistCount,
+    fillerCount: counts.fillerCount,
     channelId: event.channelId,
     messageId: event.messageId
   };
@@ -358,55 +414,30 @@ async function getParticipantProfiles(guildId: string, participants: Participant
   };
 }
 
-export async function getGuildEvents(guildId: string): Promise<EventListItem[]> {
+async function listGuildEvents(where: { guildId: string; eventType?: string | { in: string[] } }): Promise<EventListItem[]> {
   const events = await prisma.event.findMany({
-    where: { guildId },
+    where,
     orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
     include: {
       schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
+      _count: { select: EVENT_COUNTS_SELECT }
     },
     take: 100
   });
 
-  return events.map(toEventListItem);
+  return toEventListItems(events);
+}
+
+export async function getGuildEvents(guildId: string): Promise<EventListItem[]> {
+  return listGuildEvents({ guildId });
 }
 
 export async function getGuildEventsByType(guildId: string, eventType: string): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where: { guildId, eventType },
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
-    },
-    take: 100
-  });
-
-  return events.map(toEventListItem);
+  return listGuildEvents({ guildId, eventType });
 }
 
 export async function getGuildEventsByTypes(guildId: string, eventTypes: string[]): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where: { guildId, eventType: { in: eventTypes } },
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
-    },
-    take: 100
-  });
-
-  return events.map(toEventListItem);
+  return listGuildEvents({ guildId, eventType: { in: eventTypes } });
 }
 
 export async function getGuildEventDetail(guildId: string, eventId: string): Promise<EventDetail | null> {
@@ -445,7 +476,7 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
     return null;
   }
 
-  const base = toEventListItem(event);
+  const base = toEventListItem(event, countsFromRelations(event));
   const enrichParticipant = await getParticipantProfiles(guildId, [
     ...event.roleSlots.flatMap((slot) => slot.users),
     ...event.enrollments,
@@ -553,15 +584,22 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
 
 export async function getGuildOverview(guildId: string): Promise<OverviewData> {
   const now = new Date();
-  const [events, scheduledEvents, templates, garmothProfiles] = await Promise.all([
+  const [
+    events,
+    scheduledEvents,
+    templates,
+    garmothProfiles,
+    activeEvents,
+    upcomingEvents,
+    totalEvents,
+    participantRows,
+    enrollmentRows
+  ] = await Promise.all([
     prisma.event.findMany({
       where: { guildId },
       orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
       include: {
-        participants: true,
-        enrollments: true,
-        waitlist: true,
-        fillers: true
+        _count: { select: EVENT_COUNTS_SELECT }
       },
       take: 12
     }),
@@ -576,29 +614,33 @@ export async function getGuildOverview(guildId: string): Promise<OverviewData> {
     }),
     prisma.garmothProfile.count({
       where: { guildId }
+    }),
+    prisma.event.count({
+      where: { guildId, isClosed: false, closesAt: { gte: now }, expiresAt: { gte: now } }
+    }),
+    prisma.event.count({
+      where: { guildId, expiresAt: { gte: now } }
+    }),
+    prisma.event.count({
+      where: { guildId }
+    }),
+    prisma.eventParticipant.count({
+      where: { event: { guildId } }
+    }),
+    prisma.eventEnrollment.count({
+      where: { event: { guildId } }
     })
   ]);
 
-  const allCounts = await prisma.event.findMany({
-    where: { guildId },
-    select: {
-      isClosed: true,
-      closesAt: true,
-      expiresAt: true,
-      participants: { select: { id: true } },
-      enrollments: { select: { id: true } }
-    }
-  });
-
   return {
-    activeEvents: allCounts.filter((event) => !event.isClosed && event.closesAt >= now && event.expiresAt >= now).length,
-    upcomingEvents: allCounts.filter((event) => event.expiresAt >= now).length,
-    totalEvents: allCounts.length,
-    totalParticipants: allCounts.reduce((total, event) => total + event.participants.length + event.enrollments.length, 0),
+    activeEvents,
+    upcomingEvents,
+    totalEvents,
+    totalParticipants: participantRows + enrollmentRows,
     scheduledEvents,
     templates,
     garmothProfiles,
-    recentEvents: events.map(toEventListItem)
+    recentEvents: await toEventListItems(events)
   };
 }
 
