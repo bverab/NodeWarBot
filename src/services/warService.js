@@ -24,7 +24,6 @@ module.exports = {
     }
   },
   loadWarsFresh: withDbLog('loadWarsFresh', repository.loadWarsFresh),
-  saveWars: withDbLog('saveWars', repository.saveWars),
   createWar: withDbLog('createWar', repository.createWar),
   getWarByMessageId: (...args) => {
     try {
@@ -48,6 +47,8 @@ module.exports = {
   completeScheduledPublishIfUnpublished: withDbLog('completeScheduledPublishIfUnpublished', repository.completeScheduledPublishIfUnpublished),
   updateWarByMessageId: withDbLog('updateWarByMessageId', repository.updateWarByMessageId),
   deleteWarByMessageId: withDbLog('deleteWarByMessageId', repository.deleteWarByMessageId),
+  deleteWarById: withDbLog('deleteWarById', repository.deleteWarById),
+  replaceWarId: withDbLog('replaceWarId', repository.replaceWarId),
   getWarsByGroupId: (...args) => {
     try {
       return repository.getWarsByGroupId(...args);

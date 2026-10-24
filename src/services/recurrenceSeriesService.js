@@ -83,16 +83,16 @@ function toPublicDay(dayOfWeek) {
 }
 
 function createSeriesWarFromSource(source, dayOfWeek, time) {
-  const createdAt = Date.now();
+  // Hereda las horas absolutas del origen: el cierre y el fin se derivan luego de su hora local.
   return normalizeWar({
     ...source,
     id: `${source.groupId}_day${dayOfWeek}`,
     dayOfWeek,
     time,
     messageId: null,
-    createdAt,
-    expiresAt: createdAt + (Number.isInteger(source.duration) ? source.duration : 70) * 60 * 1000,
-    closesAt: createdAt + Math.max(0, ((Number.isInteger(source.duration) ? source.duration : 70) - (Number.isInteger(source.closeBeforeMinutes) ? source.closeBeforeMinutes : 0))) * 60 * 1000,
+    createdAt: source.createdAt,
+    expiresAt: source.expiresAt,
+    closesAt: source.closesAt,
     isClosed: false,
     waitlist: [],
     roles: Array.isArray(source.roles)
@@ -192,15 +192,12 @@ async function editSeriesDay(baseWar, channelId, targetEventId, time, dayOfWeek)
     clonedSlots = await pveService.getEventSlots(target.id);
   }
 
-  const index = wars.findIndex(war => war.id === target.id);
-  const updated = normalizeWar({
+  const updated = await warService.replaceWarId(target.id, normalizeWar({
     ...target,
     id: nextId,
     time,
     dayOfWeek
-  });
-  wars[index] = updated;
-  await warService.saveWars(wars);
+  }));
   if (clonedSlots) {
     await pveService.saveEventSlots(
       updated.id,
@@ -230,8 +227,7 @@ async function removeSeriesDay(baseWar, channelId, targetEventId) {
     throw new Error('No puedes eliminar el ultimo dia de la serie.');
   }
 
-  const filtered = wars.filter(war => war.id !== target.id);
-  await warService.saveWars(filtered);
+  await warService.deleteWarById(target.id);
   return target;
 }
 

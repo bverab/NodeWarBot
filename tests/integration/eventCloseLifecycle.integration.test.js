@@ -32,7 +32,20 @@ async function tryJoin(messageId, roleName, participant) {
   });
 }
 
+// buildWar usa time '20:00' y closesAt = ahora + 60 min (America/Santiago): el ciclo solo es
+// valido si "ahora" cae entre ~19:00 y ~01:00 locales. Se fija el reloj en las 21:00.
+const FIXED_NOW = new Date('2026-05-06T01:00:00.000Z');
+
 describe('event close lifecycle integration', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('cerrar bloquea nuevas inscripciones pero conserva asignaciones existentes', async () => {
     const war = buildWar({
       id: 'close_lifecycle_1',

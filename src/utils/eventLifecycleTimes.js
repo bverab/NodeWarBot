@@ -34,13 +34,23 @@ function getNextZonedDateKeyForDay(dayOfWeek, time, timezone, now = new Date()) 
   return null;
 }
 
+// Un cierre "antes" de la publicacion se interpreta como del dia siguiente solo si queda a
+// este margen o menos de la publicacion (ej. 23:30 -> 00:15); fuera de el sigue siendo error.
+const MAX_OVERNIGHT_SIGNUP_WINDOW_MS = 6 * 60 * 60 * 1000;
+
 function buildLifecycleForLocalDate({ dateKey, publishTime, signupCloseTime, eventEndTime, timezone }) {
   const publishAt = zonedDateTimeFromParts(dateKey, publishTime, timezone);
-  const signupCloseAt = zonedDateTimeFromParts(dateKey, signupCloseTime, timezone);
+  let signupCloseAt = zonedDateTimeFromParts(dateKey, signupCloseTime, timezone);
   let eventEndAt = zonedDateTimeFromParts(dateKey, eventEndTime, timezone);
 
   if (!publishAt || !signupCloseAt || !eventEndAt) return null;
-  if (eventEndAt.getTime() <= signupCloseAt.getTime()) {
+  if (signupCloseAt.getTime() <= publishAt.getTime()) {
+    const nextDayClose = new Date(signupCloseAt.getTime() + 24 * 60 * 60 * 1000);
+    if (nextDayClose.getTime() - publishAt.getTime() <= MAX_OVERNIGHT_SIGNUP_WINDOW_MS) {
+      signupCloseAt = nextDayClose;
+    }
+  }
+  while (eventEndAt.getTime() <= signupCloseAt.getTime()) {
     eventEndAt = new Date(eventEndAt.getTime() + 24 * 60 * 60 * 1000);
   }
   if (signupCloseAt.getTime() <= publishAt.getTime() && eventEndAt.getTime() > publishAt.getTime() + 24 * 60 * 60 * 1000) {

@@ -20,6 +20,7 @@ let schedulerInstance = null;
 let checkInterval = null;
 let scheduledPublishRunning = false;
 let scheduledPublishPromise = null;
+let tickPromise = null;
 
 /**
  * Inicializa el scheduler - debe llamarse una sola vez en index.js
@@ -68,20 +69,43 @@ function stopScheduler() {
 }
 
 /**
- * Verifica y ejecuta eventos que deben publicarse
+ * Resuelve cuando termina el tick en curso (o de inmediato si no hay ninguno).
  */
-async function checkAndExecuteEvents() {
-  if (!schedulerInstance) return;
+function waitForSchedulerIdle() {
+  return tickPromise ? tickPromise.catch(() => null) : Promise.resolve();
+}
 
+/**
+ * Verifica y ejecuta eventos que deben publicarse.
+ * Si ya hay un tick en curso devuelve esa misma promesa (no se solapan).
+ */
+function checkAndExecuteEvents() {
+  if (!schedulerInstance) return Promise.resolve();
+  if (tickPromise) return tickPromise;
+
+  tickPromise = runSchedulerTick().finally(() => {
+    tickPromise = null;
+  });
+  return tickPromise;
+}
+
+async function runSchedulerTick() {
   try {
     schedulerInstance.lastCheck = Date.now();
     const wars = warService.loadWars();
     const nowMs = Date.now();
     const now = new Date(nowMs);
 
-    await processScheduledWebPublishes(now);
+    try {
+      await processScheduledWebPublishes(now);
+    } catch (error) {
+      logError('Error en auto publish web programado', error, { action: 'scheduler_web_auto_publish' });
+    }
 
     for (const war of wars) {
+      // stopScheduler durante el tick: termina el evento en curso y no sigue con el resto.
+      if (!schedulerInstance) break;
+
       if (war.messageId && !war.isClosed && Number.isFinite(war.closesAt) && nowMs >= war.closesAt) {
         await closeWarSignups(war);
       }
@@ -139,7 +163,16 @@ async function processScheduledWebPublishes(now = new Date()) {
       }))
     });
     for (const event of candidates) {
-      await publishScheduledWebEvent(event, now);
+      try {
+        await publishScheduledWebEvent(event, now);
+      } catch (error) {
+        logError('Error en auto publish web programado', error, {
+          action: 'scheduler_web_auto_publish',
+          eventId: event.id,
+          guildId: event.guildId,
+          channelId: event.channelId
+        });
+      }
     }
   })();
 
@@ -279,7 +312,8 @@ function getDateString(date) {
  * Ejecuta la publicacion de un evento
  */
 async function executeWarPublication(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     if (war.messageId) {
@@ -415,7 +449,8 @@ function shouldPublishRecapThread(war, nowMs) {
 }
 
 async function publishRecapThread(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     const channel = await client.channels.fetch(war.channelId).catch(() => null);
@@ -460,10 +495,12 @@ async function publishRecapThread(war) {
 }
 
 async function closeWarSignups(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     war.isClosed = true;
+    await warService.updateWar(war);
 
     if (war.messageId) {
       const updateResult = await updateEventDiscordMessage({ client, event: war });
@@ -478,8 +515,6 @@ async function closeWarSignups(war) {
         });
       }
     }
-
-    await warService.updateWar(war);
   } catch (error) {
     logError('Error al cerrar inscripciones', error, {
       action: 'scheduler_close_signups',
@@ -492,7 +527,8 @@ async function closeWarSignups(war) {
 }
 
 async function expireWarMessage(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     const deleteResult = await deleteEventDiscordMessage({ client, event: war });
@@ -543,6 +579,7 @@ function getSchedulerStatus() {
 module.exports = {
   initScheduler,
   stopScheduler,
+  waitForSchedulerIdle,
   checkAndExecuteEvents,
   processScheduledWebPublishes,
   getSchedulerStatus

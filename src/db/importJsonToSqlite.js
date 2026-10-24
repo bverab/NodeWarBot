@@ -1,5 +1,12 @@
+const fs = require('fs');
+const path = require('path');
 const { prisma } = require('./client');
-const { backupLegacyJsonFiles, readWarsJson, readGarmothLinksJson } = require('./jsonStore');
+const {
+  backupLegacyJsonFiles,
+  getGarmothFilePath,
+  getWarsFilePath,
+  readArrayJsonFileStrict
+} = require('./jsonStore');
 const { normalizeWar } = require('../utils/warState');
 const { replaceAllWarsInSqlite } = require('./warRepository');
 const { replaceAllGarmothProfilesInSqlite } = require('./garmothProfileRepository');
@@ -24,15 +31,33 @@ function normalizeLegacyGarmothLink(link = {}) {
   };
 }
 
+async function backupDatabase(backupDir) {
+  fs.mkdirSync(backupDir, { recursive: true });
+  const target = path.join(backupDir, 'nodewarbot-before-import.db');
+  await prisma.$executeRawUnsafe(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
+  return target;
+}
+
 async function importJsonToSqlite(options = {}) {
   const shouldBackup = options.backup !== false;
-  const backupMeta = shouldBackup ? backupLegacyJsonFiles() : null;
+  const force = Boolean(options.force);
 
-  const wars = readWarsJson().map(normalizeWar);
-  const garmothLinks = readGarmothLinksJson().map(normalizeLegacyGarmothLink)
+  // Validar todo antes de tocar archivos o la base: el import reemplaza todos los eventos.
+  const wars = readArrayJsonFileStrict(getWarsFilePath()).map(normalizeWar);
+  const garmothLinks = readArrayJsonFileStrict(getGarmothFilePath(), { required: false })
+    .map(normalizeLegacyGarmothLink)
     .filter(link => link.discordUserId && link.guildId && link.garmothProfileUrl);
 
   await prisma.$connect();
+  const existingEvents = await prisma.event.count();
+  if (existingEvents > 0 && !force) {
+    throw new Error(`La base ya tiene ${existingEvents} evento(s). Usa --force para reemplazarlos (se hace backup antes).`);
+  }
+
+  // backupLegacyJsonFiles crea getDataDirPath()/backups/<timestamp>; la base se respalda ahi mismo.
+  const backupMeta = shouldBackup ? backupLegacyJsonFiles() : null;
+  const databaseBackupPath = shouldBackup ? await backupDatabase(backupMeta.backupDir) : null;
+
   await replaceAllWarsInSqlite(wars);
   await replaceAllGarmothProfilesInSqlite(garmothLinks);
 
@@ -40,6 +65,7 @@ async function importJsonToSqlite(options = {}) {
 
   return {
     backup: backupMeta,
+    databaseBackupPath,
     importedWars: wars.length,
     importedGarmothProfiles: garmothLinks.length
   };

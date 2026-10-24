@@ -92,20 +92,21 @@ function normalizeFillerEntry(entry = {}) {
 
 function normalizeWar(war = {}) {
   // Estandariza estructura del evento para evitar estados incompletos al leer JSON.
-  const createdAt = Number.isFinite(war.publishAt)
-    ? war.publishAt
-    : Number.isFinite(war.createdAt)
-      ? war.createdAt
+  // publishAt/signupCloseAt/eventEndAt solo se aceptan como respaldo de JSON antiguo.
+  const createdAt = Number.isFinite(war.createdAt)
+    ? war.createdAt
+    : Number.isFinite(war.publishAt)
+      ? war.publishAt
       : deriveCreatedAt(war.id);
-  const expiresAt = Number.isFinite(war.eventEndAt)
-    ? war.eventEndAt
-    : Number.isFinite(war.expiresAt)
-      ? war.expiresAt
+  const expiresAt = Number.isFinite(war.expiresAt)
+    ? war.expiresAt
+    : Number.isFinite(war.eventEndAt)
+      ? war.eventEndAt
       : createdAt + (Number.isFinite(war.duration) && war.duration > 0 ? war.duration : 70) * 60 * 1000;
-  const closesAtRaw = Number.isFinite(war.signupCloseAt)
-    ? war.signupCloseAt
-    : Number.isFinite(war.closesAt)
-      ? war.closesAt
+  const closesAtRaw = Number.isFinite(war.closesAt)
+    ? war.closesAt
+    : Number.isFinite(war.signupCloseAt)
+      ? war.signupCloseAt
       : expiresAt - (Number.isFinite(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0 ? Math.floor(war.closeBeforeMinutes) : 0) * 60 * 1000;
   const closesAt = Math.max(createdAt, Math.min(closesAtRaw, expiresAt));
   const duration = Math.max(1, Math.round((expiresAt - createdAt) / 60_000));
@@ -132,17 +133,13 @@ function normalizeWar(war = {}) {
     messageId: war.messageId || null,
     
     // Scheduling (NUEVO)
-    dayOfWeek: war.dayOfWeek !== undefined ? Number(war.dayOfWeek) : null,  // 0-6
+    dayOfWeek: normalizeDayOfWeek(war.dayOfWeek),  // 0-6
     time: war.time || null,                         // "HH:mm"
     timezone: war.timezone || 'America/Bogota',
     duration,                                       // minutos
     closeBeforeMinutes,
     autoPublishEnabled: Boolean(war.autoPublishEnabled),
-    scheduledPublishAt: Number.isFinite(war.publishAt)
-      ? war.publishAt
-      : Number.isFinite(war.scheduledPublishAt)
-        ? war.scheduledPublishAt
-        : null,
+    scheduledPublishAt: Number.isFinite(war.scheduledPublishAt) ? war.scheduledPublishAt : null,
     publishError: war.publishError || null,
     lastPublishAttemptAt: Number.isFinite(war.lastPublishAttemptAt) ? war.lastPublishAttemptAt : null,
     notifyRoles: Array.isArray(war.notifyRoles) ? war.notifyRoles : [],  // Array de role IDs o user IDs
@@ -159,11 +156,13 @@ function normalizeWar(war = {}) {
     createdAt,
     expiresAt,
     closesAt,
-    publishAt: createdAt,
-    signupCloseAt: closesAt,
-    eventEndAt: expiresAt,
     isClosed: Boolean(war.isClosed)
   };
+}
+
+function normalizeDayOfWeek(value) {
+  const day = typeof value === 'string' && /^[0-6]$/.test(value.trim()) ? Number(value.trim()) : value;
+  return Number.isInteger(day) && day >= 0 && day <= 6 ? day : null;
 }
 
 /**
