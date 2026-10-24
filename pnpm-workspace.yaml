@@ -25,6 +25,9 @@ allowBuilds:
   '@prisma/client': false
   '@prisma/engines': false
   prisma: false
+  # Resolver nativo de eslint-import-resolver-typescript (eslint-config-next). Trae su binario
+  # precompilado como dependencia opcional; su postinstall solo comprueba/descarga un respaldo WASM.
+  unrs-resolver: false
 
 # Agent skills bundled by dependencies are not installed.
 permissions:
