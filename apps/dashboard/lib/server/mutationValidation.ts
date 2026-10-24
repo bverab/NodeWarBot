@@ -1,5 +1,6 @@
 import type { EventMutationInput, RoleSlotMutationInput, TemplateMutationInput } from "@/lib/server/dashboardData";
 import { buildEventDateTime, normalizeTimezoneInfo } from "@/lib/eventDateTime";
+import { isDiscordSnowflake } from "../discordSnowflake";
 
 export const PUBLISHED_EVENT_LOCKED_FIELDS = [
   "eventType",
@@ -52,6 +53,20 @@ export function readNullableString(value: unknown, maxLength: number) {
 
   const trimmed = value.trim();
   return trimmed ? trimmed.slice(0, maxLength) : null;
+}
+
+// undefined = field absent, null = cleared, "INVALID" = not a Discord id. Never truncates: a long value must fail, not be cut into a valid-looking id.
+export function readNullableSnowflake(value: unknown) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return isDiscordSnowflake(trimmed) ? trimmed : "INVALID";
 }
 
 export function readNumber(value: unknown, min: number, max: number) {
@@ -165,12 +180,18 @@ export function parseEventPatch(body: Record<string, unknown>, options: { timezo
     patch.isClosed = isClosed;
   }
 
-  const channelId = readNullableString(body.channelId, 32);
+  const channelId = readNullableSnowflake(body.channelId);
+  if (channelId === "INVALID") {
+    return { error: "channelId must be a valid Discord ID (17-20 digits)." } as const;
+  }
   if (channelId !== undefined) {
     patch.channelId = channelId;
   }
 
-  const messageId = readNullableString(body.messageId, 32);
+  const messageId = readNullableSnowflake(body.messageId);
+  if (messageId === "INVALID") {
+    return { error: "messageId must be a valid Discord ID (17-20 digits)." } as const;
+  }
   if (messageId !== undefined) {
     patch.messageId = messageId;
   }

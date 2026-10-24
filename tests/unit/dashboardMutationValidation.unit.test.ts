@@ -39,10 +39,41 @@ describe("dashboard mutation validation", () => {
       name: "Safe",
       type: "Safe label",
       time: "18:58",
-      channelId: "channel_1",
-      messageId: "message_1",
+      channelId: "693672286532272130",
+      messageId: "1500000000000000001",
       duration: 70
     })).toEqual(["time", "duration", "channelId", "messageId"]);
+  });
+
+  it("accepts Discord snowflakes for channelId and messageId and clears them with an empty string", () => {
+    expect(parseEventPatch({ channelId: "693672286532272130", messageId: "1500000000000000001" })).toEqual({
+      patch: { channelId: "693672286532272130", messageId: "1500000000000000001" }
+    });
+    expect(parseEventPatch({ channelId: "12345678901234567", messageId: "12345678901234567890" })).toEqual({
+      patch: { channelId: "12345678901234567", messageId: "12345678901234567890" }
+    });
+    expect(parseEventPatch({ channelId: "  ", messageId: "" })).toEqual({ patch: { channelId: null, messageId: null } });
+  });
+
+  it("rejects channelId and messageId values that are not Discord snowflakes", () => {
+    expect(parseEventPatch({ channelId: "channel_1" })).toEqual({ error: "channelId must be a valid Discord ID (17-20 digits)." });
+    expect(parseEventPatch({ messageId: "message_1" })).toEqual({ error: "messageId must be a valid Discord ID (17-20 digits)." });
+    expect(parseEventPatch({ messageId: "1234567890123456" })).toEqual({ error: "messageId must be a valid Discord ID (17-20 digits)." });
+    expect(parseEventPatch({ messageId: "123456789012345678901" })).toEqual({ error: "messageId must be a valid Discord ID (17-20 digits)." });
+    expect(parseEventPatch({ channelId: "../guilds/1/roles" })).toEqual({ error: "channelId must be a valid Discord ID (17-20 digits)." });
+    // A long numeric string must not be silently truncated into something that looks valid.
+    expect(parseEventPatch({ messageId: `${"1".repeat(17)}x${"1".repeat(20)}` })).toEqual({ error: "messageId must be a valid Discord ID (17-20 digits)." });
+  });
+
+  it("never lets the client set publishError or lastPublishAttemptAt through the patch", () => {
+    const result = parseEventPatch({
+      name: "Draft",
+      publishError: "forged",
+      lastPublishAttemptAt: "2026-01-01T00:00:00.000Z",
+      scheduledPublishAt: "2026-01-01T00:00:00.000Z"
+    });
+
+    expect(result).toEqual({ patch: { name: "Draft" } });
   });
 
   it("accepts the realistic dashboard edit payload and normalizes form strings", () => {
