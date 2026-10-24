@@ -70,7 +70,7 @@ async function getEventSlots(eventId) {
 }
 
 async function joinSlot(eventId, optionId, participant) {
-  const event = warService.loadWars().find(entry => entry.id === String(eventId));
+  const event = warService.getWarById(eventId);
   if (!event) return { ok: false, reason: 'event_missing' };
 
   const options = await getEventSlots(eventId);

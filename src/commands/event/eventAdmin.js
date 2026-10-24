@@ -62,9 +62,8 @@ async function autocompleteScheduleCancel(interaction, deps) {
   const { warService } = deps;
   const focused = interaction.options.getFocused(true);
   const focusedText = String(focused?.value || '').toLowerCase();
-  const allWars = warService.loadWarsFresh
-    ? await warService.loadWarsFresh()
-    : warService.loadWars();
+  // Se llama en cada tecla: lee la cache (el scheduler la sincroniza con la base en cada tick).
+  const allWars = warService.loadWars();
 
   const wars = allWars
     .filter(war => war.channelId === interaction.channelId && (war.schedule?.enabled || isScheduledPublishPending(war)))

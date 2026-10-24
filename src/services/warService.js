@@ -25,6 +25,14 @@ module.exports = {
   },
   loadWarsFresh: withDbLog('loadWarsFresh', repository.loadWarsFresh),
   createWar: withDbLog('createWar', repository.createWar),
+  getWarById: (...args) => {
+    try {
+      return repository.getWarById(...args);
+    } catch (error) {
+      logError('Fallo DB en warService.getWarById', error, { action: 'war_service_getWarById' });
+      throw error;
+    }
+  },
   getWarByMessageId: (...args) => {
     try {
       return repository.getWarByMessageId(...args);
