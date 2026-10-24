@@ -13,7 +13,8 @@ const templateService = require('../services/templateService');
 const pveService = require('../services/pveService');
 const {
   getDraftWar,
-  setDraftWar
+  setDraftWar,
+  clearDraftSession
 } = require('../utils/draftSessionStore');
 const scheduleFlow = require('./modal/scheduleFlow');
 const { EVENT_ADMIN_MODAL_ACTIONS } = require('./modal/eventAdminModalActions');
@@ -197,6 +198,7 @@ async function handleWarCreation(interaction) {
     allowedUserIds: []
   };
 
+  clearDraftSession(interaction.user.id);
   setDraftWar(interaction.user.id, warData);
 
   await interaction.editReply({ content: '\u2705 Evento iniciado' });
