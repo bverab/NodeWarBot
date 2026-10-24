@@ -584,6 +584,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
     submittingRef.current = true;
     setBusy(true);
     setMessage(null);
+    let created = false;
     try {
       const eventId = await createDraft(guildId, {
         name,
@@ -628,14 +629,19 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
             : undefined
       });
 
+      // The draft exists now. The form stays locked while the router navigates away: re-enabling the button here would
+      // let a second click create a duplicate draft.
+      created = true;
       setCreateConfirmOpen(false);
       router.push(guildRoutes.eventDetail(guildId, eventId));
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Draft event creation failed.");
     } finally {
-      submittingRef.current = false;
-      setBusy(false);
+      if (!created) {
+        submittingRef.current = false;
+        setBusy(false);
+      }
     }
   };
 
