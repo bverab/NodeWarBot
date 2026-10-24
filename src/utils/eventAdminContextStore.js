@@ -3,8 +3,21 @@ function hasExplicit(options, key) {
   return Object.prototype.hasOwnProperty.call(options, key) && options[key] !== undefined;
 }
 
+const CONTEXT_TTL_MS = 30 * 60 * 1000;
+
+function isExpired(context) {
+  return !Number.isFinite(context?.updatedAt) || Date.now() - context.updatedAt > CONTEXT_TTL_MS;
+}
+
+function pruneExpiredContexts() {
+  for (const [key, context] of Object.entries(global.eventAdminSelections || {})) {
+    if (isExpired(context)) delete global.eventAdminSelections[key];
+  }
+}
+
 function setSelectedEventContext(userId, guildId, channelId, eventId, options = {}) {
   if (!global.eventAdminSelections) global.eventAdminSelections = {};
+  pruneExpiredContexts();
   const key = buildContextKey(userId, guildId, channelId);
   const previous = global.eventAdminSelections[key] || {};
   global.eventAdminSelections[key] = {
@@ -58,7 +71,12 @@ function setSelectedEventContext(userId, guildId, channelId, eventId, options = 
 
 function getSelectedEventContext(userId, guildId, channelId) {
   const key = buildContextKey(userId, guildId, channelId);
-  return global.eventAdminSelections?.[key] || null;
+  const context = global.eventAdminSelections?.[key] || null;
+  if (context && isExpired(context)) {
+    delete global.eventAdminSelections[key];
+    return null;
+  }
+  return context;
 }
 
 function clearSelectedEventContext(userId, guildId, channelId) {

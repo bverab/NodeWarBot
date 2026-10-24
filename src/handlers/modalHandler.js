@@ -17,11 +17,15 @@ const {
 } = require('../utils/draftSessionStore');
 const scheduleFlow = require('./modal/scheduleFlow');
 const { EVENT_ADMIN_MODAL_ACTIONS } = require('./modal/eventAdminModalActions');
+const { isAdminExecutor } = require('../commands/eventadminShared');
 
 module.exports = async interaction => {
   try {
     const eventAdminModalHandler = EVENT_ADMIN_MODAL_ACTIONS[interaction.customId];
     if (eventAdminModalHandler) {
+      if (!isAdminExecutor(interaction)) {
+        return await safeRespond(interaction, 'Solo Admin puede gestionar eventos.');
+      }
       return await eventAdminModalHandler(interaction);
     }
 

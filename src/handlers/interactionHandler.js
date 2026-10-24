@@ -17,6 +17,8 @@ const {
 const { ROLE_PANEL_ACTIONS } = require('./interaction/rolePanelActions');
 const { EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/eventAdminPanelActions');
 const { PVE_EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/pveEventAdminPanelActions');
+const { isAdminExecutor } = require('../commands/eventadminShared');
+const { safeEphemeralReply } = require('../utils/interactionReply');
 const { consumeRateLimit, buildInteractionRateKey } = require('../utils/rateLimiter');
 const { buildModalTitle, clampInputValue } = require('../utils/modalLimits');
 const { logError } = require('../utils/appLogger');
@@ -61,14 +63,13 @@ module.exports = async interaction => {
       return await rolePanelHandler(interaction);
     }
 
-    const eventPanelHandler = EVENT_ADMIN_PANEL_ACTIONS[customId];
-    if (eventPanelHandler) {
-      return await eventPanelHandler(interaction);
-    }
-
-    const pveEventPanelHandler = PVE_EVENT_ADMIN_PANEL_ACTIONS[customId];
-    if (pveEventPanelHandler) {
-      return await pveEventPanelHandler(interaction);
+    // Paneles de administracion de eventos: el permiso se comprueba en cada accion, no solo al abrir el panel.
+    const adminPanelHandler = EVENT_ADMIN_PANEL_ACTIONS[customId] || PVE_EVENT_ADMIN_PANEL_ACTIONS[customId];
+    if (adminPanelHandler) {
+      if (!isAdminExecutor(interaction)) {
+        return await safeEphemeralReply(interaction, 'Solo Admin puede gestionar eventos.');
+      }
+      return await adminPanelHandler(interaction);
     }
   } catch (error) {
     logError('Error en interactionHandler', error, {
