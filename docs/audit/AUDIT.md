@@ -273,6 +273,8 @@ Estos puntos cambian reglas del producto o requieren información que no está e
 10. **Textos y placeholders del dashboard** (U-17/U-18): login con email/contraseña inoperante,
     contadores fijos en 0, textos que dicen que la edición web "no está habilitada".
 11. **Escapar markdown en nombres** (C-20): cambia cómo se ven nombres con `_` o `*`.
+12. **`/event schedule view`**: hoy cualquier miembro ve las programaciones del canal. `schedule
+    cancel` pasa a exigir admin (es destructivo); ¿la vista también?
 
 ## 6. Arquitectura
 
