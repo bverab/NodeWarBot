@@ -15,6 +15,7 @@ const {
 } = require('../utils/warState');
 const { refreshWarMessage, isAdminExecutor } = require('./eventadminShared');
 const { notifyPromotion } = require('../utils/promotionNotifier');
+const { replyOrEdit } = require('../utils/interactionReply');
 
 // Comando de test local para simular usuarios y validar waitlist/promociones.
 module.exports = {
@@ -73,9 +74,7 @@ module.exports = {
       }
     } catch (error) {
       console.error('Error en fakeuser:', error);
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: 'Error ejecutando comando', flags: 64 });
-      }
+      await replyOrEdit(interaction, 'Error ejecutando comando');
     }
   }
 };

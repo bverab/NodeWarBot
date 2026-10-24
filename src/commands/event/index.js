@@ -4,7 +4,7 @@ const warService = require('../../services/warService');
 const templateService = require('../../services/templateService');
 const { buildEventSelectorPayload } = require('../../utils/eventAdminUi');
 const { isAdminExecutor, resolveTargetWar } = require('../eventadminShared');
-const { safeEphemeralReply } = require('../../utils/interactionReply');
+const { safeEphemeralReply, replyOrEdit } = require('../../utils/interactionReply');
 const { publishOrRefreshWar } = require('../../services/eventPublicationService');
 const { safeMessageContent } = require('../../utils/textSafety');
 const { logError } = require('../../utils/appLogger');
@@ -274,7 +274,7 @@ module.exports = {
       return await safeEphemeralReply(interaction, 'Subcomando no soportado');
     } catch (error) {
       logError('Error en event', error, { userId: interaction.user?.id, command: 'event' });
-      await safeEphemeralReply(interaction, 'Error al ejecutar /event');
+      await replyOrEdit(interaction, 'Error al ejecutar /event');
     }
   }
 };

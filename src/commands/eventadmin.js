@@ -16,6 +16,7 @@ const { notifyPromotion } = require('../utils/promotionNotifier');
 const { parseEmojiInput } = require('../utils/emojiHelper');
 const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../utils/textSafety');
 const { logError, logWarn } = require('../utils/appLogger');
+const { replyOrEdit } = require('../utils/interactionReply');
 const {
   resolveTargetWar,
   refreshWarMessage,
@@ -280,9 +281,7 @@ module.exports = {
       if (subcommand === 'recap') return await handleRecapConfig(interaction);
     } catch (error) {
       logError('Error en eventadmin', error, { userId: interaction.user?.id, command: 'eventadmin' });
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: 'Error ejecutando eventadmin', flags: 64 });
-      }
+      await replyOrEdit(interaction, 'Error ejecutando eventadmin');
     }
   }
 };

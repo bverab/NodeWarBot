@@ -8,7 +8,7 @@ const {
 const { refreshGarmothLink } = require('../services/garmothProfileService');
 const { validateAndNormalizeGarmothProfileUrl } = require('../utils/garmothUrlHelper');
 const { resolveClassIconFile } = require('../utils/classIconResolver');
-const { safeEphemeralReply } = require('../utils/interactionReply');
+const { safeEphemeralReply, replyOrEdit } = require('../utils/interactionReply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -65,7 +65,7 @@ module.exports = {
       }
     } catch (error) {
       console.error('Error en garmoth:', error);
-      await safeEphemeralReply(interaction, 'Error procesando comando de Garmoth.');
+      await replyOrEdit(interaction, 'Error procesando comando de Garmoth.');
     }
   }
 };
