@@ -32,6 +32,7 @@ const { formatTimeInEventZone } = require('../../utils/eventLifecycleTimes');
 const { listSeriesWars, removeSeriesDay } = require('../../services/recurrenceSeriesService');
 const { publishOrRefreshWarWithOptions } = require('../../services/eventPublicationService');
 const { moveRoleIndex } = require('../../services/roleOrderService');
+const { buildModalTitle, clampInputValue } = require('../../utils/modalLimits');
 
 async function handleEventSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
@@ -320,7 +321,7 @@ async function handleEventRoleAdd(interaction) {
     return await interaction.reply({ content: 'No hay evento seleccionado. Usa `/event edit`.', flags: 64 });
   }
 
-  const modal = new ModalBuilder().setCustomId('panel_event_role_add_modal').setTitle(`Agregar rol: ${trimTitle(war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_role_add_modal').setTitle(buildModalTitle('Agregar rol', war.name));
   const nameInput = new TextInputBuilder()
     .setCustomId('panel_event_role_add_name')
     .setLabel('Nombre del rol')
@@ -355,14 +356,14 @@ async function handleEventRoleRename(interaction) {
     return await interaction.reply({ content: context.message, flags: 64 });
   }
 
-  const modal = new ModalBuilder().setCustomId('panel_event_role_rename_modal').setTitle(`Renombrar: ${trimTitle(context.role.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_role_rename_modal').setTitle(buildModalTitle('Renombrar', context.role.name));
   const nameInput = new TextInputBuilder()
     .setCustomId('panel_event_role_rename_name')
     .setLabel('Nuevo nombre')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(60)
-    .setValue(String(context.role.name).slice(0, 60));
+    .setValue(clampInputValue(context.role.name, 60));
 
   modal.addComponents(new ActionRowBuilder().addComponents(nameInput));
   await interaction.showModal(modal);
@@ -374,14 +375,14 @@ async function handleEventRoleSlots(interaction) {
     return await interaction.reply({ content: context.message, flags: 64 });
   }
 
-  const modal = new ModalBuilder().setCustomId('panel_event_role_slots_modal').setTitle(`Slots: ${trimTitle(context.role.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_role_slots_modal').setTitle(buildModalTitle('Slots', context.role.name));
   const slotsInput = new TextInputBuilder()
     .setCustomId('panel_event_role_slots_value')
     .setLabel('Nueva cantidad de slots')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(3)
-    .setValue(String(context.role.max));
+    .setValue(clampInputValue(context.role.max, 3));
 
   modal.addComponents(new ActionRowBuilder().addComponents(slotsInput));
   await interaction.showModal(modal);
@@ -542,7 +543,7 @@ async function handleEventRoleIconModalOpen(interaction) {
     return await interaction.reply({ content: context.message, flags: 64 });
   }
 
-  const modal = new ModalBuilder().setCustomId('panel_event_role_icon_modal').setTitle(`Icono: ${trimTitle(context.role.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_role_icon_modal').setTitle(buildModalTitle('Icono', context.role.name));
   const iconInput = new TextInputBuilder()
     .setCustomId('panel_event_role_icon_value')
     .setLabel('Unicode o <:nombre:id> / <a:nombre:id>')
@@ -550,7 +551,7 @@ async function handleEventRoleIconModalOpen(interaction) {
     .setRequired(false)
     .setMaxLength(80)
     .setPlaceholder('Ej: ✅  o  <:maegu:123456789012345678>')
-    .setValue(context.role.emoji ? String(context.role.emoji).slice(0, 80) : '');
+    .setValue(clampInputValue(context.role.emoji || '', 80));
 
   modal.addComponents(new ActionRowBuilder().addComponents(iconInput));
   await interaction.showModal(modal);
@@ -848,7 +849,7 @@ async function handleEventScheduleSeriesAdd(interaction) {
     return await interaction.reply({ content: 'No hay evento seleccionado. Usa `/event edit`.', flags: 64 });
   }
 
-  const modal = new ModalBuilder().setCustomId('panel_event_schedule_series_add_modal').setTitle(`Agregar dia: ${trimTitle(war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_schedule_series_add_modal').setTitle(buildModalTitle('Agregar dia', war.name));
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_event_schedule_series_time')
     .setLabel('Hora (HH:mm)')
@@ -886,7 +887,7 @@ async function handleEventScheduleSeriesEdit(interaction) {
     return await openSeriesScheduleManager(interaction, war, 'Selecciona primero la ocurrencia que quieres editar.');
   }
 
-  const modal = new ModalBuilder().setCustomId('panel_event_schedule_series_edit_modal').setTitle(`Editar dia: ${trimTitle(war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_schedule_series_edit_modal').setTitle(buildModalTitle('Editar dia', war.name));
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_event_schedule_series_time')
     .setLabel('Hora (HH:mm)')
@@ -1323,7 +1324,7 @@ async function showPostEditActivationDecision(interaction, baseWar, options = {}
 }
 
 async function showEditDataBasicModal(interaction, war) {
-  const modal = new ModalBuilder().setCustomId('panel_event_edit_data_basic_modal').setTitle(`Editar datos: ${trimTitle(war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_edit_data_basic_modal').setTitle(buildModalTitle('Editar datos', war.name));
 
   const nameInput = new TextInputBuilder()
     .setCustomId('panel_event_edit_data_name')
@@ -1331,7 +1332,7 @@ async function showEditDataBasicModal(interaction, war) {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(90)
-    .setValue(String(war.name || '').slice(0, 90));
+    .setValue(clampInputValue(war.name || '', 90));
 
   const typeInput = new TextInputBuilder()
     .setCustomId('panel_event_edit_data_type')
@@ -1339,7 +1340,7 @@ async function showEditDataBasicModal(interaction, war) {
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(100)
-    .setValue(String(war.type || '').slice(0, 100));
+    .setValue(clampInputValue(war.type || '', 100));
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(nameInput),
@@ -1350,7 +1351,7 @@ async function showEditDataBasicModal(interaction, war) {
 }
 
 async function showEditCloseModal(interaction, war) {
-  const modal = new ModalBuilder().setCustomId('panel_event_edit_close_modal').setTitle(`Cierre: ${trimTitle(war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_edit_close_modal').setTitle(buildModalTitle('Cierre', war.name));
 
   const signupCloseInput = new TextInputBuilder()
     .setCustomId('panel_event_edit_signup_close_time')
@@ -1376,7 +1377,7 @@ async function showEditCloseModal(interaction, war) {
 }
 
 async function showEditRecapModal(interaction, war) {
-  const modal = new ModalBuilder().setCustomId('panel_event_edit_recap_modal').setTitle(`Hilo final: ${trimTitle(war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_edit_recap_modal').setTitle(buildModalTitle('Hilo final', war.name));
 
   const minutesInput = new TextInputBuilder()
     .setCustomId('panel_event_edit_recap_minutes')
@@ -1384,7 +1385,7 @@ async function showEditRecapModal(interaction, war) {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(4)
-    .setValue(String(Number.isInteger(war.recap?.minutesBeforeExpire) ? war.recap.minutesBeforeExpire : 0));
+    .setValue(clampInputValue(Number.isInteger(war.recap?.minutesBeforeExpire) ? war.recap.minutesBeforeExpire : 0, 4));
 
   const messageInput = new TextInputBuilder()
     .setCustomId('panel_event_edit_recap_message')
@@ -1392,7 +1393,7 @@ async function showEditRecapModal(interaction, war) {
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(false)
     .setMaxLength(250)
-    .setValue(String(war.recap?.messageText || '').slice(0, 250));
+    .setValue(clampInputValue(war.recap?.messageText || '', 250));
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(minutesInput),
@@ -1402,7 +1403,7 @@ async function showEditRecapModal(interaction, war) {
 }
 
 async function showEditScheduleModal(interaction, war) {
-  const modal = new ModalBuilder().setCustomId('panel_event_edit_schedule_modal').setTitle(`Editar horario: ${trimTitle(war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_event_edit_schedule_modal').setTitle(buildModalTitle('Editar horario', war.name));
 
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_event_edit_schedule_time')
@@ -1563,11 +1564,6 @@ function parseRoleIconInput(value, guild) {
   }
 
   return parsed;
-}
-
-function trimTitle(text) {
-  const value = String(text || '').trim();
-  return value.length <= 45 ? value : `${value.slice(0, 42)}...`;
 }
 
 const EVENT_ADMIN_PANEL_ACTIONS = {

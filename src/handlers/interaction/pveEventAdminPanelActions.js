@@ -15,6 +15,7 @@ const {
 } = require('../../utils/eventAdminUi');
 const { refreshWarMessage } = require('../../commands/eventadminShared');
 const { getSelectedEventContext, setSelectedEventContext } = require('../../utils/eventAdminContextStore');
+const { buildModalTitle, clampInputValue } = require('../../utils/modalLimits');
 
 function getSelectedPveContext(interaction) {
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -171,7 +172,7 @@ async function handlePveSlotAdd(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await interaction.reply({ content: context.message, flags: 64 });
 
-  const modal = new ModalBuilder().setCustomId('panel_pve_slot_add_modal').setTitle(`Agregar horario: ${trimTitle(context.war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_pve_slot_add_modal').setTitle(buildModalTitle('Agregar horario', context.war.name));
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_pve_slot_time')
     .setLabel('Hora (HH:mm)')
@@ -204,21 +205,21 @@ async function handlePveSlotEdit(interaction) {
   const option = view.options.find(entry => String(entry.id) === String(optionId));
   if (!option) return await interaction.reply({ content: 'El horario seleccionado ya no existe.', flags: 64 });
 
-  const modal = new ModalBuilder().setCustomId('panel_pve_slot_edit_modal').setTitle(`Editar horario: ${trimTitle(context.war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_pve_slot_edit_modal').setTitle(buildModalTitle('Editar horario', context.war.name));
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_pve_slot_time')
     .setLabel('Hora (HH:mm)')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(5)
-    .setValue(String(option.time || '').slice(0, 5));
+    .setValue(clampInputValue(option.time || '', 5));
   const capInput = new TextInputBuilder()
     .setCustomId('panel_pve_slot_capacity')
     .setLabel('Cupo (1-500)')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(3)
-    .setValue(String(option.capacity || 1));
+    .setValue(clampInputValue(option.capacity || 1, 3));
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(timeInput),
@@ -368,7 +369,7 @@ async function handlePveEnrollMove(interaction) {
   const optionId = context.context.pendingPveOptionId;
   if (!optionId || !parsed) return await interaction.reply({ content: 'Selecciona un inscrito/filler primero.', flags: 64 });
 
-  const modal = new ModalBuilder().setCustomId('panel_pve_enroll_move_modal').setTitle(`Mover inscrito: ${trimTitle(context.war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_pve_enroll_move_modal').setTitle(buildModalTitle('Mover inscrito', context.war.name));
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_pve_enroll_target_time')
     .setLabel('Horario destino (HH:mm)')
@@ -384,7 +385,7 @@ async function handlePveEnrollAdd(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await interaction.reply({ content: context.message, flags: 64 });
 
-  const modal = new ModalBuilder().setCustomId('panel_pve_enroll_add_modal').setTitle(`Agregar inscrito: ${trimTitle(context.war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_pve_enroll_add_modal').setTitle(buildModalTitle('Agregar inscrito', context.war.name));
   const userInput = new TextInputBuilder()
     .setCustomId('panel_pve_enroll_add_user_id')
     .setLabel('Discord userId')
@@ -430,11 +431,6 @@ async function handlePveEnrollmentsBack(interaction) {
     context.war.id,
     { currentView: 'panel', pendingPveOptionId: null, pendingPveEnrollmentKey: null }
   );
-}
-
-function trimTitle(text) {
-  const value = String(text || '').trim();
-  return value.length <= 45 ? value : `${value.slice(0, 42)}...`;
 }
 
 const PVE_EVENT_ADMIN_PANEL_ACTIONS = {

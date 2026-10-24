@@ -9,6 +9,7 @@ const {
   ButtonStyle
 } = require('discord.js');
 const { getDraftWar } = require('../../utils/draftSessionStore');
+const { buildModalTitle, clampInputValue } = require('../../utils/modalLimits');
 const { hasGuildServerEmojiConfig } = require('../../services/serverClassEmojiService');
 const {
   normalizeClassIconSource,
@@ -110,12 +111,12 @@ async function handlePanelEditName(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('panel_edit_name_modal')
-    .setTitle(`Editar nombre: ${selected.role.name}`);
+    .setTitle(buildModalTitle('Editar nombre', selected.role.name));
 
   const input = new TextInputBuilder()
     .setCustomId('panel_edit_name_input')
     .setLabel('Nuevo nombre')
-    .setValue(selected.role.name)
+    .setValue(clampInputValue(selected.role.name, 50))
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(50);
@@ -132,13 +133,13 @@ async function handlePanelEditSlots(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('panel_edit_slots_modal')
-    .setTitle(`Editar slots: ${selected.role.name}`);
+    .setTitle(buildModalTitle('Editar slots', selected.role.name));
 
   const input = new TextInputBuilder()
     .setCustomId('panel_edit_slots_input')
     .setLabel('Cantidad de slots')
     .setPlaceholder('Ej: 5')
-    .setValue(String(selected.role.max))
+    .setValue(clampInputValue(selected.role.max, 3))
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(3);
@@ -354,7 +355,7 @@ async function handlePanelOpenIconModal(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('panel_edit_icon_modal')
-    .setTitle(`Editar icono: ${selected.role.name}`);
+    .setTitle(buildModalTitle('Editar icono', selected.role.name));
 
   const input = new TextInputBuilder()
     .setCustomId('panel_edit_icon_input')
@@ -365,7 +366,7 @@ async function handlePanelOpenIconModal(interaction) {
     .setMaxLength(80);
 
   if (selected.role.emoji) {
-    input.setValue(String(selected.role.emoji).slice(0, 80));
+    input.setValue(clampInputValue(selected.role.emoji, 80));
   }
 
   modal.addComponents(new ActionRowBuilder().addComponents(input));
