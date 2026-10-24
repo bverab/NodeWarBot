@@ -105,8 +105,14 @@ export async function POST(request: Request, context: RouteContext) {
     const event = await createGuildEventDraft(guildId, getSessionUserId(access.session), parsed.data);
 
     const response = NextResponse.json({ eventId: event.id }, { status: 201 });
-    const cookie = createVerifiedGuildsCookie(access.availableGuilds);
-    response.cookies.set(cookie.name, cookie.value, cookie.options);
+    // Only guilds that Discord has just verified may be signed. Guilds that came out of the cookie itself (or stale data)
+    // must not be re-signed, otherwise the cookie would renew itself without ever asking Discord again.
+    if (access.guildSource === "discord" && !access.guildsStale) {
+      const cookie = createVerifiedGuildsCookie(access.availableGuilds, getSessionUserId(access.session));
+      if (cookie) {
+        response.cookies.set(cookie.name, cookie.value, cookie.options);
+      }
+    }
     return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create draft event.";

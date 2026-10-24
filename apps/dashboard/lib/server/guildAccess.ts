@@ -39,7 +39,9 @@ export async function requireDashboardGuild(guildId: string) {
   return {
     activeGuild,
     availableGuilds,
-    session
+    session,
+    guildSource: guildResult.source,
+    guildsStale: guildResult.stale
   };
 }
 
