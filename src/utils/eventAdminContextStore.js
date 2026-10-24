@@ -1,3 +1,8 @@
+// Un valor explicito (incluido null) reemplaza al anterior; omitido o undefined conserva el anterior.
+function hasExplicit(options, key) {
+  return Object.prototype.hasOwnProperty.call(options, key) && options[key] !== undefined;
+}
+
 function setSelectedEventContext(userId, guildId, channelId, eventId, options = {}) {
   if (!global.eventAdminSelections) global.eventAdminSelections = {};
   const key = buildContextKey(userId, guildId, channelId);
@@ -5,20 +10,20 @@ function setSelectedEventContext(userId, guildId, channelId, eventId, options = 
   global.eventAdminSelections[key] = {
     eventId: String(eventId),
     scope: options.scope || previous.scope || 'single',
-    selectedRoleIndex: Number.isInteger(options.selectedRoleIndex)
-      ? options.selectedRoleIndex
+    selectedRoleIndex: hasExplicit(options, 'selectedRoleIndex')
+      ? (Number.isInteger(options.selectedRoleIndex) ? options.selectedRoleIndex : null)
       : (Number.isInteger(previous.selectedRoleIndex) ? previous.selectedRoleIndex : null),
     pendingAction: Object.prototype.hasOwnProperty.call(options, 'pendingAction')
       ? options.pendingAction
       : (previous.pendingAction || null),
-    pendingPermissionIds: Array.isArray(options.pendingPermissionIds)
-      ? options.pendingPermissionIds
+    pendingPermissionIds: hasExplicit(options, 'pendingPermissionIds')
+      ? (Array.isArray(options.pendingPermissionIds) ? options.pendingPermissionIds : null)
       : (Array.isArray(previous.pendingPermissionIds) ? previous.pendingPermissionIds : null),
-    pendingMentionRoleIds: Array.isArray(options.pendingMentionRoleIds)
-      ? options.pendingMentionRoleIds
+    pendingMentionRoleIds: hasExplicit(options, 'pendingMentionRoleIds')
+      ? (Array.isArray(options.pendingMentionRoleIds) ? options.pendingMentionRoleIds : null)
       : (Array.isArray(previous.pendingMentionRoleIds) ? previous.pendingMentionRoleIds : null),
-    pendingAllowedUserIds: Array.isArray(options.pendingAllowedUserIds)
-      ? options.pendingAllowedUserIds
+    pendingAllowedUserIds: hasExplicit(options, 'pendingAllowedUserIds')
+      ? (Array.isArray(options.pendingAllowedUserIds) ? options.pendingAllowedUserIds : null)
       : (Array.isArray(previous.pendingAllowedUserIds) ? previous.pendingAllowedUserIds : null),
     pendingPveOptionId: Object.prototype.hasOwnProperty.call(options, 'pendingPveOptionId')
       ? options.pendingPveOptionId
@@ -38,8 +43,8 @@ function setSelectedEventContext(userId, guildId, channelId, eventId, options = 
     pendingScheduleReturnView: Object.prototype.hasOwnProperty.call(options, 'pendingScheduleReturnView')
       ? options.pendingScheduleReturnView
       : (previous.pendingScheduleReturnView || null),
-    pendingActivationEventIds: Array.isArray(options.pendingActivationEventIds)
-      ? options.pendingActivationEventIds.map(String)
+    pendingActivationEventIds: hasExplicit(options, 'pendingActivationEventIds')
+      ? (Array.isArray(options.pendingActivationEventIds) ? options.pendingActivationEventIds.map(String) : null)
       : (Array.isArray(previous.pendingActivationEventIds) ? previous.pendingActivationEventIds : null),
     pendingActivationReturnView: Object.prototype.hasOwnProperty.call(options, 'pendingActivationReturnView')
       ? options.pendingActivationReturnView
