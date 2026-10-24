@@ -86,6 +86,65 @@ describe('buttonHandler: re-clic en un rol lleno no mueve la posicion en la wait
   });
 });
 
+describe('buttonHandler: no se puede entrar despues de closesAt, pero si salir (H-13)', () => {
+  function buildPastCloseWar(users = []) {
+    const now = Date.now();
+    return buildWar({
+      id: 'war_h13',
+      messageId: 'message_1',
+      isClosed: false,
+      createdAt: now - 60 * 60 * 1000,
+      closesAt: now - 1000,
+      expiresAt: now + 10 * 60 * 1000,
+      roles: [buildWarRole({ name: 'Tank', max: 2, users })]
+    });
+  }
+
+  it('con closesAt pasado y las inscripciones aun marcadas como abiertas, no entra', async () => {
+    const { buttonHandler, state } = setup({ war: buildPastCloseWar() });
+    const interaction = buildButtonInteraction('join_0');
+
+    await buttonHandler(interaction);
+
+    expect(collectReplies(interaction).join('\n')).toContain('Las inscripciones estan cerradas');
+    expect(state.war.roles[0].users).toHaveLength(0);
+    expect(state.war.waitlist).toHaveLength(0);
+  });
+
+  it('con closesAt pasado tampoco entra a la waitlist de un rol lleno', async () => {
+    const full = [buildParticipant({ userId: 'a' }), buildParticipant({ userId: 'b' })];
+    const { buttonHandler, state } = setup({ war: buildPastCloseWar(full) });
+    const interaction = buildButtonInteraction('join_0');
+
+    await buttonHandler(interaction);
+
+    expect(collectReplies(interaction).join('\n')).toContain('Las inscripciones estan cerradas');
+    expect(state.war.waitlist).toHaveLength(0);
+  });
+
+  it('con closesAt pasado quien ya esta inscrito si puede salir', async () => {
+    const { buttonHandler, state } = setup({ war: buildPastCloseWar([buildParticipant({ userId: 'user_1' })]) });
+    const interaction = buildButtonInteraction('join_0');
+
+    await buttonHandler(interaction);
+
+    expect(collectReplies(interaction).join('\n')).toContain('Te retiraste de **Tank**');
+    expect(state.war.roles[0].users).toHaveLength(0);
+  });
+
+  it('antes de closesAt se puede entrar como siempre', async () => {
+    const war = buildPastCloseWar();
+    war.closesAt = Date.now() + 5 * 60 * 1000;
+    const { buttonHandler, state } = setup({ war });
+    const interaction = buildButtonInteraction('join_0');
+
+    await buttonHandler(interaction);
+
+    expect(collectReplies(interaction).join('\n')).toContain('Te uniste a **Tank**');
+    expect(state.war.roles[0].users.map(user => user.userId)).toEqual(['user_1']);
+  });
+});
+
 describe('buttonHandler: refresco del mensaje tras persistir (H-8)', () => {
   it('si el refresco falla, el usuario inscrito igual ve "Te uniste" y no "Error interno"', async () => {
     const war = buildWar({

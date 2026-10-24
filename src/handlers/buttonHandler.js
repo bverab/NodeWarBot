@@ -219,7 +219,9 @@ async function handleJoinRole(interaction) {
       };
     }
 
-    if (state.isClosed) {
+    // Salir siempre se permite (rama anterior); entrar exige inscripciones abiertas y antes de closesAt,
+    // porque el cierre automatico puede tardar hasta el siguiente tick del scheduler.
+    if (state.isClosed || (Number.isFinite(state.closesAt) && Date.now() >= state.closesAt)) {
       return { type: 'closed' };
     }
 
