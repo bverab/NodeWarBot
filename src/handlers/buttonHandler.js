@@ -228,6 +228,19 @@ async function handleJoinRole(interaction) {
     if (selectedRole.users.length >= selectedRole.max) {
       const promotedUsers = [];
 
+      // Re-clic en un rol lleno estando ya en su waitlist: conserva la posicion.
+      const alreadyWaiting = state.waitlist.some(entry =>
+        entry.userId === participant.userId && entry.roleName === selectedRole.name
+      );
+      if (alreadyWaiting && !currentRole) {
+        return {
+          type: 'waitlist_exists',
+          roleName: selectedRole.name,
+          queueSize: state.waitlist.length,
+          promotedUsers
+        };
+      }
+
       if (currentRole && currentRole.name !== selectedRole.name) {
         const previousRoleName = currentRole.name;
         removeParticipantFromAllRoles(state, participant.userId);
