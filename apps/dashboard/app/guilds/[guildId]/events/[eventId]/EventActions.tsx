@@ -111,6 +111,8 @@ export function EventActions({
     try {
       await postAction(`${baseUrl}/${action}`);
       setMessage(action === "close" ? "Signups closed in the database." : "Signups reopened in the database.");
+      // The Close/Reopen buttons and the status badge are driven by server-rendered props (isClosed): re-fetch them.
+      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Action failed.");
     } finally {

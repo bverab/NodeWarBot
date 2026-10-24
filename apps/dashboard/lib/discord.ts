@@ -99,6 +99,81 @@ export async function fetchUserGuilds(accessToken: string): Promise<DiscordGuild
   }));
 }
 
+const BOT_GUILDS_PAGE_SIZE = 200;
+const BOT_GUILDS_MAX_PAGES = 100;
+const BOT_GUILD_IDS_CACHE_TTL_MS = 60_000;
+
+// The bot's guild list is the same for every dashboard user: one short-lived cache and one in-flight lookup are shared.
+let botGuildIdsCache: { ids: Set<string>; expiresAt: number } | null = null;
+let botGuildIdsInFlight: Promise<Set<string>> | null = null;
+
+function getLastGuildId(guilds: Array<Pick<DiscordGuild, "id">>) {
+  try {
+    return guilds.reduce((max, guild) => (BigInt(guild.id) > BigInt(max) ? guild.id : max), guilds[0].id);
+  } catch {
+    return guilds[guilds.length - 1].id;
+  }
+}
+
+async function fetchBotGuildIdsFromDiscord(botToken: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  let after: string | null = null;
+
+  for (let pageIndex = 0; pageIndex < BOT_GUILDS_MAX_PAGES; pageIndex += 1) {
+    const url = new URL(`${DISCORD_API_BASE_URL}/users/@me/guilds`);
+    url.searchParams.set("limit", String(BOT_GUILDS_PAGE_SIZE));
+    if (after) {
+      url.searchParams.set("after", after);
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bot ${botToken}`
+      },
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new DiscordGuildFetchError(
+          "rate_limited",
+          "Discord bot guild API request was rate limited.",
+          response.status,
+          await getRetryAfterMs(response)
+        );
+      }
+
+      throw new DiscordGuildFetchError(
+        "bot_guilds_failed",
+        `Discord bot guild API request failed with status ${response.status}.`,
+        response.status
+      );
+    }
+
+    const guilds = (await response.json()) as unknown;
+    if (!Array.isArray(guilds)) {
+      throw new DiscordGuildFetchError("unexpected_response", "Discord bot guild API returned an unexpected shape.");
+    }
+
+    const page = guilds as Array<Pick<DiscordGuild, "id">>;
+    for (const guild of page) {
+      ids.add(guild.id);
+    }
+
+    if (page.length < BOT_GUILDS_PAGE_SIZE) {
+      break;
+    }
+
+    const lastId = getLastGuildId(page);
+    if (lastId === after) {
+      break;
+    }
+    after = lastId;
+  }
+
+  return ids;
+}
+
 export async function fetchBotGuildIds(): Promise<Set<string>> {
   const botToken = getBotToken();
 
@@ -106,36 +181,22 @@ export async function fetchBotGuildIds(): Promise<Set<string>> {
     throw new DiscordGuildFetchError("missing_bot_token", "Missing DISCORD_BOT_TOKEN.");
   }
 
-  const response = await fetch(`${DISCORD_API_BASE_URL}/users/@me/guilds`, {
-    headers: {
-      Authorization: `Bot ${botToken}`
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    if (response.status === 429) {
-      throw new DiscordGuildFetchError(
-        "rate_limited",
-        "Discord bot guild API request was rate limited.",
-        response.status,
-        await getRetryAfterMs(response)
-      );
-    }
-
-    throw new DiscordGuildFetchError(
-      "bot_guilds_failed",
-      `Discord bot guild API request failed with status ${response.status}.`,
-      response.status
-    );
+  if (botGuildIdsCache && botGuildIdsCache.expiresAt > Date.now()) {
+    return botGuildIdsCache.ids;
   }
 
-  const guilds = (await response.json()) as unknown;
-  if (!Array.isArray(guilds)) {
-    throw new DiscordGuildFetchError("unexpected_response", "Discord bot guild API returned an unexpected shape.");
+  if (!botGuildIdsInFlight) {
+    botGuildIdsInFlight = fetchBotGuildIdsFromDiscord(botToken)
+      .then((ids) => {
+        botGuildIdsCache = { ids, expiresAt: Date.now() + BOT_GUILD_IDS_CACHE_TTL_MS };
+        return ids;
+      })
+      .finally(() => {
+        botGuildIdsInFlight = null;
+      });
   }
 
-  return new Set((guilds as Array<Pick<DiscordGuild, "id">>).map((guild) => guild.id));
+  return botGuildIdsInFlight;
 }
 
 export async function fetchAvailableDashboardGuilds(accessToken: string): Promise<DashboardGuild[]> {

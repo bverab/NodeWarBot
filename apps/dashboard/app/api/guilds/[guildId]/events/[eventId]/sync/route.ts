@@ -104,7 +104,7 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 
   const result = await updateEventDiscordMessage({
-    guild: createDiscordRestGuildAdapter(guildId),
+    guild: createDiscordRestGuildAdapter(guildId, { validatedChannel: permissionCheck.channel }),
     event: mapDbEventToDiscordDomain(event)
   });
 

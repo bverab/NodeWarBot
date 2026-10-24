@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
-import { requireSession } from "@/lib/apiGuards";
+import { getSessionUserId, requireSession } from "@/lib/apiGuards";
 import { getDashboardGuildsDetailed } from "@/lib/dashboardGuilds";
 import { createVerifiedGuildsCookie, readVerifiedGuildsCookie } from "@/lib/server/dashboardGuildVerificationCookie";
 
@@ -14,7 +14,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const cachedGuilds = await readVerifiedGuildsCookie();
+  const userId = getSessionUserId(session);
+  const cachedGuilds = await readVerifiedGuildsCookie(userId);
   if (cachedGuilds.length) {
     return NextResponse.json(
       {
@@ -64,8 +65,10 @@ export async function GET() {
     { status: 200 }
   );
   if (result.guilds.length && !result.stale) {
-    const cookie = createVerifiedGuildsCookie(result.guilds);
-    response.cookies.set(cookie.name, cookie.value, cookie.options);
+    const cookie = createVerifiedGuildsCookie(result.guilds, userId);
+    if (cookie) {
+      response.cookies.set(cookie.name, cookie.value, cookie.options);
+    }
   }
 
   return response;

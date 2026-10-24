@@ -1,34 +1,12 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { reorderGuildTemplateRoleSlots } from "@/lib/server/dashboardData";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
+import { INVALID_BODY_ERROR, parseSlotReorder, readJsonObject } from "@/lib/server/mutationValidation";
 
 type RouteContext = {
   params: Promise<{ guildId: string; templateId: string }>;
 };
-
-function parseSlots(value: unknown) {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-
-  return value.map((slot) => {
-    if (!slot || typeof slot !== "object") {
-      return null;
-    }
-
-    const candidate = slot as { id?: unknown; order?: unknown };
-    const order = typeof candidate.order === "number" ? candidate.order : Number(candidate.order);
-
-    if (typeof candidate.id !== "string" || !candidate.id || !Number.isFinite(order)) {
-      return null;
-    }
-
-    return {
-      id: candidate.id,
-      order: Math.max(1, Math.trunc(order))
-    };
-  });
-}
 
 export async function PATCH(request: Request, context: RouteContext) {
   const { guildId, templateId } = await context.params;
@@ -39,15 +17,17 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const body = (await request.json()) as { slots?: unknown };
-    const parsed = parseSlots(body.slots);
-
-    if (!parsed || parsed.some((slot) => slot === null)) {
-      return NextResponse.json({ error: "Invalid slot order payload." }, { status: 400 });
+    const body = await readJsonObject(request);
+    if (!body) {
+      return NextResponse.json({ error: INVALID_BODY_ERROR }, { status: 400 });
     }
 
-    const slots = parsed as Array<{ id: string; order: number }>;
-    const template = await reorderGuildTemplateRoleSlots(guildId, templateId, slots);
+    const parsed = parseSlotReorder(body.slots);
+    if ("error" in parsed) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+
+    const template = await reorderGuildTemplateRoleSlots(guildId, templateId, parsed.slots);
     if (!template) {
       return NextResponse.json({ error: "One or more slots were not found for this guild template." }, { status: 404 });
     }
@@ -57,7 +37,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ template }, { status: 200 });
-  } catch {
-    return NextResponse.json({ error: "Failed to reorder template slots." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to reorder template slots.", { conflictMessage: "Another slot already uses one of those positions." });
   }
 }

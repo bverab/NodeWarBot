@@ -215,7 +215,7 @@ export function TemplateVisualEditor({ guildId, templateId, manageable, template
             <label>Name<input defaultValue={template.name} name="name" required maxLength={120} /></label>
             <label>Event type<input defaultValue={template.eventType} name="eventType" maxLength={32} /></label>
             <label>Default label<input defaultValue={template.typeDefault} name="typeDefault" maxLength={64} /></label>
-            <label>Time<input defaultValue={template.time ?? ""} name="time" pattern="\\d{1,2}:\\d{2}" placeholder="20:00" /></label>
+            <label>Time<input defaultValue={template.time ?? ""} name="time" pattern="([01]?[0-9]|2[0-3]):[0-5][0-9]" placeholder="20:00" /></label>
             <label>Timezone<input defaultValue={template.timezone} name="timezone" maxLength={64} /></label>
             <label>Duration<input defaultValue={template.duration} name="duration" type="number" min={1} max={1440} /></label>
             <label>Close before expiry<input defaultValue={template.closeBeforeMinutes} name="closeBeforeMinutes" type="number" min={0} max={1440} /></label>

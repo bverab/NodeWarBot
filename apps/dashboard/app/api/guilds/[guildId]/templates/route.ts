@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getGuildTemplates } from "@/lib/server/dashboardData";
 import { z } from "zod";
 import { normalizeTimezoneInfo } from "@/lib/eventDateTime";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { createGuildTemplate } from "@/lib/server/dashboardData";
 import { getGuildRoles } from "@/lib/server/discordGuildConfig";
 import { requireDashboardGuild, requireManageableDashboardGuild } from "@/lib/server/guildAccess";
@@ -73,7 +74,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const body = (await request.json()) as unknown;
+    const body: unknown = await request.json().catch(() => null);
     const parsed = createTemplateSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -91,8 +92,8 @@ export async function POST(request: Request, context: RouteContext) {
     const template = await createGuildTemplate(guildId, parsed.data);
     return NextResponse.json({ templateId: template.id }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create template.";
-    const status = message.includes("Unique constraint") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return errorResponse(error, "Failed to create template.", {
+      conflictMessage: "A template with that name already exists for this event type."
+    });
   }
 }

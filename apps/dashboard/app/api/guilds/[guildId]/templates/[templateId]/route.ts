@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { getGuildTemplateDetail, updateGuildTemplate } from "@/lib/server/dashboardData";
 import { requireDashboardGuild, requireManageableDashboardGuild } from "@/lib/server/guildAccess";
-import { parseTemplatePatch } from "@/lib/server/mutationValidation";
+import { INVALID_BODY_ERROR, parseTemplatePatch, readJsonObject } from "@/lib/server/mutationValidation";
 
 type RouteContext = {
   params: Promise<{ guildId: string; templateId: string }>;
@@ -37,7 +38,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const body = (await request.json()) as Record<string, unknown>;
+    const body = await readJsonObject(request);
+    if (!body) {
+      return NextResponse.json({ error: INVALID_BODY_ERROR }, { status: 400 });
+    }
     const result = parseTemplatePatch(body);
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
@@ -53,7 +57,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ template, sync: "discord_sync_pending" }, { status: 200 });
-  } catch {
-    return NextResponse.json({ error: "Failed to update template." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to update template.", {
+      conflictMessage: "A template with that name already exists for this event type."
+    });
   }
 }

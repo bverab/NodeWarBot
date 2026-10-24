@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { createGuildTemplateRoleSlot } from "@/lib/server/dashboardData";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
-import { parseRoleSlotPatch } from "@/lib/server/mutationValidation";
+import { INVALID_BODY_ERROR, parseRoleSlotPatch, readJsonObject } from "@/lib/server/mutationValidation";
 
 type RouteContext = {
   params: Promise<{ guildId: string; templateId: string }>;
@@ -16,7 +17,10 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const body = (await request.json()) as Record<string, unknown>;
+    const body = await readJsonObject(request);
+    if (!body) {
+      return NextResponse.json({ error: INVALID_BODY_ERROR }, { status: 400 });
+    }
     const result = parseRoleSlotPatch(body, true);
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
@@ -35,7 +39,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ template }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Failed to create template slot." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to create template slot.", { conflictMessage: "A slot with that name or position already exists." });
   }
 }
