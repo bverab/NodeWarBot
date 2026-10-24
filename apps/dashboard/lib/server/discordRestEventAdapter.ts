@@ -245,21 +245,29 @@ export async function validateBotAuthoredMessage(guildId: string, channelId: str
   }
 }
 
-export function createDiscordRestGuildAdapter(guildId: string) {
+// `validatedChannel`: a channel the caller already checked with validateBotCanPublishToChannel, so fetching it
+// does not repeat the four Discord calls of the permission check.
+export function createDiscordRestGuildAdapter(guildId: string, options: { validatedChannel?: Pick<DiscordChannelPayload, "id"> } = {}) {
   return {
     channels: {
       async fetch(channelId: string) {
-        const validation = await validateBotCanPublishToChannel(guildId, channelId);
-        if (!validation.ok) {
-          const error = new Error(validation.error) as DiscordRestError;
-          error.code = validation.errorCode ? Number(validation.errorCode) : validation.status;
-          error.status = validation.status;
-          error.rawError = { code: error.code, message: validation.error };
-          throw error;
+        let resolvedChannelId: string;
+        if (options.validatedChannel && options.validatedChannel.id === channelId) {
+          resolvedChannelId = options.validatedChannel.id;
+        } else {
+          const validation = await validateBotCanPublishToChannel(guildId, channelId);
+          if (!validation.ok) {
+            const error = new Error(validation.error) as DiscordRestError;
+            error.code = validation.errorCode ? Number(validation.errorCode) : validation.status;
+            error.status = validation.status;
+            error.rawError = { code: error.code, message: validation.error };
+            throw error;
+          }
+          resolvedChannelId = validation.channel.id;
         }
 
         return {
-          id: validation.channel.id,
+          id: resolvedChannelId,
           messages: {
             fetch: async (messageId: string) => {
               assertSnowflake(messageId, "message");

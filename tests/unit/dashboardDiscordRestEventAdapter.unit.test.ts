@@ -147,6 +147,42 @@ describe("dashboard Discord REST event adapter", () => {
     );
   });
 
+  describe("pre-validated channel", () => {
+    it("does not validate the channel again when the caller already did", async () => {
+      vi.stubEnv("TOKEN", "bot-token");
+      const { fetchMock } = mockDiscordFetch();
+      const { createDiscordRestGuildAdapter, validateBotCanPublishToChannel } = await import("../../apps/dashboard/lib/server/discordRestEventAdapter");
+
+      const check = await validateBotCanPublishToChannel(GUILD_ID, CHANNEL_ID);
+      expect(check.ok).toBe(true);
+      if (!check.ok) return;
+      fetchMock.mockClear();
+
+      const guild = createDiscordRestGuildAdapter(GUILD_ID, { validatedChannel: check.channel });
+      const channel = await guild.channels.fetch(CHANNEL_ID);
+      const message = await channel.messages.fetch(MESSAGE_ID);
+      await message.edit({ embeds: [] });
+
+      expect(channel.id).toBe(CHANNEL_ID);
+      // Only the message fetch and the edit: no channel, roles, bot user or member lookups.
+      expect(fetchMock.mock.calls.map(([url]) => String(url).replace(/^.*\/api\/v10/, ""))).toEqual([
+        `/channels/${CHANNEL_ID}/messages/${MESSAGE_ID}`,
+        `/channels/${CHANNEL_ID}/messages/${MESSAGE_ID}`
+      ]);
+    });
+
+    it("still validates a different channel", async () => {
+      vi.stubEnv("TOKEN", "bot-token");
+      const { fetchMock } = mockDiscordFetch();
+      const { createDiscordRestGuildAdapter } = await import("../../apps/dashboard/lib/server/discordRestEventAdapter");
+
+      const guild = createDiscordRestGuildAdapter(GUILD_ID, { validatedChannel: { id: "200000000000000009", type: 0 } });
+      await guild.channels.fetch(CHANNEL_ID);
+
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/channels/${CHANNEL_ID}`), expect.anything());
+    });
+  });
+
   describe("snowflake validation", () => {
     it("refuses to build REST paths from ids that are not snowflakes", async () => {
       vi.stubEnv("TOKEN", "bot-token");
