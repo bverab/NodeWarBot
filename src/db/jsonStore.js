@@ -46,6 +46,26 @@ function readArrayJsonFile(filePath) {
   }
 }
 
+// Para importar: no crea el archivo ni convierte errores en [] (un [] vaciaria la base).
+function readArrayJsonFileStrict(filePath, { required = true } = {}) {
+  const name = path.basename(filePath);
+  if (!fs.existsSync(filePath)) {
+    if (!required) return [];
+    throw new Error(`No se encontro ${name} en ${path.dirname(filePath)}.`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`${name} no es JSON valido: ${error?.message || error}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${name} debe contener un arreglo.`);
+  }
+  return parsed;
+}
+
 function writeArrayJsonFile(filePath, data) {
   ensureJsonFile(filePath);
   const tempPath = `${filePath}.tmp`;
@@ -77,7 +97,7 @@ function backupLegacyJsonFiles() {
 
   const copies = [];
   for (const sourcePath of [getWarsFilePath(), getGarmothFilePath()]) {
-    ensureJsonFile(sourcePath);
+    if (!fs.existsSync(sourcePath)) continue;
     const destinationPath = path.join(backupDir, path.basename(sourcePath));
     fs.copyFileSync(sourcePath, destinationPath);
     copies.push(destinationPath);
@@ -98,5 +118,6 @@ module.exports = {
   writeWarsJson,
   readGarmothLinksJson,
   writeGarmothLinksJson,
+  readArrayJsonFileStrict,
   backupLegacyJsonFiles
 };
