@@ -13,7 +13,8 @@ function toParticipant(entry) {
     return {
       userId: String(entry.userId),
       displayName: sanitizeDisplayText(entry.displayName || entry.userName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
-      isFake: Boolean(entry.isFake) || String(entry.userId).startsWith('fake_')
+      isFake: Boolean(entry.isFake) || String(entry.userId).startsWith('fake_'),
+      joinedAt: toJoinedAt(entry.joinedAt)
     };
   }
 
@@ -26,7 +27,8 @@ function toParticipant(entry) {
     return {
       userId: userId.trim(),
       displayName: sanitizeDisplayText(displayName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
-      isFake: userId.trim().startsWith('fake_')
+      isFake: userId.trim().startsWith('fake_'),
+      joinedAt: toJoinedAt()
     };
   }
 
@@ -38,15 +40,22 @@ function toParticipant(entry) {
     return {
       userId,
       displayName: sanitizeDisplayText(displayName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
-      isFake: true
+      isFake: true,
+      joinedAt: toJoinedAt()
     };
   }
 
   return {
     userId: entry,
     displayName: 'Usuario',
-    isFake: String(entry).startsWith('fake_')
+    isFake: String(entry).startsWith('fake_'),
+    joinedAt: toJoinedAt()
   };
+}
+
+// La hora de inscripcion se conserva entre reescrituras: define el orden de la lista.
+function toJoinedAt(value) {
+  return Number.isFinite(value) ? value : Date.now();
 }
 
 function normalizeRole(role = {}) {
@@ -109,15 +118,21 @@ function normalizeWar(war = {}) {
       ? war.signupCloseAt
       : expiresAt - (Number.isFinite(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0 ? Math.floor(war.closeBeforeMinutes) : 0) * 60 * 1000;
   const closesAt = Math.max(createdAt, Math.min(closesAtRaw, expiresAt));
-  const duration = Math.max(1, Math.round((expiresAt - createdAt) / 60_000));
-  const closeBeforeMinutes = Math.max(0, Math.round((expiresAt - closesAt) / 60_000));
+  // duration/closeBeforeMinutes validos de entrada se respetan: en eventos del dashboard createdAt
+  // es la hora de creacion y no la de inicio, asi que no se pueden derivar de el.
+  const duration = Number.isInteger(war.duration) && war.duration > 0
+    ? war.duration
+    : Math.max(1, Math.round((expiresAt - createdAt) / 60_000));
+  const closeBeforeMinutes = Number.isInteger(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0 && war.closeBeforeMinutes <= duration
+    ? war.closeBeforeMinutes
+    : Math.max(0, Math.round((expiresAt - closesAt) / 60_000));
 
   return {
     // Identificación básica
     id: String(war.id || Date.now()),
     groupId: war.groupId || null,                    // NUEVO: grupo de eventos relacionados
     eventType: normalizeEventType(war.eventType || 'war'),
-    name: sanitizeDisplayText(war.name || 'Node War', { maxLength: 90, fallback: 'Node War' }),
+    name: sanitizeDisplayText(war.name || 'Node War', { maxLength: 120, fallback: 'Node War' }),
     type: sanitizeDisplayText(war.type || 'Sin descripcion', { maxLength: 120, fallback: 'Sin descripcion' }),
     classIconSource: normalizeClassIconSource(war.classIconSource),
     participantDisplayStyle: normalizeParticipantDisplayStyle(war.participantDisplayStyle),
@@ -179,7 +194,7 @@ function normalizeSchedule(schedule = {}) {
 
 function normalizeRecap(recap = {}) {
   const messageText = sanitizeUserInput(recap.messageText, {
-    maxLength: 250,
+    maxLength: 1000,
     allowEmpty: true
   }).value;
   return {

@@ -175,7 +175,7 @@ async function upsertWarTx(tx, warInput) {
           userId: String(user.userId),
           displayName: String(user.displayName || 'Usuario'),
           isFake: Boolean(user.isFake),
-          joinedAt: new Date()
+          joinedAt: toDate(user.joinedAt)
         }
       });
     }
@@ -273,7 +273,8 @@ function mapDbEventToDomain(event) {
     users: slot.users.map(user => ({
       userId: user.userId,
       displayName: user.displayName,
-      isFake: Boolean(user.isFake)
+      isFake: Boolean(user.isFake),
+      joinedAt: toNumber(user.joinedAt)
     })),
     allowedRoleIds: slot.permissions.map(permission => permission.discordRoleId).filter(Boolean),
     allowedRoles: slot.permissions.map(permission => permission.discordRoleName).filter(Boolean)
@@ -343,7 +344,9 @@ async function readWarsFromSqlite() {
     include: {
       roleSlots: {
         include: {
-          users: true,
+          users: {
+            orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }]
+          },
           permissions: true
         },
         orderBy: { position: 'asc' }
@@ -388,7 +391,9 @@ async function loadDueScheduledPublishEvents(now = new Date(), retryDelayMs = 5 
     include: {
       roleSlots: {
         include: {
-          users: true,
+          users: {
+            orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }]
+          },
           permissions: true
         },
         orderBy: { position: 'asc' }
