@@ -1312,9 +1312,32 @@ export async function updateGuildTemplateRoleSlot(guildId: string, templateId: s
     return null;
   }
 
-  await prisma.eventTemplateRoleSlot.update({
-    where: { id: slot.id },
-    data: input
+  // allowedRoleIds is not a column of the slot: it lives in its own permissions table (same split as event slots).
+  const { allowedRoleIds, ...slotPatch } = input;
+
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(slotPatch).length) {
+      await tx.eventTemplateRoleSlot.update({
+        where: { id: slot.id },
+        data: slotPatch
+      });
+    }
+
+    if (Array.isArray(allowedRoleIds)) {
+      const uniqueRoleIds = Array.from(new Set(allowedRoleIds.map(String).filter(Boolean)));
+      await tx.eventTemplateRolePermission.deleteMany({
+        where: { roleSlotId: slot.id }
+      });
+      if (uniqueRoleIds.length) {
+        await tx.eventTemplateRolePermission.createMany({
+          data: uniqueRoleIds.map((roleId) => ({
+            roleSlotId: slot.id,
+            discordRoleId: roleId,
+            discordRoleName: null
+          }))
+        });
+      }
+    }
   });
 
   return getGuildTemplateDetail(guildId, slot.templateId);

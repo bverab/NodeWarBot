@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/server/apiErrors";
 import { deleteGuildTemplateRoleSlot, updateGuildTemplateRoleSlot } from "@/lib/server/dashboardData";
+import { getGuildRoles } from "@/lib/server/discordGuildConfig";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 import { INVALID_BODY_ERROR, parseRoleSlotPatch, readJsonObject } from "@/lib/server/mutationValidation";
 
@@ -28,6 +29,14 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (!Object.keys(result.patch).length) {
       return NextResponse.json({ error: "No supported fields were provided." }, { status: 400 });
+    }
+
+    if (Array.isArray(result.patch.allowedRoleIds)) {
+      const roles = await getGuildRoles(guildId);
+      const roleIds = new Set(roles.map((role) => role.id));
+      if (result.patch.allowedRoleIds.some((roleId) => !roleIds.has(roleId))) {
+        return NextResponse.json({ error: "One or more selected roles are not available for this guild." }, { status: 400 });
+      }
     }
 
     const template = await updateGuildTemplateRoleSlot(guildId, templateId, slotId, result.patch);
