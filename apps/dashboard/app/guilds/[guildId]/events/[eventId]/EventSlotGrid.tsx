@@ -7,6 +7,14 @@ import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid"
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { sortSlotsByOrder } from "@/lib/slotOrdering";
+import {
+  clearPermissionDraft,
+  createPermissionDraftState,
+  getPermissionDraft,
+  getPermissionPayload,
+  openPermissionDraft,
+  updatePermissionDraft
+} from "@/lib/slotPermissionDrafts";
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
 import { ParticipantChip, type ParticipantChipData } from "@/app/guilds/[guildId]/_components/shared/ParticipantChip";
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
@@ -87,8 +95,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [permissionDrafts, setPermissionDrafts] = useState<Record<string, string[]>>({});
-  const [permissionTouched, setPermissionTouched] = useState<Record<string, boolean>>({});
+  const [permissionState, setPermissionState] = useState(createPermissionDraftState);
   const [recurrenceConfirmOpen, setRecurrenceConfirmOpen] = useState(false);
   const [pendingSlotSave, setPendingSlotSave] = useState<{ slotId: string; payload: Record<string, unknown> } | null>(null);
   const [deleteSlotId, setDeleteSlotId] = useState<string | null>(null);
@@ -107,19 +114,23 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
     setLocalSlots(sortSlotsByOrder(slots));
   }, [slots]);
 
+  // Opening a slot starts a fresh roles draft from the slot as it is now; closing the editor (cancel, save, or opening
+  // another slot) discards it, so stale roles are never resent by a later edit.
   const setEditingSlot = (slot: EventSlot | null) => {
+    setPermissionState((current) => {
+      const previous = editingSlotId && editingSlotId !== slot?.id ? clearPermissionDraft(current, editingSlotId) : current;
+      return slot ? openPermissionDraft(previous, slot) : previous;
+    });
     setEditingSlotId(slot?.id ?? null);
-    if (slot) {
-      setPermissionDrafts((current) => ({
-        ...current,
-        [slot.id]: current[slot.id] ?? slot.allowedRoleIds
-      }));
-    }
+  };
+
+  const closeSlotEditor = (slotId: string) => {
+    setPermissionState((current) => clearPermissionDraft(current, slotId));
+    setEditingSlotId(null);
   };
 
   const updateSlotPermissions = (slotId: string, roleIds: string[]) => {
-    setPermissionDrafts((current) => ({ ...current, [slotId]: roleIds }));
-    setPermissionTouched((current) => ({ ...current, [slotId]: true }));
+    setPermissionState((current) => updatePermissionDraft(current, slotId, roleIds));
   };
 
   const saveSlotPayload = async (slotId: string, payload: Record<string, unknown>, recurrenceScope: "single" | "series" = "single") => {
@@ -142,7 +153,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
       setPendingSlotSave(null);
       setRecurrenceConfirmOpen(false);
       setMessage("Slot updated. Discord message sync pending.");
-      setEditingSlot(null);
+      closeSlotEditor(slotId);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Slot update failed.");
@@ -153,7 +164,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
 
   const saveSlot = async (slotId: string, formEvent: FormEvent<HTMLFormElement>) => {
     formEvent.preventDefault();
-    const payload = formToSlotPayload(formEvent.currentTarget, permissionTouched[slotId] ? permissionDrafts[slotId] ?? [] : undefined);
+    const payload = formToSlotPayload(formEvent.currentTarget, getPermissionPayload(permissionState, slotId));
     if (isRecurring) {
       setPendingSlotSave({ slotId, payload });
       setRecurrenceConfirmOpen(true);
@@ -270,7 +281,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
                     loadError={roleLoadError}
                     onChange={(ids) => updateSlotPermissions(slot.id, ids)}
                     roles={roles}
-                    selected={permissionDrafts[slot.id] ?? slot.allowedRoleIds}
+                    selected={getPermissionDraft(permissionState, slot)}
                   />
                   <p className={styles.fieldHint}>
                     Only members with at least one of these roles can sign up for this slot. Leave empty to allow any eligible member.
@@ -278,7 +289,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
                 </div>
                 <div className={`${styles.quickActions} ${styles.editorActions}`}>
                   <Button disabled={busy} type="submit">Save</Button>
-                  <Button disabled={busy} onClick={() => setEditingSlot(null)} type="button" variant="ghost">Cancel</Button>
+                  <Button disabled={busy} onClick={() => closeSlotEditor(slot.id)} type="button" variant="ghost">Cancel</Button>
                 </div>
               </form>
             ) : (
