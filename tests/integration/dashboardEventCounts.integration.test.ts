@@ -152,6 +152,82 @@ describe("dashboard event counts", () => {
     expect(recent.get("count_pve_3")).toMatchObject({ participantCount: 3, fillerCount: 4, status: "draft" });
   });
 
+  describe("ordering", () => {
+    async function seedOrdered() {
+      // Open events: closing soonest first. Closed events: most recently closing first.
+      await createEvent("order_open_b", { closesAt: new Date("2098-02-02T00:00:00.000Z") });
+      await createEvent("order_open_a", { closesAt: new Date("2098-01-01T00:00:00.000Z") });
+      await createEvent("order_open_c", { closesAt: new Date("2098-03-03T00:00:00.000Z") });
+      await createEvent("order_closed_old", { isClosed: true, closesAt: new Date("2090-01-01T00:00:00.000Z") });
+      await createEvent("order_closed_new", { isClosed: true, closesAt: new Date("2097-01-01T00:00:00.000Z") });
+      await createEvent("order_closed_mid", { isClosed: true, closesAt: new Date("2095-01-01T00:00:00.000Z") });
+    }
+
+    it("lists open events by closing time ascending, then closed events newest first", async () => {
+      const { getGuildEvents, getGuildEventsByType } = await import("../../apps/dashboard/lib/server/dashboardData");
+      await seedOrdered();
+
+      const expected = ["order_open_a", "order_open_b", "order_open_c", "order_closed_new", "order_closed_mid", "order_closed_old"];
+      expect((await getGuildEvents(GUILD_ID)).map((event) => event.id)).toEqual(expected);
+      expect((await getGuildEventsByType(GUILD_ID, "war")).map((event) => event.id)).toEqual(expected);
+    });
+
+    it("orders the recent events of the overview the same way", async () => {
+      const { getGuildOverview } = await import("../../apps/dashboard/lib/server/dashboardData");
+      await seedOrdered();
+
+      const overview = await getGuildOverview(GUILD_ID);
+
+      expect(overview.recentEvents.map((event) => event.id)).toEqual([
+        "order_open_a",
+        "order_open_b",
+        "order_open_c",
+        "order_closed_new",
+        "order_closed_mid",
+        "order_closed_old"
+      ]);
+    });
+
+    it("keeps the 100 event limit and fills what is left after the open events with the newest closed ones", async () => {
+      const { getGuildEvents } = await import("../../apps/dashboard/lib/server/dashboardData");
+      await prisma.guild.upsert({ where: { id: GUILD_ID }, update: {}, create: { id: GUILD_ID } });
+      const day = 24 * 60 * 60 * 1000;
+      const base = new Date("2098-01-01T00:00:00.000Z").getTime();
+      await prisma.event.createMany({
+        data: Array.from({ length: 98 }, (_, index) => ({
+          id: `limit_open_${String(index).padStart(3, "0")}`,
+          eventType: "war",
+          name: `open ${index}`,
+          type: "Node War",
+          guildId: GUILD_ID,
+          createdAt: new Date(base),
+          closesAt: new Date(base + index * day),
+          expiresAt: new Date(base + 200 * day)
+        }))
+      });
+      await prisma.event.createMany({
+        data: Array.from({ length: 5 }, (_, index) => ({
+          id: `limit_closed_${index}`,
+          eventType: "war",
+          name: `closed ${index}`,
+          type: "Node War",
+          guildId: GUILD_ID,
+          isClosed: true,
+          createdAt: new Date(base),
+          closesAt: new Date(base - (index + 1) * day),
+          expiresAt: new Date(base)
+        }))
+      });
+
+      const events = await getGuildEvents(GUILD_ID);
+
+      expect(events).toHaveLength(100);
+      expect(events[0].id).toBe("limit_open_000");
+      expect(events[97].id).toBe("limit_open_097");
+      expect(events.slice(98).map((event) => event.id)).toEqual(["limit_closed_0", "limit_closed_1"]);
+    });
+  });
+
   it("does not load whole relations just to count them", async () => {
     const { getGuildEvents, getGuildEventsByType, getGuildEventsByTypes, getGuildOverview } = await import("../../apps/dashboard/lib/server/dashboardData");
     await seedWarEvent("count_war_4");

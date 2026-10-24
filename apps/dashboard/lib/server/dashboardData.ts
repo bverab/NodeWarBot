@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
-import type { Event, EventEnrollment, EventFillerEntry, EventParticipant, EventRoleSlot, EventSchedule, EventWaitlistEntry } from "@prisma/client";
+import type { Prisma, Event, EventEnrollment, EventFillerEntry, EventParticipant, EventRoleSlot, EventSchedule, EventWaitlistEntry } from "@prisma/client";
 import { calculateEventLifecycleDates, calculateScheduledPublishAt, normalizeTimezone } from "@/lib/eventDateTime";
 import { fetchDiscordGuildMembers } from "@/lib/server/discordMembers";
 import { prisma } from "@/lib/server/prisma";
@@ -414,16 +414,41 @@ async function getParticipantProfiles(guildId: string, participants: Participant
   };
 }
 
-async function listGuildEvents(where: { guildId: string; eventType?: string | { in: string[] } }): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where,
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      _count: { select: EVENT_COUNTS_SELECT }
-    },
-    take: 100
+const EVENT_LIST_LIMIT = 100;
+
+// Open events come first, closing soonest first (what is about to happen). Closed events follow, most recent first,
+// so that the `take` limit never hides the latest ones behind years of old history.
+async function findEventsOpenFirst<Include extends Prisma.EventInclude>(
+  where: Prisma.EventWhereInput,
+  include: Include,
+  take: number
+) {
+  const open = await prisma.event.findMany({
+    where: { AND: [where, { isClosed: false }] },
+    orderBy: [{ closesAt: "asc" }, { createdAt: "desc" }],
+    include,
+    take
   });
+
+  const remaining = take - open.length;
+  const closed = remaining > 0
+    ? await prisma.event.findMany({
+        where: { AND: [where, { isClosed: true }] },
+        orderBy: [{ closesAt: "desc" }, { createdAt: "desc" }],
+        include,
+        take: remaining
+      })
+    : [];
+
+  return [...open, ...closed];
+}
+
+async function listGuildEvents(where: { guildId: string; eventType?: string | { in: string[] } }): Promise<EventListItem[]> {
+  const events = await findEventsOpenFirst(
+    where,
+    { schedule: true, _count: { select: EVENT_COUNTS_SELECT } },
+    EVENT_LIST_LIMIT
+  );
 
   return toEventListItems(events);
 }
@@ -595,14 +620,7 @@ export async function getGuildOverview(guildId: string): Promise<OverviewData> {
     participantRows,
     enrollmentRows
   ] = await Promise.all([
-    prisma.event.findMany({
-      where: { guildId },
-      orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-      include: {
-        _count: { select: EVENT_COUNTS_SELECT }
-      },
-      take: 12
-    }),
+    findEventsOpenFirst({ guildId }, { _count: { select: EVENT_COUNTS_SELECT } }, 12),
     prisma.eventSchedule.count({
       where: {
         enabled: true,
