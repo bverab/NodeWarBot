@@ -23,7 +23,8 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:import-json": "node scripts/migrate-json-to-sqlite.js",
+    "db:backup": "node scripts/backup-db.js",
+    "db:import-json":"node scripts/migrate-json-to-sqlite.js",
     "db:export-json": "node scripts/export-sqlite-to-json.js"
   },
   "keywords": [],
