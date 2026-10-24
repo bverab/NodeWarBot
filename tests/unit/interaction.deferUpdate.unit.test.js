@@ -1,4 +1,5 @@
 const { resetSrcModules, requireSrc } = require('../support/interaction/freshRequire');
+const { routeUpdateWarByIdThroughUpdateWar } = require('../helpers/warServiceMocks');
 const { createInteraction, asAdmin, collectReplies } = require('../support/interaction/fakes');
 const { buildWar, buildWarRole } = require('../factories/warFactory');
 
@@ -65,6 +66,7 @@ describe('panel de eventos: deferUpdate antes del trabajo lento (H-6)', () => {
       calls.push('updateWar');
       return updated;
     });
+    routeUpdateWarByIdThroughUpdateWar(warService);
     const discordSync = requireSrc('src/services/discordEventSyncService');
     discordSync.updateEventDiscordMessage = vi.fn(async () => {
       calls.push('refresh');

@@ -1,5 +1,6 @@
 const {
   getWarByMessageId,
+  resolveWarByMessageId,
   updateWarByMessageId,
   deleteWarByMessageId
 } = require('../services/warService');
@@ -95,7 +96,7 @@ module.exports = async interaction => {
 };
 
 async function handleToggleClose(interaction) {
-  const currentWar = getWarByMessageId(interaction.message.id);
+  const currentWar = await resolveWarByMessageId(interaction.message.id);
   if (!currentWar) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -120,7 +121,7 @@ async function handleToggleClose(interaction) {
 }
 
 async function handleDeleteWar(interaction) {
-  const war = getWarByMessageId(interaction.message.id);
+  const war = await resolveWarByMessageId(interaction.message.id);
   if (!war) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -135,7 +136,7 @@ async function handleDeleteWar(interaction) {
 }
 
 async function handleViewList(interaction) {
-  const war = getWarByMessageId(interaction.message.id);
+  const war = await resolveWarByMessageId(interaction.message.id);
   if (!war) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -151,7 +152,7 @@ async function handleJoinRole(interaction) {
   // 1) valida rol y permisos del usuario
   // 2) aplica join/switch/leave en estado persistente
   // 3) refresca embed y notifica promociones de waitlist
-  const currentWar = getWarByMessageId(interaction.message.id);
+  const currentWar = await resolveWarByMessageId(interaction.message.id);
   if (!currentWar) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -318,7 +319,7 @@ async function handleJoinRole(interaction) {
 }
 
 async function handleJoinPveSlot(interaction) {
-  const event = getWarByMessageId(interaction.message.id);
+  const event = await resolveWarByMessageId(interaction.message.id);
   if (!event) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -367,7 +368,7 @@ async function handleJoinPveSlot(interaction) {
 }
 
 async function handleLeavePveSlot(interaction) {
-  const event = getWarByMessageId(interaction.message.id);
+  const event = await resolveWarByMessageId(interaction.message.id);
   if (!event) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }

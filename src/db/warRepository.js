@@ -3,12 +3,19 @@ const { normalizeWar } = require('../utils/warState');
 const { logInfo } = require('./logger');
 
 let warsCache = [];
+// Indices de la cache: las lecturas por id/mensaje no recorren ni clonan todos los eventos.
+const warsById = new Map();
+const warIdByMessageId = new Map();
 let initialized = false;
 let globalWriteLock = Promise.resolve();
 const eventLocks = new Map();
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function cloneWar(war) {
+  return normalizeWar(deepClone(war));
 }
 
 function toDate(ms) {
@@ -21,6 +28,35 @@ function toNumber(date) {
   const parsed = date instanceof Date ? date.getTime() : Number(date);
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+const EVENT_INCLUDE = {
+  roleSlots: {
+    include: {
+      users: {
+        orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }]
+      },
+      permissions: true
+    },
+    orderBy: { position: 'asc' }
+  },
+  waitlist: {
+    orderBy: { position: 'asc' }
+  },
+  notifyTargets: {
+    orderBy: { position: 'asc' }
+  },
+  accessRoles: {
+    orderBy: { position: 'asc' }
+  },
+  accessUsers: {
+    orderBy: { position: 'asc' }
+  },
+  fillers: {
+    orderBy: { joinedAt: 'asc' }
+  },
+  schedule: true,
+  recap: true
+};
 
 function normalizeWarsInput(wars) {
   return Array.isArray(wars) ? wars.map(normalizeWar) : [];
@@ -72,7 +108,7 @@ async function upsertWarTx(tx, warInput) {
   const war = normalizeWar(warInput);
   await ensureGuildIfNeeded(tx, war.guildId);
 
-  await tx.event.upsert({
+  const row = await tx.event.upsert({
     where: { id: war.id },
     create: {
       id: war.id,
@@ -175,7 +211,7 @@ async function upsertWarTx(tx, warInput) {
           userId: String(user.userId),
           displayName: String(user.displayName || 'Usuario'),
           isFake: Boolean(user.isFake),
-          joinedAt: new Date()
+          joinedAt: toDate(user.joinedAt)
         }
       });
     }
@@ -262,6 +298,8 @@ async function upsertWarTx(tx, warInput) {
       lastPostedAt: war.recap?.lastPostedAt ? toDate(war.recap.lastPostedAt) : null
     }
   });
+
+  return toNumber(row.updatedAt);
 }
 
 function mapDbEventToDomain(event) {
@@ -273,7 +311,8 @@ function mapDbEventToDomain(event) {
     users: slot.users.map(user => ({
       userId: user.userId,
       displayName: user.displayName,
-      isFake: Boolean(user.isFake)
+      isFake: Boolean(user.isFake),
+      joinedAt: toNumber(user.joinedAt)
     })),
     allowedRoleIds: slot.permissions.map(permission => permission.discordRoleId).filter(Boolean),
     allowedRoles: slot.permissions.map(permission => permission.discordRoleName).filter(Boolean)
@@ -334,38 +373,19 @@ function mapDbEventToDomain(event) {
     createdAt: toNumber(event.createdAt),
     expiresAt: toNumber(event.expiresAt),
     closesAt: toNumber(event.closesAt),
-    isClosed: Boolean(event.isClosed)
+    isClosed: Boolean(event.isClosed),
+    updatedAt: toNumber(event.updatedAt)
   });
+}
+
+async function readWarFromSqlite(where) {
+  const event = await prisma.event.findUnique({ where, include: EVENT_INCLUDE });
+  return event ? mapDbEventToDomain(event) : null;
 }
 
 async function readWarsFromSqlite() {
   const events = await prisma.event.findMany({
-    include: {
-      roleSlots: {
-        include: {
-          users: true,
-          permissions: true
-        },
-        orderBy: { position: 'asc' }
-      },
-      waitlist: {
-        orderBy: { position: 'asc' }
-      },
-      notifyTargets: {
-        orderBy: { position: 'asc' }
-      },
-      accessRoles: {
-        orderBy: { position: 'asc' }
-      },
-      accessUsers: {
-        orderBy: { position: 'asc' }
-      },
-      fillers: {
-        orderBy: { joinedAt: 'asc' }
-      },
-      schedule: true,
-      recap: true
-    },
+    include: EVENT_INCLUDE,
     orderBy: { createdAt: 'asc' }
   });
 
@@ -385,32 +405,7 @@ async function loadDueScheduledPublishEvents(now = new Date(), retryDelayMs = 5 
         { lastPublishAttemptAt: { lt: cutoff } }
       ]
     },
-    include: {
-      roleSlots: {
-        include: {
-          users: true,
-          permissions: true
-        },
-        orderBy: { position: 'asc' }
-      },
-      waitlist: {
-        orderBy: { position: 'asc' }
-      },
-      notifyTargets: {
-        orderBy: { position: 'asc' }
-      },
-      accessRoles: {
-        orderBy: { position: 'asc' }
-      },
-      accessUsers: {
-        orderBy: { position: 'asc' }
-      },
-      fillers: {
-        orderBy: { joinedAt: 'asc' }
-      },
-      schedule: true,
-      recap: true
-    },
+    include: EVENT_INCLUDE,
     orderBy: { scheduledPublishAt: 'asc' },
     take: 25
   });
@@ -461,9 +456,7 @@ async function replaceAllWarsInSqlite(warsInput) {
 }
 
 async function persistSingleWarToSqlite(warInput) {
-  await prisma.$transaction(async tx => {
-    await upsertWarTx(tx, warInput);
-  });
+  return prisma.$transaction(async tx => upsertWarTx(tx, warInput));
 }
 
 async function deleteWarFromSqliteByMessageId(messageId) {
@@ -499,19 +492,21 @@ function withEventLock(eventId, task) {
 
 async function initializeWarRepository() {
   if (initialized) return;
-  warsCache = normalizeWarsInput(await readWarsFromSqlite());
+  setCachedWars(normalizeWarsInput(await readWarsFromSqlite()));
   initialized = true;
   logInfo(`WarRepository inicializado con ${warsCache.length} evento(s).`);
 }
 
 function loadWars() {
-  return deepClone(warsCache).map(normalizeWar);
+  return warsCache.map(cloneWar);
 }
 
 async function loadWarsFresh() {
-  const normalized = normalizeWarsInput(await readWarsFromSqlite());
-  warsCache = normalized;
-  initialized = true;
+  // Bajo el lock global y recargando cada evento dentro de su lock: no pisa escrituras en curso.
+  await withGlobalWriteLock(async () => {
+    await syncWarsFromDatabase();
+    initialized = true;
+  });
   return loadWars();
 }
 
@@ -520,67 +515,187 @@ async function saveWars(wars) {
   const normalized = normalizeWarsInput(wars);
   await withGlobalWriteLock(async () => {
     await replaceAllWarsInSqlite(normalized);
-    warsCache = normalized;
+    setCachedWars(normalized);
   });
 }
 
 async function createWar(warData) {
   const war = normalizeWar(warData);
   await withEventLock(war.id, async () => {
-    await persistSingleWarToSqlite(war);
-    const index = warsCache.findIndex(entry => entry.id === war.id);
-    if (index >= 0) warsCache[index] = war;
-    else warsCache.push(war);
+    war.updatedAt = await persistSingleWarToSqlite(war);
+    cacheWar(war);
   });
   return war;
 }
 
-function getWarByMessageId(messageId) {
+function indexWar(war) {
+  warsById.set(war.id, war);
+  if (war.messageId) warIdByMessageId.set(String(war.messageId), war.id);
+}
+
+function unindexWar(war) {
+  if (warsById.get(war.id) === war) warsById.delete(war.id);
+  if (war.messageId && warIdByMessageId.get(String(war.messageId)) === war.id) {
+    warIdByMessageId.delete(String(war.messageId));
+  }
+}
+
+function setCachedWars(wars) {
+  warsCache = wars;
+  warsById.clear();
+  warIdByMessageId.clear();
+  for (const war of wars) indexWar(war);
+}
+
+function cacheWar(war) {
+  const previous = warsById.get(war.id);
+  const index = previous ? warsCache.indexOf(previous) : -1;
+  if (previous) unindexWar(previous);
+  if (index >= 0) warsCache[index] = war;
+  else warsCache.push(war);
+  indexWar(war);
+}
+
+function uncacheWar(eventId) {
+  const previous = warsById.get(String(eventId));
+  if (!previous) return;
+  unindexWar(previous);
+  warsCache = warsCache.filter(entry => entry !== previous);
+}
+
+function findCachedWarByMessageId(messageId) {
+  const id = warIdByMessageId.get(String(messageId));
+  return id ? warsById.get(id) || null : null;
+}
+
+// Debe llamarse dentro de withEventLock(eventId): reemplaza la entrada de la cache con la fila actual.
+async function refreshCachedWarFromSqlite(eventId) {
+  const id = String(eventId);
+  const war = await readWarFromSqlite({ id });
+  if (war) cacheWar(war);
+  else uncacheWar(id);
+  return war;
+}
+
+// Como getWarByMessageId, pero si la cache no conoce el mensaje lo busca en SQLite (p. ej. un evento
+// publicado desde el dashboard) y lo incorpora a la cache.
+async function resolveWarByMessageId(messageId) {
+  const cached = getWarByMessageId(messageId);
+  if (cached) return cached;
+
   const value = String(messageId);
-  return loadWars().find(war => war.messageId === value) || null;
+  const row = await prisma.event.findUnique({ where: { messageId: value }, select: { id: true } });
+  if (!row) return null;
+
+  const war = await withEventLock(row.id, () => refreshCachedWarFromSqlite(row.id));
+  return war && war.messageId === value ? normalizeWar(deepClone(war)) : null;
+}
+
+// Sincroniza la cache con escrituras de otros procesos (dashboard): recarga eventos nuevos o con
+// updatedAt distinto y quita los borrados. Cada recarga relee la fila dentro del lock del evento.
+async function syncWarsFromDatabase() {
+  const rows = await prisma.event.findMany({ select: { id: true, updatedAt: true } });
+  const dbVersions = new Map(rows.map(row => [row.id, toNumber(row.updatedAt)]));
+  const cachedVersions = new Map(warsCache.map(war => [war.id, war.updatedAt]));
+
+  const staleIds = rows
+    .filter(row => !cachedVersions.has(row.id) || cachedVersions.get(row.id) !== dbVersions.get(row.id))
+    .map(row => row.id);
+  const removedIds = Array.from(cachedVersions.keys()).filter(id => !dbVersions.has(id));
+
+  for (const id of [...staleIds, ...removedIds]) {
+    await withEventLock(id, () => refreshCachedWarFromSqlite(id));
+  }
+  return { reloaded: staleIds.length, removed: removedIds.length };
+}
+
+function getWarById(eventId) {
+  const war = warsById.get(String(eventId));
+  return war ? cloneWar(war) : null;
+}
+
+function getWarByMessageId(messageId) {
+  const war = findCachedWarByMessageId(messageId);
+  return war ? cloneWar(war) : null;
 }
 
 function getLatestWarByChannelId(channelId) {
-  const wars = loadWars().filter(war => war.channelId === channelId);
-  if (!wars.length) return null;
-  wars.sort((a, b) => b.createdAt - a.createdAt);
-  return wars[0];
+  let latest = null;
+  for (const war of warsCache) {
+    if (war.channelId !== channelId) continue;
+    if (!latest || war.createdAt > latest.createdAt) latest = war;
+  }
+  return latest ? cloneWar(latest) : null;
 }
 
 async function updateWar(updatedWar) {
   const normalized = normalizeWar(updatedWar);
   await withEventLock(normalized.id, async () => {
-    await persistSingleWarToSqlite(normalized);
-    const index = warsCache.findIndex(war => war.id === normalized.id);
-    if (index >= 0) warsCache[index] = normalized;
-    else warsCache.push(normalized);
+    normalized.updatedAt = await persistSingleWarToSqlite(normalized);
+    cacheWar(normalized);
   });
   return normalized;
 }
 
 async function updateWarByMessageId(messageId, updater) {
   const value = String(messageId);
-  const initial = warsCache.find(war => war.messageId === value);
+  const initial = findCachedWarByMessageId(value);
   if (!initial) return { war: null, result: null };
 
   let normalized = null;
   let result = null;
 
   await withEventLock(initial.id, async () => {
-    const current = warsCache.find(war => war.messageId === value);
-    if (!current) return;
+    const cached = findCachedWarByMessageId(value);
+    if (!cached) return;
+    const current = await getFreshWarInLock(cached.id);
+    if (!current || current.messageId !== value) return;
 
     const draft = normalizeWar(current);
     result = updater(draft);
     normalized = normalizeWar(draft);
 
-    await persistSingleWarToSqlite(normalized);
-    const index = warsCache.findIndex(war => war.id === normalized.id);
-    if (index >= 0) warsCache[index] = normalized;
-    else warsCache.push(normalized);
+    normalized.updatedAt = await persistSingleWarToSqlite(normalized);
+    cacheWar(normalized);
   });
 
   if (!normalized) return { war: null, result: null };
+  return { war: normalized, result };
+}
+
+// Debe llamarse dentro de withEventLock(eventId). Si otro proceso (dashboard) escribio el evento
+// despues de la cache, o la cache no lo tiene, se parte de la fila actual de SQLite.
+async function getFreshWarInLock(eventId) {
+  const id = String(eventId);
+  const current = warsById.get(id) || null;
+  const dbRow = await prisma.event.findUnique({ where: { id }, select: { updatedAt: true } });
+  if (!dbRow || !current || !Number.isFinite(current.updatedAt) || toNumber(dbRow.updatedAt) > current.updatedAt) {
+    return await refreshCachedWarFromSqlite(id);
+  }
+  return current;
+}
+
+// Mutacion atomica: relee el evento dentro de su lock, aplica el mutator sobre esa copia fresca y
+// persiste. El mutator es sincrono y solo debe tocar los campos que cambia; si devuelve false no
+// se guarda nada (p. ej. el rol ya no existe en la copia fresca).
+async function updateWarById(eventId, mutator) {
+  const id = String(eventId);
+  let normalized = null;
+  let result = null;
+
+  await withEventLock(id, async () => {
+    const current = await getFreshWarInLock(id);
+    if (!current) return;
+
+    const draft = normalizeWar(current);
+    result = mutator(draft);
+    if (result === false) return;
+    normalized = normalizeWar(draft);
+
+    normalized.updatedAt = await persistSingleWarToSqlite(normalized);
+    cacheWar(normalized);
+  });
+
   return { war: normalized, result };
 }
 
@@ -590,7 +705,7 @@ async function deleteWarById(eventId) {
   await withEventLock(id, async () => {
     const result = await prisma.event.deleteMany({ where: { id } });
     deleted = result.count > 0;
-    warsCache = warsCache.filter(war => war.id !== id);
+    uncacheWar(id);
   });
   return deleted;
 }
@@ -602,15 +717,15 @@ async function replaceWarId(oldId, newWar) {
 
   const task = async () => {
     // Borra primero: la copia conserva el messageId, que es unico.
-    await prisma.$transaction(async tx => {
+    normalized.updatedAt = await prisma.$transaction(async tx => {
       await tx.event.deleteMany({ where: { id: previousId } });
-      await upsertWarTx(tx, normalized);
+      return upsertWarTx(tx, normalized);
     });
     const next = warsCache.filter(war => war.id !== normalized.id);
     const index = next.findIndex(war => war.id === previousId);
     if (index >= 0) next[index] = normalized;
     else next.push(normalized);
-    warsCache = next;
+    setCachedWars(next);
   };
 
   await withEventLock(firstLock, () => (firstLock === secondLock ? task() : withEventLock(secondLock, task)));
@@ -619,41 +734,41 @@ async function replaceWarId(oldId, newWar) {
 
 async function deleteWarByMessageId(messageId) {
   const value = String(messageId);
-  const initial = warsCache.find(war => war.messageId === value);
+  const initial = findCachedWarByMessageId(value);
   if (!initial) return false;
 
   let deleted = false;
   await withEventLock(initial.id, async () => {
     deleted = await deleteWarFromSqliteByMessageId(value);
-    if (deleted) {
-      warsCache = warsCache.filter(war => war.messageId !== value);
-    }
+    const cached = findCachedWarByMessageId(value);
+    if (deleted && cached) uncacheWar(cached.id);
   });
   return deleted;
 }
 
 function getWarsByGroupId(groupId) {
-  return loadWars().filter(war => war.groupId === groupId);
+  return warsCache.filter(war => war.groupId === groupId).map(cloneWar);
 }
 
 function getWarByGroupAndDay(groupId, dayOfWeek) {
-  return loadWars().find(war => war.groupId === groupId && war.dayOfWeek === dayOfWeek) || null;
+  const war = warsCache.find(entry => entry.groupId === groupId && entry.dayOfWeek === dayOfWeek);
+  return war ? cloneWar(war) : null;
 }
 
 function searchWarsByName(searchTerm) {
   const term = String(searchTerm || '').toLowerCase();
   const seen = new Set();
-  return loadWars().filter(war => {
+  return warsCache.filter(war => {
     if (seen.has(war.groupId)) return false;
     if (!war.name?.toLowerCase().includes(term) && !war.groupId?.toLowerCase().includes(term)) return false;
     seen.add(war.groupId);
     return true;
-  });
+  }).map(cloneWar);
 }
 
 function getEditableWarsForAutocomplete() {
   const days = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
-  return loadWars()
+  return warsCache
     .filter(war => war.name && war.dayOfWeek !== undefined && war.dayOfWeek !== null)
     .map(war => ({
       groupId: war.groupId,
@@ -671,7 +786,7 @@ async function waitForWarRepositoryIdle() {
 }
 
 function __resetWarRepositoryForTests() {
-  warsCache = [];
+  setCachedWars([]);
   initialized = false;
   globalWriteLock = Promise.resolve();
   eventLocks.clear();
@@ -689,10 +804,14 @@ module.exports = {
   loadWars,
   saveWars,
   createWar,
+  getWarById,
   getWarByMessageId,
+  resolveWarByMessageId,
+  syncWarsFromDatabase,
   getLatestWarByChannelId,
   updateWar,
   updateWarByMessageId,
+  updateWarById,
   deleteWarById,
   replaceWarId,
   deleteWarByMessageId,

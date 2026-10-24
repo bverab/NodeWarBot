@@ -25,6 +25,14 @@ module.exports = {
   },
   loadWarsFresh: withDbLog('loadWarsFresh', repository.loadWarsFresh),
   createWar: withDbLog('createWar', repository.createWar),
+  getWarById: (...args) => {
+    try {
+      return repository.getWarById(...args);
+    } catch (error) {
+      logError('Fallo DB en warService.getWarById', error, { action: 'war_service_getWarById' });
+      throw error;
+    }
+  },
   getWarByMessageId: (...args) => {
     try {
       return repository.getWarByMessageId(...args);
@@ -42,10 +50,13 @@ module.exports = {
     }
   },
   updateWar: withDbLog('updateWar', repository.updateWar),
+  resolveWarByMessageId: withDbLog('resolveWarByMessageId', repository.resolveWarByMessageId),
+  syncWarsFromDatabase: withDbLog('syncWarsFromDatabase', repository.syncWarsFromDatabase),
   loadDueScheduledPublishEvents: withDbLog('loadDueScheduledPublishEvents', repository.loadDueScheduledPublishEvents),
   markScheduledPublishAttempt: withDbLog('markScheduledPublishAttempt', repository.markScheduledPublishAttempt),
   completeScheduledPublishIfUnpublished: withDbLog('completeScheduledPublishIfUnpublished', repository.completeScheduledPublishIfUnpublished),
   updateWarByMessageId: withDbLog('updateWarByMessageId', repository.updateWarByMessageId),
+  updateWarById: withDbLog('updateWarById', repository.updateWarById),
   deleteWarByMessageId: withDbLog('deleteWarByMessageId', repository.deleteWarByMessageId),
   deleteWarById: withDbLog('deleteWarById', repository.deleteWarById),
   replaceWarId: withDbLog('replaceWarId', repository.replaceWarId),

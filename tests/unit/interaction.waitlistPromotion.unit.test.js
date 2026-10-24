@@ -1,4 +1,5 @@
 const { resetSrcModules, requireSrc } = require('../support/interaction/freshRequire');
+const { routeUpdateWarByIdThroughUpdateWar } = require('../helpers/warServiceMocks');
 const { createInteraction, asAdmin, createModalFields } = require('../support/interaction/fakes');
 const { buildWar, buildWarRole, buildParticipant } = require('../factories/warFactory');
 
@@ -27,6 +28,7 @@ function patchServices(war) {
   const warService = requireSrc('src/services/warService');
   warService.loadWars = vi.fn(() => [war]);
   warService.updateWar = vi.fn(async updated => updated);
+  routeUpdateWarByIdThroughUpdateWar(warService);
   const discordSync = requireSrc('src/services/discordEventSyncService');
   discordSync.updateEventDiscordMessage = vi.fn(async () => ({ ok: true }));
   const notifier = requireSrc('src/utils/promotionNotifier');

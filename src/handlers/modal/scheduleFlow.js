@@ -15,6 +15,7 @@ const { normalizeEventType } = require('../../constants/eventTypes');
 const pveService = require('../../services/pveService');
 const { sanitizeUserInput, safeMessageContent } = require('../../utils/textSafety');
 const { logWarn } = require('../../utils/appLogger');
+const { applyLifecycleToWar, deriveLifecycleFromDuration } = require('../../utils/eventLifecycleTimes');
 
 async function showScheduleModeSelector(interaction, warData) {
   const menu = new StringSelectMenuBuilder()
@@ -321,7 +322,15 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
       }
     };
 
-    const normalized = normalizeWar(warToCreate);
+    // El scheduler toma la hora del dia de closesAt/expiresAt: se guardan los de la primera ocurrencia.
+    const lifecycle = deriveLifecycleFromDuration({
+      dayOfWeek,
+      publishTime: warToCreate.time,
+      durationMinutes: warToCreate.duration,
+      closeBeforeMinutes: warToCreate.closeBeforeMinutes,
+      timezone: warToCreate.timezone
+    });
+    const normalized = normalizeWar(lifecycle ? applyLifecycleToWar(warToCreate, lifecycle) : warToCreate);
     await warService.createWar(normalized);
     if (isPve) {
       await pveService.saveEventSlots(

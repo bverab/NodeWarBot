@@ -1,4 +1,5 @@
 const { resetSrcModules, requireSrc } = require('../support/interaction/freshRequire');
+const { routeUpdateWarByIdThroughUpdateWar } = require('../helpers/warServiceMocks');
 const { createInteraction, asAdmin, createModalFields, collectReplies } = require('../support/interaction/fakes');
 const { buildWar, buildWarRole } = require('../factories/warFactory');
 
@@ -28,6 +29,7 @@ describe('guard de admin en el despacho de paneles (H-15, C-9)', () => {
     warService = requireSrc('src/services/warService');
     warService.loadWars = vi.fn(() => [war]);
     warService.updateWar = vi.fn(async updated => updated);
+    routeUpdateWarByIdThroughUpdateWar(warService);
     eventManagementService = requireSrc('src/services/eventManagementService');
     eventManagementService.getEventById = vi.fn(() => pveWar);
     eventManagementService.deletePveSlot = vi.fn(async () => ({ ok: true, event: pveWar }));
@@ -233,6 +235,7 @@ describe('TTL de 30 minutos del contexto del panel (C-9)', () => {
     const warService = requireSrc('src/services/warService');
     warService.loadWars = vi.fn(() => [war]);
     warService.updateWar = vi.fn(async updated => updated);
+    routeUpdateWarByIdThroughUpdateWar(warService);
     const { EVENT_ADMIN_PANEL_ACTIONS } = requireSrc('src/handlers/interaction/eventAdminPanelActions');
     store.setSelectedEventContext('user_1', 'guild_1', 'channel_1', war.id, { selectedRoleIndex: 0 });
     ageContext(TTL_MS + 1000);

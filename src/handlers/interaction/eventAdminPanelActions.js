@@ -5,7 +5,7 @@ const {
   TextInputStyle
 } = require('discord.js');
 const { parseEmojiInput } = require('../../utils/emojiHelper');
-const { loadWars, updateWar } = require('../../services/warService');
+const { loadWars, updateWarById } = require('../../services/warService');
 const {
   buildCancelConfirmPayload,
   buildEventDataEditorPayload,
@@ -279,11 +279,15 @@ async function handleEventCancelConfirm(interaction) {
     return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
-  war.isClosed = true;
-  if (war.schedule) {
-    war.schedule.enabled = false;
+  const { war: updated } = await updateWarById(war.id, fresh => {
+    fresh.isClosed = true;
+    if (fresh.schedule) {
+      fresh.schedule.enabled = false;
+    }
+  });
+  if (!updated) {
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
-  const updated = await updateWar(war);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -414,8 +418,15 @@ async function handleEventRoleIconSource(interaction) {
 
   const source = normalizeClassIconSource(interaction.values?.[0]);
   const sourceChanged = normalizeClassIconSource(context.war.classIconSource) !== source;
-  context.war.classIconSource = source;
-  const updatedWar = sourceChanged ? await updateWar(context.war) : context.war;
+  let updatedWar = context.war;
+  if (sourceChanged) {
+    ({ war: updatedWar } = await updateWarById(context.war.id, fresh => {
+      fresh.classIconSource = source;
+    }));
+    if (!updatedWar) {
+      return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    }
+  }
   if (sourceChanged && updatedWar.messageId) {
     await refreshWarMessage(interaction, updatedWar);
   }
@@ -453,9 +464,14 @@ async function handleEventRoleIconPick(interaction) {
   }
 
   const inline = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
-  context.role.emoji = inline;
-  context.role.emojiSource = 'guild';
-  const updated = await updateWar(context.war);
+  const saved = await saveRoleChange(context, role => {
+    role.emoji = inline;
+    role.emojiSource = 'guild';
+  });
+  if (saved.error) {
+    return await respondUpdate(interaction, { content: saved.error, embeds: [], components: [] });
+  }
+  const { updated, roleIndex } = saved;
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -463,8 +479,8 @@ async function handleEventRoleIconPick(interaction) {
   await updateWithContext(
     interaction,
     {
-      ...buildEventRolesEditorPayload(updated, context.roleIndex),
-      content: `Icono guardado para **${updated.roles[context.roleIndex].name}**: ${inline}`
+      ...buildEventRolesEditorPayload(updated, roleIndex),
+      content: `Icono guardado para **${updated.roles[roleIndex].name}**: ${inline}`
     },
     updated.id,
     { currentView: 'roles' }
@@ -493,9 +509,15 @@ async function handleEventRoleIconBotPick(interaction) {
     return;
   }
 
-  context.role.emoji = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
-  context.role.emojiSource = 'application';
-  const updated = await updateWar(context.war);
+  const botEmoji = `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`;
+  const saved = await saveRoleChange(context, role => {
+    role.emoji = botEmoji;
+    role.emojiSource = 'application';
+  });
+  if (saved.error) {
+    return await respondUpdate(interaction, { content: saved.error, embeds: [], components: [] });
+  }
+  const { updated, roleIndex } = saved;
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -503,8 +525,8 @@ async function handleEventRoleIconBotPick(interaction) {
   await updateWithContext(
     interaction,
     {
-      ...buildEventRolesEditorPayload(updated, context.roleIndex),
-      content: `Icono guardado para **${updated.roles[context.roleIndex].name}**: ${context.role.emoji}`
+      ...buildEventRolesEditorPayload(updated, roleIndex),
+      content: `Icono guardado para **${updated.roles[roleIndex].name}**: ${botEmoji}`
     },
     updated.id,
     { currentView: 'roles' }
@@ -564,9 +586,14 @@ async function handleEventRoleIconClear(interaction) {
     return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
-  context.role.emoji = null;
-  context.role.emojiSource = null;
-  const updated = await updateWar(context.war);
+  const saved = await saveRoleChange(context, role => {
+    role.emoji = null;
+    role.emojiSource = null;
+  });
+  if (saved.error) {
+    return await respondUpdate(interaction, { content: saved.error, embeds: [], components: [] });
+  }
+  const { updated, roleIndex } = saved;
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -574,8 +601,8 @@ async function handleEventRoleIconClear(interaction) {
   await updateWithContext(
     interaction,
     {
-      ...buildEventRolesEditorPayload(updated, context.roleIndex),
-      content: `Icono removido para **${updated.roles[context.roleIndex].name}**.`
+      ...buildEventRolesEditorPayload(updated, roleIndex),
+      content: `Icono removido para **${updated.roles[roleIndex].name}**.`
     },
     updated.id,
     { currentView: 'roles' }
@@ -638,19 +665,25 @@ async function handleEventRolePermissionsConfirm(interaction) {
 
   const selectedContext = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   const selectedIds = Array.isArray(selectedContext?.pendingPermissionIds) ? selectedContext.pendingPermissionIds : [];
-  context.role.allowedRoleIds = selectedIds;
-  context.role.allowedRoles = selectedIds
+  const selectedNames = selectedIds
     .map(roleId => interaction.guild?.roles.cache?.get(roleId)?.name)
     .filter(Boolean);
 
-  const updated = await updateWar(context.war);
+  const saved = await saveRoleChange(context, role => {
+    role.allowedRoleIds = selectedIds;
+    role.allowedRoles = selectedNames;
+  });
+  if (saved.error) {
+    return await respondUpdate(interaction, { content: saved.error, embeds: [], components: [] });
+  }
+  const { updated, roleIndex } = saved;
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
 
   await updateWithContext(
     interaction,
-    { ...buildEventRolesEditorPayload(updated, context.roleIndex), content: 'Permisos actualizados correctamente.' },
+    { ...buildEventRolesEditorPayload(updated, roleIndex), content: 'Permisos actualizados correctamente.' },
     updated.id,
     { currentView: 'roles', pendingPermissionIds: null }
   );
@@ -662,16 +695,21 @@ async function handleEventRolePermissionsClear(interaction) {
     return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
-  context.role.allowedRoleIds = [];
-  context.role.allowedRoles = [];
-  const updated = await updateWar(context.war);
+  const saved = await saveRoleChange(context, role => {
+    role.allowedRoleIds = [];
+    role.allowedRoles = [];
+  });
+  if (saved.error) {
+    return await respondUpdate(interaction, { content: saved.error, embeds: [], components: [] });
+  }
+  const { updated, roleIndex } = saved;
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
 
   await updateWithContext(
     interaction,
-    { ...buildEventRolesEditorPayload(updated, context.roleIndex), content: 'Permisos limpiados.' },
+    { ...buildEventRolesEditorPayload(updated, roleIndex), content: 'Permisos limpiados.' },
     updated.id,
     { currentView: 'roles', pendingPermissionIds: [] }
   );
@@ -697,13 +735,20 @@ async function handleEventRoleDelete(interaction) {
     return await respondError(interaction, context.message);
   }
 
-  const removed = context.war.roles.splice(context.roleIndex, 1)[0];
-  context.war.waitlist = (context.war.waitlist || []).filter(entry => entry.roleName !== removed.name);
-  const nextIndex = context.war.roles.length > 0
-    ? Math.max(0, Math.min(context.roleIndex, context.war.roles.length - 1))
-    : null;
-
-  const updated = await updateWar(context.war);
+  const removed = context.role;
+  let nextIndex = null;
+  const saved = await saveRoleChange(context, (role, fresh) => {
+    const removedIndex = fresh.roles.indexOf(role);
+    fresh.roles.splice(removedIndex, 1);
+    fresh.waitlist = (fresh.waitlist || []).filter(entry => entry.roleName !== role.name);
+    nextIndex = fresh.roles.length > 0
+      ? Math.max(0, Math.min(removedIndex, fresh.roles.length - 1))
+      : null;
+  });
+  if (saved.error) {
+    return await respondError(interaction, saved.error);
+  }
+  const { updated } = saved;
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -736,22 +781,31 @@ async function handleEventRoleMove(interaction, direction) {
     return;
   }
 
-  context.war.roles = result.roles;
-  const updated = await updateWar(context.war);
+  let toIndex = result.toIndex;
+  const saved = await saveRoleChange(context, (role, fresh) => {
+    const freshResult = moveRoleIndex(fresh.roles, fresh.roles.indexOf(role), direction);
+    if (!freshResult.moved) return false;
+    fresh.roles = freshResult.roles;
+    toIndex = freshResult.toIndex;
+  });
+  if (saved.error) {
+    return await respondUpdate(interaction, { content: saved.error, embeds: [], components: [] });
+  }
+  const { updated } = saved;
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
 
-  const movedRoleName = updated.roles[result.toIndex]?.name || 'rol';
+  const movedRoleName = updated.roles[toIndex]?.name || 'rol';
   const actionLabel = direction === 'up' ? 'arriba' : 'abajo';
   await updateWithContext(
     interaction,
     {
-      ...buildEventRolesEditorPayload(updated, result.toIndex),
+      ...buildEventRolesEditorPayload(updated, toIndex),
       content: `Orden actualizado: **${movedRoleName}** movido hacia ${actionLabel}.`
     },
     updated.id,
-    { selectedRoleIndex: result.toIndex, currentView: 'roles' }
+    { selectedRoleIndex: toIndex, currentView: 'roles' }
   );
 }
 
@@ -1183,9 +1237,12 @@ async function handleEventMentionsSave(interaction) {
 
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   const selectedIds = Array.isArray(context?.pendingMentionRoleIds) ? context.pendingMentionRoleIds : [];
-  war.notifyRoles = selectedIds;
-
-  const updated = await updateWar(war);
+  const { war: updated } = await updateWarById(war.id, fresh => {
+    fresh.notifyRoles = selectedIds;
+  });
+  if (!updated) {
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+  }
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }
@@ -1278,6 +1335,26 @@ function getSelectedRoleContext(interaction) {
   }
 
   return { ok: true, war, role, roleIndex };
+}
+
+// Aplica un cambio de rol sobre la copia fresca del evento dentro de su lock (no pisa inscripciones
+// que llegaron mientras el admin editaba). El rol se busca por nombre en esa copia.
+async function saveRoleChange(context, mutateRole) {
+  const roleName = context.role.name;
+  const { war: updated, result } = await updateWarById(context.war.id, fresh => {
+    const role = fresh.roles.find(entry => entry.name === roleName);
+    if (!role) return false;
+    return mutateRole(role, fresh);
+  });
+  if (!updated) {
+    return {
+      error: result === false
+        ? 'El rol seleccionado ya no existe. Selecciona otro rol.'
+        : 'No hay evento seleccionado. Usa `/event edit`.'
+    };
+  }
+  const roleIndex = updated.roles.findIndex(entry => entry.name === roleName);
+  return { updated, roleIndex: roleIndex >= 0 ? roleIndex : context.roleIndex };
 }
 
 function findWarByIdAndChannel(eventId, channelId) {

@@ -92,6 +92,13 @@ function checkAndExecuteEvents() {
 async function runSchedulerTick() {
   try {
     schedulerInstance.lastCheck = Date.now();
+    // Trae a la cache lo que el dashboard creo, publico, edito o borro desde el ultimo tick.
+    try {
+      await warService.syncWarsFromDatabase();
+    } catch (error) {
+      logError('Error sincronizando cache de eventos con la base', error, { action: 'scheduler_cache_sync' });
+    }
+    if (!schedulerInstance) return;
     const wars = warService.loadWars();
     const nowMs = Date.now();
     const now = new Date(nowMs);
@@ -480,9 +487,14 @@ async function publishRecapThread(war) {
 
     await thread.send(await buildEventReadOnlyPayload({ ...war, isClosed: true }));
 
+    // Solo se tocan los campos del recap, sobre la copia fresca (no pisa inscripciones del tick).
+    const postedAt = Date.now();
+    await warService.updateWarById(war.id, fresh => {
+      fresh.recap.threadId = thread.id;
+      fresh.recap.lastPostedAt = postedAt;
+    });
     war.recap.threadId = thread.id;
-    war.recap.lastPostedAt = Date.now();
-    await warService.updateWar(war);
+    war.recap.lastPostedAt = postedAt;
   } catch (error) {
     logError('Error publicando hilo de resumen', error, {
       action: 'scheduler_recap',
@@ -499,8 +511,16 @@ async function closeWarSignups(war) {
   if (!client) return;
 
   try {
+    // Cierra sobre la copia fresca: conserva inscripciones que entraron despues de la foto del tick y
+    // respeta un evento reabierto o republicado mientras tanto.
+    const nowMs = Date.now();
+    const { war: closed } = await warService.updateWarById(war.id, fresh => {
+      if (fresh.isClosed || fresh.messageId !== war.messageId) return false;
+      if (!Number.isFinite(fresh.closesAt) || nowMs < fresh.closesAt) return false;
+      fresh.isClosed = true;
+    });
+    if (!closed) return;
     war.isClosed = true;
-    await warService.updateWar(war);
 
     if (war.messageId) {
       const updateResult = await updateEventDiscordMessage({ client, event: war });
@@ -543,10 +563,17 @@ async function expireWarMessage(war) {
       });
     }
 
+    const deletedAt = Date.now();
+    await warService.updateWarById(war.id, fresh => {
+      // Si se republico mientras tanto, el mensaje nuevo no se toca.
+      if (fresh.messageId !== war.messageId) return false;
+      fresh.messageId = null;
+      fresh.isClosed = true;
+      fresh.schedule.lastMessageIdDeleted = deletedAt;
+    });
     war.messageId = null;
     war.isClosed = true;
-    war.schedule.lastMessageIdDeleted = Date.now();
-    await warService.updateWar(war);
+    war.schedule.lastMessageIdDeleted = deletedAt;
     logInfo('Evento expirado y eliminado', {
       action: 'scheduler_expire_event',
       eventId: war.id,

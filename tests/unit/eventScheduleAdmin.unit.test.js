@@ -1,4 +1,4 @@
-const { handleScheduleView, handleScheduleCancel } = require('../../src/commands/event/eventAdmin');
+const { handleScheduleView, handleScheduleCancel, autocompleteScheduleCancel } = require('../../src/commands/event/eventAdmin');
 
 function buildCancelDeps({ isAdmin, wars = [] }) {
   return {
@@ -90,5 +90,23 @@ describe('event schedule admin command', () => {
     expect(warService.loadWarsFresh).toHaveBeenCalled();
     expect(safeEphemeralReply.mock.calls[0][1]).toContain('Scheduled publish pending');
     expect(safeEphemeralReply.mock.calls[0][1]).toContain('web_scheduled_1');
+  });
+
+  it('el autocomplete de schedule cancel lee la cache y no recarga la base en cada tecla', async () => {
+    const warService = {
+      loadWars: vi.fn(() => [
+        { id: 'evt_1', name: 'Semanal', time: '20:00', channelId: 'channel_1', schedule: { enabled: true } }
+      ]),
+      loadWarsFresh: vi.fn(async () => [])
+    };
+    const respond = vi.fn();
+
+    await autocompleteScheduleCancel(
+      { channelId: 'channel_1', options: { getFocused: () => ({ value: 'sem' }) }, respond },
+      { warService }
+    );
+
+    expect(warService.loadWarsFresh).not.toHaveBeenCalled();
+    expect(respond).toHaveBeenCalledWith([{ name: 'Semanal | 20:00 | evt_1', value: 'evt_1' }]);
   });
 });

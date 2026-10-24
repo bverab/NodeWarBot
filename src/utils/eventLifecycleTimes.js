@@ -70,6 +70,26 @@ function deriveLifecycleForScheduledEvent({ dayOfWeek, publishTime, signupCloseT
   return buildLifecycleForLocalDate({ dateKey, publishTime, signupCloseTime, eventEndTime, timezone });
 }
 
+// Primera ocurrencia de un evento recien creado: el fin es la publicacion + duracion y el cierre
+// ocurre closeBeforeMinutes antes del fin (lo que pide el modal de /event create).
+function deriveLifecycleFromDuration({ dayOfWeek, publishTime, durationMinutes, closeBeforeMinutes, timezone, now = new Date() }) {
+  const dateKey = getNextZonedDateKeyForDay(dayOfWeek, publishTime, timezone, now);
+  if (!dateKey) return null;
+  const publishAt = zonedDateTimeFromParts(dateKey, publishTime, timezone);
+  if (!publishAt) return null;
+
+  const duration = Number.isInteger(durationMinutes) && durationMinutes > 0 ? durationMinutes : 70;
+  const closeBefore = Number.isInteger(closeBeforeMinutes) && closeBeforeMinutes >= 0 && closeBeforeMinutes < duration
+    ? closeBeforeMinutes
+    : 0;
+  const eventEndAt = new Date(publishAt.getTime() + duration * 60 * 1000);
+  return {
+    publishAt,
+    signupCloseAt: new Date(eventEndAt.getTime() - closeBefore * 60 * 1000),
+    eventEndAt
+  };
+}
+
 function deriveLifecycleForExistingEvent({ event, publishTime, signupCloseTime, eventEndTime, timezone, now = new Date() }) {
   const reference = Number.isFinite(event?.expiresAt)
     ? new Date(event.expiresAt)
@@ -128,6 +148,7 @@ function applyLifecycleToWar(war, lifecycle) {
 
 module.exports = {
   applyLifecycleToWar,
+  deriveLifecycleFromDuration,
   deriveLifecycleForExistingEvent,
   deriveLifecycleForScheduledEvent,
   formatTimeInEventZone,
