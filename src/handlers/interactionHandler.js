@@ -71,6 +71,9 @@ module.exports = async interaction => {
       }
       return await adminPanelHandler(interaction);
     }
+
+    // customId sin handler (p. ej. un boton de un mensaje antiguo): se responde en vez de dejar la interaccion colgada.
+    return await safeEphemeralReply(interaction, 'Accion no disponible.');
   } catch (error) {
     logError('Error en interactionHandler', error, {
       action: 'panel_interaction',

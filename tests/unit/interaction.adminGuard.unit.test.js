@@ -157,6 +157,38 @@ describe('guard de admin en el despacho de paneles (H-15, C-9)', () => {
   });
 });
 
+describe('customId de panel desconocido (H-19)', () => {
+  beforeEach(() => {
+    resetSrcModules();
+  });
+
+  it.each(['panel_xyz', 'panel_event_accion_que_ya_no_existe', 'open_role_panel_viejo'])(
+    '%s responde de forma efimera "Accion no disponible"',
+    async customId => {
+      const dispatchComponent = requireSrc('src/handlers/interactionHandler');
+      const interaction = createInteraction({ customId });
+
+      await dispatchComponent(interaction);
+
+      expect(interaction.reply).toHaveBeenCalledTimes(1);
+      const payload = interaction.reply.mock.calls[0][0];
+      expect(payload.flags).toBe(64);
+      expect(payload.content).toMatch(/Acci[oó]n no disponible/);
+    }
+  );
+
+  it('un customId conocido no recibe la respuesta de "no disponible"', async () => {
+    global.warEdits = {};
+    const dispatchComponent = requireSrc('src/handlers/interactionHandler');
+    const interaction = createInteraction({ customId: 'publish_war' });
+
+    await dispatchComponent(interaction);
+
+    expect(collectReplies(interaction).join('\n')).not.toMatch(/Acci[oó]n no disponible/);
+    delete global.warEdits;
+  });
+});
+
 describe('TTL de 30 minutos del contexto del panel (C-9)', () => {
   let store;
 
