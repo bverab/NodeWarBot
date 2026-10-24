@@ -253,9 +253,14 @@ async function handleEventFinishPublish(interaction) {
   let published = 0;
   let updated = 0;
   let failed = 0;
+  let savedOnly = 0;
 
   for (const target of targets) {
     const result = await publishOrRefreshWarWithOptions(interaction, target, { activate: true });
+    if (result.saved) {
+      savedOnly += 1;
+      continue;
+    }
     if (!result.ok) {
       failed += 1;
       continue;
@@ -267,7 +272,7 @@ async function handleEventFinishPublish(interaction) {
   clearSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   const scopeLabel = useSeries ? 'toda la serie' : 'solo esta ocurrencia';
   await respondUpdate(interaction, {
-    content: `Cambios guardados y publicacion ejecutada (${scopeLabel}). Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.`,
+    content: `Cambios guardados y publicacion ejecutada (${scopeLabel}). Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.${formatSavedOnlyNotice(savedOnly)}`,
     embeds: [],
     components: []
   });
@@ -1056,6 +1061,7 @@ async function handleEventPostEditActivate(interaction) {
   let published = 0;
   let updated = 0;
   let failed = 0;
+  let savedOnly = 0;
   let lastWar = null;
 
   for (const eventId of eventIds) {
@@ -1066,6 +1072,11 @@ async function handleEventPostEditActivate(interaction) {
     }
 
     const result = await publishOrRefreshWarWithOptions(interaction, war, { activate: true });
+    if (result.saved) {
+      savedOnly += 1;
+      lastWar = result.war || war;
+      continue;
+    }
     if (!result.ok) {
       failed += 1;
       continue;
@@ -1080,14 +1091,14 @@ async function handleEventPostEditActivate(interaction) {
   const viewWar = lastWar || fallbackWar;
   if (!viewWar) {
     return await respondUpdate(interaction, {
-      content: `Cambios aplicados. Activacion finalizada. Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.`,
+      content: `Cambios aplicados. Activacion finalizada. Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.${formatSavedOnlyNotice(savedOnly)}`,
       embeds: [],
       components: []
     });
   }
 
   const scope = context?.scope || null;
-  const notice = `Cambios aplicados y activacion completada. Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.`;
+  const notice = `Cambios aplicados y activacion completada. Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.${formatSavedOnlyNotice(savedOnly)}`;
   const returnView = context?.pendingActivationReturnView;
   if (returnView === 'mentions') {
     await updateWithContext(
@@ -1355,6 +1366,13 @@ async function saveRoleChange(context, mutateRole) {
   }
   const roleIndex = updated.roles.findIndex(entry => entry.name === roleName);
   return { updated, roleIndex: roleIndex >= 0 ? roleIndex : context.roleIndex };
+}
+
+// Activaciones guardadas en la base cuyo mensaje de Discord no se pudo editar (permisos, error 5xx).
+function formatSavedOnlyNotice(count) {
+  return count > 0
+    ? ` Ademas, guardados sin actualizar el mensaje de Discord: ${count} (revisa permisos del bot y vuelve a publicar).`
+    : '';
 }
 
 function findWarByIdAndChannel(eventId, channelId) {
