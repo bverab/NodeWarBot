@@ -20,6 +20,7 @@ let schedulerInstance = null;
 let checkInterval = null;
 let scheduledPublishRunning = false;
 let scheduledPublishPromise = null;
+let tickPromise = null;
 
 /**
  * Inicializa el scheduler - debe llamarse una sola vez en index.js
@@ -68,18 +69,31 @@ function stopScheduler() {
 }
 
 /**
- * Verifica y ejecuta eventos que deben publicarse
+ * Verifica y ejecuta eventos que deben publicarse.
+ * Si ya hay un tick en curso devuelve esa misma promesa (no se solapan).
  */
-async function checkAndExecuteEvents() {
-  if (!schedulerInstance) return;
+function checkAndExecuteEvents() {
+  if (!schedulerInstance) return Promise.resolve();
+  if (tickPromise) return tickPromise;
 
+  tickPromise = runSchedulerTick().finally(() => {
+    tickPromise = null;
+  });
+  return tickPromise;
+}
+
+async function runSchedulerTick() {
   try {
     schedulerInstance.lastCheck = Date.now();
     const wars = warService.loadWars();
     const nowMs = Date.now();
     const now = new Date(nowMs);
 
-    await processScheduledWebPublishes(now);
+    try {
+      await processScheduledWebPublishes(now);
+    } catch (error) {
+      logError('Error en auto publish web programado', error, { action: 'scheduler_web_auto_publish' });
+    }
 
     for (const war of wars) {
       if (war.messageId && !war.isClosed && Number.isFinite(war.closesAt) && nowMs >= war.closesAt) {
@@ -139,7 +153,16 @@ async function processScheduledWebPublishes(now = new Date()) {
       }))
     });
     for (const event of candidates) {
-      await publishScheduledWebEvent(event, now);
+      try {
+        await publishScheduledWebEvent(event, now);
+      } catch (error) {
+        logError('Error en auto publish web programado', error, {
+          action: 'scheduler_web_auto_publish',
+          eventId: event.id,
+          guildId: event.guildId,
+          channelId: event.channelId
+        });
+      }
     }
   })();
 
