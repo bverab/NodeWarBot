@@ -5,7 +5,8 @@ const eventManagementService = require('../../services/eventManagementService');
 const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../../utils/textSafety');
 const { logWarn } = require('../../utils/appLogger');
 const { getSelectedEventContext, setSelectedEventContext } = require('../../utils/eventAdminContextStore');
-const { refreshWarMessage } = require('../../commands/eventadminShared');
+const { refreshWarMessage, promoteAllFromWaitlist } = require('../../commands/eventadminShared');
+const { notifyPromotion } = require('../../utils/promotionNotifier');
 const { isValidTime } = require('../../utils/cronHelper');
 const {
   applyLifecycleToWar,
@@ -135,9 +136,13 @@ async function handleEventRoleSlotsModal(interaction) {
   }
 
   context.role.max = slots;
+  const promotedUsers = promoteAllFromWaitlist(context.war, context.role.name);
   const updated = await updateWar(context.war);
   if (updated.messageId) await refreshWarMessage(interaction, updated);
   await replyWithRolesEditor(interaction, updated, context.roleIndex, `Slots actualizados para **${context.role.name}**: ${slots}`);
+  for (const promotedUser of promotedUsers) {
+    await notifyPromotion(interaction, updated, promotedUser);
+  }
 }
 
 async function handleEventRoleIconModal(interaction) {

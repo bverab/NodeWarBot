@@ -697,6 +697,7 @@ async function handleEventRoleDelete(interaction) {
   }
 
   const removed = context.war.roles.splice(context.roleIndex, 1)[0];
+  context.war.waitlist = (context.war.waitlist || []).filter(entry => entry.roleName !== removed.name);
   const nextIndex = context.war.roles.length > 0
     ? Math.max(0, Math.min(context.roleIndex, context.war.roles.length - 1))
     : null;

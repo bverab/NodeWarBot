@@ -20,6 +20,7 @@ const {
   resolveTargetWar,
   refreshWarMessage,
   promoteFromWaitlist,
+  promoteAllFromWaitlist,
   isAdminExecutor
 } = require('./eventadminShared');
 
@@ -612,9 +613,14 @@ async function handleRoleSlots(interaction) {
   }
 
   role.max = slots;
+  const promotedUsers = promoteAllFromWaitlist(war, role.name);
   const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Slots actualizados para **${roleName}**: ${slots}` });
+
+  for (const promotedUser of promotedUsers) {
+    await notifyPromotion(interaction, updatedWar, promotedUser);
+  }
 }
 
 async function handleRoleIcon(interaction) {
