@@ -1428,8 +1428,8 @@ async function showEditDataBasicModal(interaction, war) {
     .setLabel('Nombre del evento')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
-    .setMaxLength(90)
-    .setValue(clampInputValue(war.name || '', 90));
+    .setMaxLength(120)
+    .setValue(clampInputValue(war.name || '', 120));
 
   const typeInput = new TextInputBuilder()
     .setCustomId('panel_event_edit_data_type')
@@ -1489,8 +1489,8 @@ async function showEditRecapModal(interaction, war) {
     .setLabel('Mensaje del hilo final')
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(false)
-    .setMaxLength(250)
-    .setValue(clampInputValue(war.recap?.messageText || '', 250));
+    .setMaxLength(1000)
+    .setValue(clampInputValue(war.recap?.messageText || '', 1000));
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(minutesInput),

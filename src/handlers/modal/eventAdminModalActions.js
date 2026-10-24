@@ -194,7 +194,7 @@ async function handleEventEditDataBasicModal(interaction) {
   if (!context.ok) return await safeModalReply(interaction, { content: context.message });
 
   const nameInput = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_data_name'), {
-    maxLength: 90,
+    maxLength: 120,
     fallback: ''
   });
   const typeInput = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_data_type'), {
@@ -296,7 +296,7 @@ async function handleEventEditRecapModal(interaction) {
     fallback: ''
   }).value;
   const messageText = sanitizeUserInput(interaction.fields.getTextInputValue('panel_event_edit_recap_message'), {
-    maxLength: 250,
+    maxLength: 1000,
     allowEmpty: true
   }).value || '';
   const minutesBeforeExpire = Number.parseInt(minutesRaw, 10);
