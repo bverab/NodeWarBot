@@ -275,6 +275,17 @@ Estos puntos cambian reglas del producto o requieren información que no está e
 11. **Escapar markdown en nombres** (C-20): cambia cómo se ven nombres con `_` o `*`.
 12. **`/event schedule view`**: hoy cualquier miembro ve las programaciones del canal. `schedule
     cancel` pasa a exigir admin (es destructivo); ¿la vista también?
+13. **Publicación tardía si el bot se perdió el minuto exacto** (D-7, ítem 1.5 diferido): hoy una
+    ocurrencia semanal solo se publica en el minuto `HH:mm` exacto. Opciones: (a) mantenerlo así;
+    (b) publicar con retraso dentro de la ventana hasta el cierre, relajando la regla para eventos que
+    nunca se publicaron; (c) lo anterior y ajustar los tests que crean el evento en el mismo minuto.
+
+### Hallazgos nuevos durante la implementación
+
+- **NEW-1 [Alto]** · Los eventos creados con `/event create` se publican con cierre y fin a la hora del
+  día en que se crearon (no a la del evento). 🔍 leído. `modalHandler.js:183`,
+  `scheduleFlow.js:324-325`, `schedulerService.js` (`executeWarPublication`). Fase 4, ítem 4.0.
+- **Tests dependientes de la hora** · 5 tests solo pasan de ~19:00 a ~01:00 (Chile). Ítem 1.12.
 
 ## 6. Arquitectura
 

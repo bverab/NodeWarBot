@@ -211,6 +211,16 @@ Total de agentes: 6 auditores + revisor + 3 implementadores = **10**.
   si `closesAt` ya pasó, **sin bloquear salir** (el join PvE es un toggle).
 - Test: `closesAt` pasado → no se puede entrar, sí se puede salir.
 
+**1.12 · Tests que dependen de la hora del día** (hallazgo de la fase 1)
+- 5 tests existentes (`eventPublicationService` ×2, `eventEditActivation` ×2, `eventCloseLifecycle`
+  ×1) solo pasan entre ~19:00 y ~01:00 hora de Chile, porque `buildWar` usa `time: '20:00'` con
+  `closesAt = now + 60 min`. Se fija el reloj en esos tests, sin debilitar aserciones ni tocar código
+  de producción.
+
+**Estado de 1.5**: diferido. La condición 2 (`war.createdAt < lc.publishAt`) rompe los tests de
+recurrencia existentes (crean el evento en el mismo minuto del slot) y, mientras exista NEW-1, dejaría
+sin publicar los eventos afectados. Queda como decisión en `AUDIT.md` §5.
+
 ### Fase 2 — Interacciones del bot (`bot-interaction`)
 
 | Ítem | IDs | Cambio | Test de regresión |
@@ -270,7 +280,22 @@ Merge de las ramas de las fases 1 → 2 → 3 en `chore/pnpm-and-audit`, resolvi
 
 ### Fase 4 — Coherencia caché/BD y concurrencia (`bot-core`)
 
-Orden obligatorio: 4.1 → 4.2 → 4.3 → 4.4 → 4.5.
+Orden obligatorio: 4.0 → 4.1 → 4.2 → 4.3 → 4.4 → 4.5.
+
+**4.0 · Horas de cierre y fin de los eventos creados en Discord** · NEW-1 (hallazgo de la fase 1)
+- Problema: `/event create` guarda `createdAt: Date.now()` sin `closesAt`/`expiresAt`
+  (`modalHandler.js:183`), la confirmación del borrador solo normaliza y guarda
+  (`scheduleFlow.js:324-325`), y el scheduler toma la *hora del día* de `closesAt`/`expiresAt`
+  para calcular la ocurrencia (`schedulerService.js` `executeWarPublication`). Un evento creado a las
+  15:37 para publicarse a las 22:00 se publica con cierre a las 16:37 y fin a las 16:47, y el
+  siguiente tick lo cierra y borra el mensaje. Existe desde `76d7fe3`.
+- Cambio: al confirmar el borrador, calcular el ciclo de vida de la primera ocurrencia a partir de
+  `time`, `duration` y `closeBeforeMinutes` (con las utilidades de `eventLifecycleTimes`) y aplicarlo
+  antes de `createWar`, de modo que la hora del día de `closesAt`/`expiresAt` sea la correcta.
+  Revisar también el camino "publicar ahora" para que siga igual.
+- Tests: crear un borrador programado a una hora distinta de la de publicación → los `closesAt` y
+  `expiresAt` guardados tienen la hora local esperada; el scheduler publica la ocurrencia con esas
+  horas y no la cierra en el tick siguiente.
 
 **4.1 · Orden de inscripción y campos del dashboard estables** · D-14, D-9
 - Conservar `joinedAt` de participantes en el dominio (`warState.js` `toParticipant`/`normalizeRole`),
