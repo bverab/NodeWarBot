@@ -33,17 +33,18 @@ const { listSeriesWars, removeSeriesDay } = require('../../services/recurrenceSe
 const { publishOrRefreshWarWithOptions } = require('../../services/eventPublicationService');
 const { moveRoleIndex } = require('../../services/roleOrderService');
 const { buildModalTitle, clampInputValue } = require('../../utils/modalLimits');
+const { respondUpdate, respondError, withDeferredUpdate } = require('../../utils/panelResponses');
 
 async function handleEventSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   if (!isAdminExecutor(interaction)) {
-    return await interaction.update({ content: 'Solo Admin puede gestionar eventos.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'Solo Admin puede gestionar eventos.', embeds: [], components: [] });
   }
 
   const eventId = interaction.values?.[0];
   const war = findWarByIdAndChannel(eventId, interaction.channelId);
   if (!war) {
-    return await interaction.update({ content: 'No se encontro el evento seleccionado.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No se encontro el evento seleccionado.', embeds: [], components: [] });
   }
 
   const defaultScope = war.schedule?.mode === 'once' ? 'single' : 'series';
@@ -58,20 +59,20 @@ async function handleEventSelect(interaction) {
 
 async function handleEventListRefresh(interaction) {
   if (!isAdminExecutor(interaction)) {
-    return await interaction.update({ content: 'Solo Admin puede gestionar eventos.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'Solo Admin puede gestionar eventos.', embeds: [], components: [] });
   }
   const wars = listChannelWars(interaction.channelId);
-  await interaction.update(buildEventSelectorPayload(wars));
+  await respondUpdate(interaction, buildEventSelectorPayload(wars));
 }
 
 async function handleEventBackToList(interaction) {
   const wars = listChannelWars(interaction.channelId);
-  await interaction.update(buildEventSelectorPayload(wars));
+  await respondUpdate(interaction, buildEventSelectorPayload(wars));
 }
 
 async function handleEventExit(interaction) {
   clearSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: 'Editor cerrado.',
     embeds: [],
     components: []
@@ -81,7 +82,7 @@ async function handleEventExit(interaction) {
 async function handleEventBackToPanel(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   await updateWithContext(interaction, buildEventPanelPayload(war, { scope: context?.scope || null }), war.id, {
@@ -93,7 +94,7 @@ async function handleEventBackToPanel(interaction) {
 async function handleEventViewDetails(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   await updateWithContext(interaction, buildEventPanelPayload(war, { scope: context?.scope || null, details: true }), war.id, {
@@ -104,7 +105,7 @@ async function handleEventViewDetails(interaction) {
 async function handleEventEditRoles(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   if (war.schedule?.mode !== 'once') {
@@ -122,7 +123,7 @@ async function handleEventEditRoles(interaction) {
 async function handleEventEditData(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   if (war.schedule?.mode !== 'once') {
@@ -140,7 +141,7 @@ async function handleEventEditData(interaction) {
 async function handleEventEditSchedule(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   if (war.schedule?.mode !== 'once') {
@@ -157,7 +158,7 @@ async function handleEventScopeSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const value = String(interaction.values?.[0] || '');
@@ -199,7 +200,7 @@ async function handleEventScopeSelect(interaction) {
 async function handleEventPublishUpdate(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const ctx = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -217,7 +218,7 @@ async function handleEventPublishUpdate(interaction) {
 async function handleEventCancel(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   await updateWithContext(interaction, buildCancelConfirmPayload(war), war.id, { currentView: 'cancel_confirm' });
@@ -226,11 +227,11 @@ async function handleEventCancel(interaction) {
 async function handleEventFinishKeep(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   clearSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: 'Cambios guardados sin publicar. Editor cerrado.',
     embeds: [],
     components: []
@@ -240,7 +241,7 @@ async function handleEventFinishKeep(interaction) {
 async function handleEventFinishPublish(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -265,7 +266,7 @@ async function handleEventFinishPublish(interaction) {
 
   clearSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   const scopeLabel = useSeries ? 'toda la serie' : 'solo esta ocurrencia';
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Cambios guardados y publicacion ejecutada (${scopeLabel}). Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.`,
     embeds: [],
     components: []
@@ -275,7 +276,7 @@ async function handleEventFinishPublish(interaction) {
 async function handleEventCancelConfirm(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   war.isClosed = true;
@@ -300,7 +301,7 @@ async function handleEventRoleSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const index = Number.parseInt(interaction.values?.[0], 10);
@@ -391,7 +392,7 @@ async function handleEventRoleSlots(interaction) {
 async function handleEventRoleIcon(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.reply({ content: context.message, flags: 64 });
+    return await respondError(interaction, context.message);
   }
 
   const source = resolveEventRoleIconSource(interaction, context.war);
@@ -408,7 +409,7 @@ async function handleEventRoleIconSource(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   const source = normalizeClassIconSource(interaction.values?.[0]);
@@ -432,7 +433,7 @@ async function handleEventRoleIconPick(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   const emojiId = String(interaction.values?.[0] || '').trim();
@@ -474,7 +475,7 @@ async function handleEventRoleIconBotPick(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   const emojiId = String(interaction.values?.[0] || '').trim();
@@ -513,7 +514,7 @@ async function handleEventRoleIconBotPick(interaction) {
 async function handleEventRoleIconBotPage(interaction, delta) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   const emojis = await fetchApplicationEmojis(interaction);
@@ -560,7 +561,7 @@ async function handleEventRoleIconModalOpen(interaction) {
 async function handleEventRoleIconClear(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   context.role.emoji = null;
@@ -584,7 +585,7 @@ async function handleEventRoleIconClear(interaction) {
 async function handleEventRoleIconBack(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   await updateWithContext(
@@ -616,7 +617,7 @@ async function handleEventRolePermissionsSelect(interaction) {
   if (!interaction.isRoleSelectMenu()) return;
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   const selectedIds = (interaction.values || []).map(String);
@@ -632,7 +633,7 @@ async function handleEventRolePermissionsSelect(interaction) {
 async function handleEventRolePermissionsConfirm(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   const selectedContext = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -658,7 +659,7 @@ async function handleEventRolePermissionsConfirm(interaction) {
 async function handleEventRolePermissionsClear(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   context.role.allowedRoleIds = [];
@@ -679,7 +680,7 @@ async function handleEventRolePermissionsClear(interaction) {
 async function handleEventRolePermissionsBack(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   await updateWithContext(
@@ -693,7 +694,7 @@ async function handleEventRolePermissionsBack(interaction) {
 async function handleEventRoleDelete(interaction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.reply({ content: context.message, flags: 64 });
+    return await respondError(interaction, context.message);
   }
 
   const removed = context.war.roles.splice(context.roleIndex, 1)[0];
@@ -718,7 +719,7 @@ async function handleEventRoleDelete(interaction) {
 async function handleEventRoleMove(interaction, direction) {
   const context = getSelectedRoleContext(interaction);
   if (!context.ok) {
-    return await interaction.update({ content: context.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   }
 
   const result = moveRoleIndex(context.war.roles, context.roleIndex, direction);
@@ -823,7 +824,7 @@ async function handleEventScheduleSeriesSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const targetEventId = String(interaction.values?.[0] || '').trim();
@@ -915,7 +916,7 @@ async function handleEventScheduleSeriesEdit(interaction) {
 async function handleEventScheduleSeriesDelete(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -963,7 +964,7 @@ async function handleEventScheduleSeriesDelete(interaction) {
 async function handleEventScheduleSeriesBack(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -992,7 +993,7 @@ async function handleEventPostEditActivate(interaction) {
   if (!eventIds.length) {
     const war = getSelectedWar(interaction);
     if (!war) {
-      return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+      return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
     }
     await updateWithContext(interaction, buildEventPanelPayload(war, { scope: context?.scope || null }), war.id, { currentView: 'panel' });
     return;
@@ -1024,7 +1025,7 @@ async function handleEventPostEditActivate(interaction) {
   const fallbackWar = findWarByIdAndChannel(fallbackWarId, interaction.channelId);
   const viewWar = lastWar || fallbackWar;
   if (!viewWar) {
-    return await interaction.update({
+    return await respondUpdate(interaction, {
       content: `Cambios aplicados. Activacion finalizada. Publicados: ${published}, actualizados: ${updated}, fallidos: ${failed}.`,
       embeds: [],
       components: []
@@ -1077,7 +1078,7 @@ async function handleEventPostEditActivate(interaction) {
 async function handleEventPostEditKeep(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -1128,7 +1129,7 @@ async function handleEventPostEditKeep(interaction) {
 async function handleEventDataEditMentions(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
   const ctx = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
   await updateWithContext(
@@ -1142,7 +1143,7 @@ async function handleEventDataEditMentions(interaction) {
 async function handleEventMentionsEdit(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const selected = Array.isArray(war.notifyRoles) ? war.notifyRoles : [];
@@ -1158,7 +1159,7 @@ async function handleEventMentionsSelect(interaction) {
   if (!interaction.isRoleSelectMenu()) return;
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const selectedIds = (interaction.values || []).map(String);
@@ -1177,7 +1178,7 @@ async function handleEventMentionsSelect(interaction) {
 async function handleEventMentionsSave(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -1206,7 +1207,7 @@ async function handleEventMentionsSave(interaction) {
 async function handleEventMentionsBack(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -1233,7 +1234,7 @@ async function handleEventMentionsRecap(interaction) {
 async function handleEventMentionsToData(interaction) {
   const war = getSelectedWar(interaction);
   if (!war) {
-    return await interaction.update({ content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
 
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -1246,7 +1247,7 @@ async function handleEventMentionsToData(interaction) {
 }
 
 async function updateWithContext(interaction, payload, eventId, contextPatch = {}) {
-  await interaction.update(payload);
+  await respondUpdate(interaction, payload);
   setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, eventId, {
     panelMessageId: interaction.message?.id || null,
     ...contextPatch
@@ -1579,31 +1580,31 @@ const EVENT_ADMIN_PANEL_ACTIONS = {
   panel_event_edit_schedule: handleEventEditSchedule,
   panel_event_scope_select: handleEventScopeSelect,
   panel_event_finish_keep: handleEventFinishKeep,
-  panel_event_finish_publish: handleEventFinishPublish,
+  panel_event_finish_publish: withDeferredUpdate(handleEventFinishPublish),
   panel_event_publish_update: handleEventPublishUpdate,
   panel_event_cancel: handleEventCancel,
-  panel_event_cancel_confirm: handleEventCancelConfirm,
+  panel_event_cancel_confirm: withDeferredUpdate(handleEventCancelConfirm),
   panel_event_role_select: handleEventRoleSelect,
   panel_event_role_add: handleEventRoleAdd,
   panel_event_role_rename: handleEventRoleRename,
   panel_event_role_slots: handleEventRoleSlots,
-  panel_event_role_icon: handleEventRoleIcon,
-  panel_event_role_icon_source: handleEventRoleIconSource,
-  panel_event_role_icon_pick: handleEventRoleIconPick,
-  panel_event_role_icon_bot_pick: handleEventRoleIconBotPick,
-  panel_event_role_icon_bot_prev: handleEventRoleIconBotPrev,
-  panel_event_role_icon_bot_next: handleEventRoleIconBotNext,
+  panel_event_role_icon: withDeferredUpdate(handleEventRoleIcon),
+  panel_event_role_icon_source: withDeferredUpdate(handleEventRoleIconSource),
+  panel_event_role_icon_pick: withDeferredUpdate(handleEventRoleIconPick),
+  panel_event_role_icon_bot_pick: withDeferredUpdate(handleEventRoleIconBotPick),
+  panel_event_role_icon_bot_prev: withDeferredUpdate(handleEventRoleIconBotPrev),
+  panel_event_role_icon_bot_next: withDeferredUpdate(handleEventRoleIconBotNext),
   panel_event_role_icon_modal_open: handleEventRoleIconModalOpen,
-  panel_event_role_icon_clear: handleEventRoleIconClear,
+  panel_event_role_icon_clear: withDeferredUpdate(handleEventRoleIconClear),
   panel_event_role_icon_back: handleEventRoleIconBack,
   panel_event_role_permissions: handleEventRolePermissions,
   panel_event_role_permissions_select: handleEventRolePermissionsSelect,
-  panel_event_role_permissions_confirm: handleEventRolePermissionsConfirm,
-  panel_event_role_permissions_clear: handleEventRolePermissionsClear,
+  panel_event_role_permissions_confirm: withDeferredUpdate(handleEventRolePermissionsConfirm),
+  panel_event_role_permissions_clear: withDeferredUpdate(handleEventRolePermissionsClear),
   panel_event_role_permissions_back: handleEventRolePermissionsBack,
-  panel_event_role_move_up: handleEventRoleMoveUp,
-  panel_event_role_move_down: handleEventRoleMoveDown,
-  panel_event_role_delete: handleEventRoleDelete,
+  panel_event_role_move_up: withDeferredUpdate(handleEventRoleMoveUp),
+  panel_event_role_move_down: withDeferredUpdate(handleEventRoleMoveDown),
+  panel_event_role_delete: withDeferredUpdate(handleEventRoleDelete),
   panel_event_data_edit_basic: handleEventDataEditBasic,
   panel_event_data_edit_close: handleEventDataEditClose,
   panel_event_data_edit_recap: handleEventDataEditRecap,
@@ -1611,14 +1612,14 @@ const EVENT_ADMIN_PANEL_ACTIONS = {
   panel_event_schedule_series_select: handleEventScheduleSeriesSelect,
   panel_event_schedule_series_add: handleEventScheduleSeriesAdd,
   panel_event_schedule_series_edit: handleEventScheduleSeriesEdit,
-  panel_event_schedule_series_delete: handleEventScheduleSeriesDelete,
+  panel_event_schedule_series_delete: withDeferredUpdate(handleEventScheduleSeriesDelete),
   panel_event_schedule_series_back: handleEventScheduleSeriesBack,
-  panel_event_post_edit_activate: handleEventPostEditActivate,
+  panel_event_post_edit_activate: withDeferredUpdate(handleEventPostEditActivate),
   panel_event_post_edit_keep: handleEventPostEditKeep,
   panel_event_data_edit_mentions: handleEventDataEditMentions,
   panel_event_mentions_edit: handleEventMentionsEdit,
   panel_event_mentions_select: handleEventMentionsSelect,
-  panel_event_mentions_save: handleEventMentionsSave,
+  panel_event_mentions_save: withDeferredUpdate(handleEventMentionsSave),
   panel_event_mentions_back: handleEventMentionsBack,
   panel_event_mentions_recap: handleEventMentionsRecap,
   panel_event_mentions_to_data: handleEventMentionsToData

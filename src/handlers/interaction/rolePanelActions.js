@@ -10,6 +10,7 @@ const {
 } = require('discord.js');
 const { getDraftWar } = require('../../utils/draftSessionStore');
 const { buildModalTitle, clampInputValue } = require('../../utils/modalLimits');
+const { respondUpdate, withDeferredUpdate } = require('../../utils/panelResponses');
 const { hasGuildServerEmojiConfig } = require('../../services/serverClassEmojiService');
 const {
   normalizeClassIconSource,
@@ -19,51 +20,51 @@ const {
 async function handleOpenRolePanel(interaction) {
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
-    return await interaction.update({ content: 'Sesion expirada', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'Sesion expirada', embeds: [], components: [] });
   }
 
   if (!warData.roles.length) {
-    return await interaction.update({ content: 'Agrega roles primero', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'Agrega roles primero', embeds: [], components: [] });
   }
 
-  await interaction.update(buildRoleSelectionPayload(warData));
+  await respondUpdate(interaction, buildRoleSelectionPayload(warData));
 }
 
 async function handlePanelSelectRole(interaction) {
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
-    return await interaction.update({ content: 'Sesion expirada', components: [] });
+    return await respondUpdate(interaction, { content: 'Sesion expirada', components: [] });
   }
 
   const roleIndex = Number.parseInt(interaction.values[0], 10);
   const role = warData.roles[roleIndex];
   if (!role) {
-    return await interaction.update({ content: 'Rol invalido', components: [] });
+    return await respondUpdate(interaction, { content: 'Rol invalido', components: [] });
   }
 
   setSelectedRoleIndex(interaction.user.id, roleIndex);
-  await interaction.update(buildRolePanelPayload(role));
+  await respondUpdate(interaction, buildRolePanelPayload(role));
 }
 
 async function handleOpenClassIconSourceConfig(interaction) {
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
-    return await interaction.update({ content: 'Sesion expirada', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'Sesion expirada', embeds: [], components: [] });
   }
 
-  await interaction.update(buildVisualSettingsPayload(warData, interaction.guild));
+  await respondUpdate(interaction, buildVisualSettingsPayload(warData, interaction.guild));
 }
 
 async function handleSetClassIconSource(interaction) {
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
-    return await interaction.update({ content: 'Sesion expirada', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'Sesion expirada', embeds: [], components: [] });
   }
 
   const selected = normalizeClassIconSource(interaction.values?.[0]);
   warData.classIconSource = selected;
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     ...buildVisualSettingsPayload(warData, interaction.guild),
     content: `Fuente de iconos de clase actualizada: **${getClassIconSourceLabel(selected, interaction.guild)}**`
   });
@@ -72,13 +73,13 @@ async function handleSetClassIconSource(interaction) {
 async function handleSetParticipantDisplayStyle(interaction) {
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
-    return await interaction.update({ content: 'Sesion expirada', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'Sesion expirada', embeds: [], components: [] });
   }
 
   const selected = normalizeParticipantDisplayStyle(interaction.values?.[0]);
   warData.participantDisplayStyle = selected;
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     ...buildVisualSettingsPayload(warData, interaction.guild),
     content: `Estilo visual actualizado: **${getDisplayStyleLabel(selected)}**`
   });
@@ -88,7 +89,7 @@ async function handleBackToEditor(interaction) {
   const { showRolesEditor } = require('../modalHandler');
   const warData = getEditableWarForUser(interaction);
   if (!warData) {
-    return await interaction.update({ content: 'Sesion expirada', embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: 'Sesion expirada', embeds: [], components: [] });
   }
 
   await showRolesEditor(interaction, warData);
@@ -97,10 +98,10 @@ async function handleBackToEditor(interaction) {
 async function handleBackToRole(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: selected.message, embeds: [], components: [] });
   }
 
-  await interaction.update(buildRolePanelPayload(selected.role));
+  await respondUpdate(interaction, buildRolePanelPayload(selected.role));
 }
 
 async function handlePanelEditName(interaction) {
@@ -171,26 +172,26 @@ async function handlePanelEditIcon(interaction) {
 async function handlePanelSelectIconSource(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: selected.message, embeds: [], components: [] });
   }
 
   const source = normalizeClassIconSource(interaction.values?.[0]);
   selected.warData.classIconSource = source;
   await ensureIconSourcesLoaded(interaction, source);
 
-  await interaction.update(buildRoleIconSelectionPayload(interaction, selected.role.name, source));
+  await respondUpdate(interaction, buildRoleIconSelectionPayload(interaction, selected.role.name, source));
 }
 
 async function handlePanelSetIcon(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, components: [] });
+    return await respondUpdate(interaction, { content: selected.message, components: [] });
   }
 
   const emojiId = interaction.values[0];
   const emoji = interaction.guild.emojis.cache.get(emojiId);
   if (!emoji) {
-    return await interaction.update({ content: 'Emoji invalido o no disponible.', components: [] });
+    return await respondUpdate(interaction, { content: 'Emoji invalido o no disponible.', components: [] });
   }
 
   const pending = getPendingState(interaction.user.id);
@@ -199,7 +200,7 @@ async function handlePanelSetIcon(interaction) {
     emojiSource: 'guild'
   };
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Icono pendiente para **${selected.role.name}**: <${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`,
     embeds: [],
     components: [
@@ -234,18 +235,18 @@ async function handlePanelSetIcon(interaction) {
 async function handlePanelSetBotIcon(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, components: [] });
+    return await respondUpdate(interaction, { content: selected.message, components: [] });
   }
 
   const emojiId = String(interaction.values?.[0] || '').trim();
   if (!emojiId) {
-    return await interaction.update({ content: 'Emoji invalido.', components: [] });
+    return await respondUpdate(interaction, { content: 'Emoji invalido.', components: [] });
   }
 
   const appEmojis = await fetchApplicationEmojis(interaction);
   const picked = appEmojis.find(emoji => String(emoji.id) === emojiId);
   if (!picked) {
-    return await interaction.update({
+    return await respondUpdate(interaction, {
       content: 'Emoji de bot no disponible. Prueba de nuevo.',
       components: buildRoleIconSelectionPayload(interaction, selected.role.name, 'bot').components
     });
@@ -258,7 +259,7 @@ async function handlePanelSetBotIcon(interaction) {
     emojiSource: 'application'
   };
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Icono de bot pendiente para **${selected.role.name}**: ${inline}`,
     embeds: [],
     components: [
@@ -293,7 +294,7 @@ async function handlePanelSetBotIcon(interaction) {
 async function handleBotIconPageChange(interaction, delta) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: selected.message, embeds: [], components: [] });
   }
 
   const pending = getPendingState(interaction.user.id);
@@ -303,7 +304,7 @@ async function handleBotIconPageChange(interaction, delta) {
   const next = Math.max(0, Math.min(totalPages - 1, current + delta));
   pending.botIconPage = next;
 
-  await interaction.update(buildRoleIconSelectionPayload(interaction, selected.role.name, 'bot'));
+  await respondUpdate(interaction, buildRoleIconSelectionPayload(interaction, selected.role.name, 'bot'));
 }
 
 async function handlePanelBotIconPagePrev(interaction) {
@@ -317,19 +318,19 @@ async function handlePanelBotIconPageNext(interaction) {
 async function handlePanelConfirmIcon(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, components: [] });
+    return await respondUpdate(interaction, { content: selected.message, components: [] });
   }
 
   const pending = getPendingState(interaction.user.id);
   if (!pending.icon) {
-    return await interaction.update({ content: 'No hay icono pendiente por confirmar.', components: [] });
+    return await respondUpdate(interaction, { content: 'No hay icono pendiente por confirmar.', components: [] });
   }
 
   selected.role.emoji = pending.icon.emoji;
   selected.role.emojiSource = pending.icon.emojiSource;
   pending.icon = null;
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Icono actualizado para **${selected.role.name}**: ${selected.role.emoji}`,
     embeds: [],
     components: [
@@ -376,12 +377,12 @@ async function handlePanelOpenIconModal(interaction) {
 async function handlePanelClearIcon(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, components: [] });
+    return await respondUpdate(interaction, { content: selected.message, components: [] });
   }
 
   selected.role.emoji = null;
   selected.role.emojiSource = null;
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Icono removido para **${selected.role.name}**`,
     embeds: [],
     components: [
@@ -402,14 +403,14 @@ async function handlePanelClearIcon(interaction) {
 async function handleOpenEditPermissions(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: selected.message, embeds: [], components: [] });
   }
 
   const currentText = selected.role.allowedRoleIds?.length
     ? selected.role.allowedRoleIds.map(roleId => `<@&${roleId}>`).join(', ')
     : 'Sin restriccion';
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Permisos para **${selected.role.name}**\nActual: ${currentText}`,
     embeds: [],
     components: [
@@ -443,7 +444,7 @@ async function handleOpenEditPermissions(interaction) {
 async function handlePanelSetPermissions(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, components: [] });
+    return await respondUpdate(interaction, { content: selected.message, components: [] });
   }
 
   const selectedIds = interaction.values.map(String);
@@ -454,7 +455,7 @@ async function handlePanelSetPermissions(interaction) {
     ? selectedIds.map(roleId => `<@&${roleId}>`).join(', ')
     : 'Sin restriccion';
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Permisos pendientes para **${selected.role.name}**\nSeleccionados: ${linkedText}`,
     embeds: [],
     components: [
@@ -489,7 +490,7 @@ async function handlePanelSetPermissions(interaction) {
 async function handlePanelConfirmPermissions(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, components: [] });
+    return await respondUpdate(interaction, { content: selected.message, components: [] });
   }
 
   const pending = getPendingState(interaction.user.id);
@@ -504,7 +505,7 @@ async function handlePanelConfirmPermissions(interaction) {
     ? selectedIds.map(roleId => `<@&${roleId}>`).join(', ')
     : 'Sin restriccion';
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Permisos guardados para **${selected.role.name}**\nPermitidos: ${linkedText}`,
     embeds: [],
     components: [
@@ -525,13 +526,13 @@ async function handlePanelConfirmPermissions(interaction) {
 async function handlePanelClearPermissions(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, components: [] });
+    return await respondUpdate(interaction, { content: selected.message, components: [] });
   }
 
   selected.role.allowedRoleIds = [];
   selected.role.allowedRoles = [];
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     content: `Restricciones removidas para **${selected.role.name}**`,
     embeds: [],
     components: [
@@ -552,7 +553,7 @@ async function handlePanelClearPermissions(interaction) {
 async function handlePanelDeleteRole(interaction) {
   const selected = getSelectedRoleContext(interaction);
   if (!selected.ok) {
-    return await interaction.update({ content: selected.message, embeds: [], components: [] });
+    return await respondUpdate(interaction, { content: selected.message, embeds: [], components: [] });
   }
 
   const removed = selected.warData.roles.splice(selected.roleIndex, 1)[0];
@@ -564,7 +565,7 @@ async function handlePanelDeleteRole(interaction) {
     return;
   }
 
-  await interaction.update({
+  await respondUpdate(interaction, {
     ...buildRoleSelectionPayload(selected.warData),
     content: `Rol eliminado: **${removed.name}**\nSelecciona un rol para continuar editando.`
   });
@@ -990,7 +991,7 @@ const ROLE_PANEL_ACTIONS = {
   panel_visual_settings: handleOpenClassIconSourceConfig,
   panel_set_class_icon_source: handleSetClassIconSource,
   panel_set_display_style: handleSetParticipantDisplayStyle,
-  panel_pick_icon_source: handlePanelSelectIconSource,
+  panel_pick_icon_source: withDeferredUpdate(handlePanelSelectIconSource),
   panel_select_role: handlePanelSelectRole,
   panel_back_to_role: handleBackToRole,
   panel_edit_name: handlePanelEditName,
@@ -1001,7 +1002,7 @@ const ROLE_PANEL_ACTIONS = {
   panel_confirm_permissions: handlePanelConfirmPermissions,
   panel_clear_permissions: handlePanelClearPermissions,
   panel_set_icon: handlePanelSetIcon,
-  panel_set_bot_icon: handlePanelSetBotIcon,
+  panel_set_bot_icon: withDeferredUpdate(handlePanelSetBotIcon),
   panel_bot_icon_prev: handlePanelBotIconPagePrev,
   panel_bot_icon_next: handlePanelBotIconPageNext,
   panel_confirm_icon: handlePanelConfirmIcon,

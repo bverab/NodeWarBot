@@ -1,5 +1,11 @@
 const path = require('path');
 
+// La primera carga en frio de discord.js/Prisma dentro de un test o hook puede tardar varios segundos
+// cuando la maquina esta cargada; se amplian los limites solo para los archivos que usan este soporte.
+if (typeof vi !== 'undefined' && typeof vi.setConfig === 'function') {
+  vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
+}
+
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const srcRoot = path.join(repoRoot, 'src') + path.sep;
 
