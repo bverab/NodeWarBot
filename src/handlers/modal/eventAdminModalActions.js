@@ -233,6 +233,9 @@ async function handleEventEditCloseModal(interaction) {
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
+
+  // Primero se calcula y valida cada ocurrencia; solo si todas son validas se guarda alguna.
+  const plans = [];
   for (const war of targets) {
     const lifecycle = deriveLifecycleForExistingEvent({
       event: war,
@@ -243,7 +246,10 @@ async function handleEventEditCloseModal(interaction) {
     });
     const validation = validateLifecycleForEdit(war, lifecycle, { allowPastPublish: true });
     if (!validation.ok) return await safeModalReply(interaction, { content: validation.message });
+    plans.push({ war, lifecycle });
+  }
 
+  for (const { war, lifecycle } of plans) {
     const updated = await updateWar(applyLifecycleToWar(war, lifecycle));
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
@@ -346,22 +352,28 @@ async function handleEventEditScheduleModal(interaction) {
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
+
+  // Primero se calcula y valida cada ocurrencia (sin mutarlas); solo si todas son validas se guarda alguna.
+  const plans = [];
   for (const war of targets) {
-    war.time = time;
-    war.dayOfWeek = day;
-    if (!war.schedule) {
-      war.schedule = { enabled: false, mode: 'recurring' };
-    }
     const lifecycle = deriveLifecycleForScheduledEvent({
-      dayOfWeek: war.dayOfWeek,
-      publishTime: war.time,
+      dayOfWeek: day,
+      publishTime: time,
       signupCloseTime,
       eventEndTime,
       timezone: war.timezone
     });
     const validation = validateLifecycleForEdit(war, lifecycle);
     if (!validation.ok) return await safeModalReply(interaction, { content: validation.message });
+    plans.push({ war, lifecycle });
+  }
 
+  for (const { war, lifecycle } of plans) {
+    war.time = time;
+    war.dayOfWeek = day;
+    if (!war.schedule) {
+      war.schedule = { enabled: false, mode: 'recurring' };
+    }
     const updated = await updateWar(applyLifecycleToWar(war, lifecycle));
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
