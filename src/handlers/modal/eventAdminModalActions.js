@@ -8,6 +8,7 @@ const { getSelectedEventContext, setSelectedEventContext } = require('../../util
 const { refreshWarMessage, promoteAllFromWaitlist } = require('../../commands/eventadminShared');
 const { notifyPromotion } = require('../../utils/promotionNotifier');
 const { isValidTime } = require('../../utils/cronHelper');
+const { MAX_ROLES } = require('../../constants/eventLimits');
 const {
   applyLifecycleToWar,
   deriveLifecycleForExistingEvent,
@@ -56,6 +57,9 @@ async function handleEventRoleAddModal(interaction) {
   }
   if (!Number.isInteger(slots) || slots < 1 || slots > 999) {
     return await safeModalReply(interaction, { content: 'Slots invalidos. Deben estar entre 1 y 999.' });
+  }
+  if (context.war.roles.length >= MAX_ROLES) {
+    return await safeModalReply(interaction, { content: `Un evento admite como maximo ${MAX_ROLES} roles.` });
   }
   if (context.war.roles.some(role => String(role.name).toLowerCase() === name.toLowerCase())) {
     return await safeModalReply(interaction, { content: `Ya existe un rol llamado **${name}**.` });
