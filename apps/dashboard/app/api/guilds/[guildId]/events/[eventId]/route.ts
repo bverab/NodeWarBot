@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { calculateEventLifecycleDates, calculateScheduledPublishAt, formatDateTimeInTimezone, normalizeTimezoneInfo } from "@/lib/eventDateTime";
+import { mapPrismaError } from "@/lib/server/apiErrors";
 import { getGuildEventDetail, updateGuildEvent } from "@/lib/server/dashboardData";
 import { validateDraftEventLinks } from "@/lib/server/draftEventLinks";
 import { requireDashboardGuild, requireManageableDashboardGuild } from "@/lib/server/guildAccess";
@@ -406,6 +407,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       meta: typeof error === "object" && error && "meta" in error ? (error as { meta?: unknown }).meta : undefined
     });
 
+    const mapped = mapPrismaError(error, "That Discord message is already linked to another event.");
+    if (mapped) {
+      return validationResponse(mapped.message, [{ path: "server", message: mapped.message }], mapped.status);
+    }
+
+    console.error("[dashboard:api] Failed to update event.", error);
     return NextResponse.json(
       { ok: false, error: "Failed to update event.", issues: [{ path: "server", message: "The event update could not be completed." }] },
       { status: 500 }

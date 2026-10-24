@@ -13,6 +13,7 @@ const prisma = {
 };
 
 vi.mock("@/lib/eventDateTime", async () => await vi.importActual("../../apps/dashboard/lib/eventDateTime"));
+vi.mock("@/lib/server/apiErrors", async () => await vi.importActual("../../apps/dashboard/lib/server/apiErrors"));
 vi.mock("@/lib/server/mutationValidation", async () => await vi.importActual("../../apps/dashboard/lib/server/mutationValidation"));
 vi.mock("@/lib/server/guildAccess", () => ({ requireDashboardGuild, requireManageableDashboardGuild }));
 vi.mock("@/lib/server/dashboardData", () => ({ getGuildEventDetail, updateGuildEvent }));

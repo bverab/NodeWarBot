@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { getGuildTemplateDetail, updateGuildTemplate } from "@/lib/server/dashboardData";
 import { requireDashboardGuild, requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 import { parseTemplatePatch } from "@/lib/server/mutationValidation";
@@ -53,7 +54,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ template, sync: "discord_sync_pending" }, { status: 200 });
-  } catch {
-    return NextResponse.json({ error: "Failed to update template." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to update template.", {
+      conflictMessage: "A template with that name already exists for this event type."
+    });
   }
 }

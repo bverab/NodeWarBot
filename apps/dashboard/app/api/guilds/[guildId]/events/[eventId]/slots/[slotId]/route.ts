@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { deleteGuildEventRoleSlot, updateGuildEventRoleSlot, updateGuildEventRoleSlotSeries } from "@/lib/server/dashboardData";
 import { getGuildRoles } from "@/lib/server/discordGuildConfig";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
@@ -48,8 +49,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ event, sync: "discord_sync_pending" }, { status: 200 });
-  } catch {
-    return NextResponse.json({ error: "Failed to update event slot." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to update event slot.", { conflictMessage: "A slot with that name or position already exists." });
   }
 }
 
@@ -72,7 +73,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ event, sync: "discord_sync_pending" }, { status: 200 });
-  } catch {
-    return NextResponse.json({ error: "Failed to delete event slot." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to delete event slot.");
   }
 }

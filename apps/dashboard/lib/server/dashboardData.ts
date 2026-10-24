@@ -4,6 +4,7 @@ import type { Event, EventEnrollment, EventFillerEntry, EventParticipant, EventR
 import { calculateEventLifecycleDates, calculateScheduledPublishAt, normalizeTimezone } from "@/lib/eventDateTime";
 import { fetchDiscordGuildMembers } from "@/lib/server/discordMembers";
 import { prisma } from "@/lib/server/prisma";
+import { InputError } from "./apiErrors";
 
 export type EventListItem = {
   id: string;
@@ -782,7 +783,7 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
     closeBeforeMinutes: input.closeBeforeMinutes
   });
   if (!lifecycleDates) {
-    throw new Error("Invalid event date, time, timezone, duration, or close-before setting.");
+    throw new InputError("Invalid event date, time, timezone, duration, or close-before setting.");
   }
   const { startsAt, expiresAt, closesAt } = lifecycleDates;
   const autoPublishEnabled = Boolean(input.autoPublishEnabled);
@@ -790,7 +791,7 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
     ? calculateScheduledPublishAt({ startsAt, publishBeforeMinutes: input.publishBeforeMinutes ?? 60 })
     : null;
   if (autoPublishEnabled && !scheduledPublishAt) {
-    throw new Error("Invalid scheduled publish configuration.");
+    throw new InputError("Invalid scheduled publish configuration.");
   }
   const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" })
     .formatToParts(startsAt)
@@ -831,7 +832,7 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
       });
 
       if (!template) {
-        throw new Error("Template not found for this guild and event type.");
+        throw new InputError("Template not found for this guild and event type.");
       }
 
       templateDefaults = {
@@ -853,11 +854,11 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
       : [];
 
     if (!isPve && !slots.length) {
-      throw new Error("At least one slot is required to create a draft event.");
+      throw new InputError("At least one slot is required to create a draft event.");
     }
 
     if (isPve && !pveOptions.length && !slots.length) {
-      throw new Error("At least one PvE time option is required to create a draft event.");
+      throw new InputError("At least one PvE time option is required to create a draft event.");
     }
 
     const eventId = `web_${crypto.randomUUID()}`;

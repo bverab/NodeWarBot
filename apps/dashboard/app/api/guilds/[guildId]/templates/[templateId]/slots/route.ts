@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { createGuildTemplateRoleSlot } from "@/lib/server/dashboardData";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 import { parseRoleSlotPatch } from "@/lib/server/mutationValidation";
@@ -35,7 +36,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ template }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Failed to create template slot." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to create template slot.", { conflictMessage: "A slot with that name or position already exists." });
   }
 }

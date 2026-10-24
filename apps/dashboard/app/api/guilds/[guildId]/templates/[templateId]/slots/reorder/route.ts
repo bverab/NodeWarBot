@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { reorderGuildTemplateRoleSlots } from "@/lib/server/dashboardData";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 
@@ -57,7 +58,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ template }, { status: 200 });
-  } catch {
-    return NextResponse.json({ error: "Failed to reorder template slots." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to reorder template slots.", { conflictMessage: "Another slot already uses one of those positions." });
   }
 }

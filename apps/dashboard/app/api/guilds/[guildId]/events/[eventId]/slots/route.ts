@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { createGuildEventRoleSlot } from "@/lib/server/dashboardData";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 import { parseRoleSlotPatch } from "@/lib/server/mutationValidation";
@@ -35,7 +36,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ event, sync: "discord_sync_pending" }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Failed to create event slot." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to create event slot.", { conflictMessage: "A slot with that name or position already exists." });
   }
 }

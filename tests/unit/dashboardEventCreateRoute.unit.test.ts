@@ -13,6 +13,7 @@ const getGuildPostChannelById = vi.fn();
 
 vi.mock("@/lib/apiGuards", async () => await vi.importActual("../../apps/dashboard/lib/apiGuards"));
 vi.mock("@/lib/eventDateTime", async () => await vi.importActual("../../apps/dashboard/lib/eventDateTime"));
+vi.mock("@/lib/server/apiErrors", async () => await vi.importActual("../../apps/dashboard/lib/server/apiErrors"));
 vi.mock("@/lib/server/createEventValidation", async () => await vi.importActual("../../apps/dashboard/lib/server/createEventValidation"));
 vi.mock("@/lib/server/dashboardGuildVerificationCookie", async () => await vi.importActual("../../apps/dashboard/lib/server/dashboardGuildVerificationCookie"));
 vi.mock("@/lib/server/guildAccess", () => ({ requireDashboardGuild, requireManageableDashboardGuild }));

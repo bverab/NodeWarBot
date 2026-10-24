@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { reorderGuildEventRoleSlots } from "@/lib/server/dashboardData";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 
@@ -57,7 +58,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json({ event, sync: "discord_sync_pending" }, { status: 200 });
-  } catch {
-    return NextResponse.json({ error: "Failed to reorder event slots." }, { status: 500 });
+  } catch (error) {
+    return errorResponse(error, "Failed to reorder event slots.", { conflictMessage: "Another slot already uses one of those positions." });
   }
 }

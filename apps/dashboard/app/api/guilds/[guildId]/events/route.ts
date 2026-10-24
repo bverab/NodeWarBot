@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/apiGuards";
 import { calculateEventLifecycleDates, formatDateTimeInTimezone } from "@/lib/eventDateTime";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { createGuildEventDraft, getGuildEvents } from "@/lib/server/dashboardData";
 import { createVerifiedGuildsCookie } from "@/lib/server/dashboardGuildVerificationCookie";
 import { createEventSchema, formatCreateEventIssues } from "@/lib/server/createEventValidation";
@@ -115,8 +116,6 @@ export async function POST(request: Request, context: RouteContext) {
     }
     return response;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create draft event.";
-    const status = message.includes("Template not found") || message.includes("At least one slot") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return errorResponse(error, "Failed to create draft event.");
   }
 }
