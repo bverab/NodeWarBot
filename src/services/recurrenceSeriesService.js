@@ -83,16 +83,16 @@ function toPublicDay(dayOfWeek) {
 }
 
 function createSeriesWarFromSource(source, dayOfWeek, time) {
-  const createdAt = Date.now();
+  // Hereda las horas absolutas del origen: el cierre y el fin se derivan luego de su hora local.
   return normalizeWar({
     ...source,
     id: `${source.groupId}_day${dayOfWeek}`,
     dayOfWeek,
     time,
     messageId: null,
-    createdAt,
-    expiresAt: createdAt + (Number.isInteger(source.duration) ? source.duration : 70) * 60 * 1000,
-    closesAt: createdAt + Math.max(0, ((Number.isInteger(source.duration) ? source.duration : 70) - (Number.isInteger(source.closeBeforeMinutes) ? source.closeBeforeMinutes : 0))) * 60 * 1000,
+    createdAt: source.createdAt,
+    expiresAt: source.expiresAt,
+    closesAt: source.closesAt,
     isClosed: false,
     waitlist: [],
     roles: Array.isArray(source.roles)
