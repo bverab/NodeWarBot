@@ -382,7 +382,18 @@ async function refreshPublicEventMessage(interaction, event) {
 
   if (result.ok) return true;
 
-  throw new Error(`Failed to refresh public event message: ${result.errorMessage || result.status}`);
+  // El cambio ya esta persistido: un fallo al refrescar el mensaje no debe tapar el resultado al usuario.
+  logWarn('No se pudo refrescar el mensaje publico del evento', {
+    action: 'public_event_button_refresh',
+    guildId: interaction.guildId,
+    userId: interaction.user?.id,
+    eventId: event.id,
+    channelId: event.channelId,
+    messageId: event.messageId,
+    reason: result.errorMessage || result.status,
+    code: result.errorCode
+  });
+  return false;
 }
 
 async function deletePublicEventMessage(interaction, event) {
