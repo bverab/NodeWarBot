@@ -72,7 +72,7 @@ function shouldExecute(dayOfWeek, time, currentDate = new Date(), timezone = 'Am
 function getZonedDateParts(date, timezone) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
-    hour12: false,
+    hourCycle: 'h23',
     weekday: 'short',
     hour: '2-digit',
     minute: '2-digit'
