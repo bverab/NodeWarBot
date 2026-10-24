@@ -1094,6 +1094,18 @@ export async function getGuildClassStats(guildId: string) {
   };
 }
 
+// The bot syncs its in-memory cache by comparing Event.updatedAt, and Prisma only bumps that column when the Event row
+// itself is written. A write that only touches child rows (slots, slot permissions...) must therefore bump the parent in
+// the same transaction; otherwise the bot keeps serving the old data (and may write it back) until it restarts.
+async function touchEvents(tx: Prisma.TransactionClient, eventIds: string[]) {
+  const ids = Array.from(new Set(eventIds));
+  if (!ids.length) {
+    return;
+  }
+
+  await tx.event.updateMany({ where: { id: { in: ids } }, data: { updatedAt: new Date() } });
+}
+
 export async function updateGuildEvent(guildId: string, eventId: string, input: EventMutationInput) {
   const event = await prisma.event.findFirst({
     where: { id: eventId, guildId },
@@ -1133,15 +1145,18 @@ export async function createGuildEventRoleSlot(guildId: string, eventId: string,
     return null;
   }
 
-  await prisma.eventRoleSlot.create({
-    data: {
-      eventId: event.id,
-      name: input.name,
-      max: input.max,
-      position: input.position ?? ((event.roleSlots[0]?.position ?? -1) + 1),
-      emoji: input.emoji ?? null,
-      emojiSource: input.emojiSource ?? null
-    }
+  await prisma.$transaction(async (tx) => {
+    await tx.eventRoleSlot.create({
+      data: {
+        eventId: event.id,
+        name: input.name,
+        max: input.max,
+        position: input.position ?? ((event.roleSlots[0]?.position ?? -1) + 1),
+        emoji: input.emoji ?? null,
+        emojiSource: input.emojiSource ?? null
+      }
+    });
+    await touchEvents(tx, [event.id]);
   });
 
   return getGuildEventDetail(guildId, event.id);
@@ -1158,9 +1173,10 @@ export async function updateGuildEventRoleSlot(guildId: string, eventId: string,
   }
 
   const { allowedRoleIds, ...slotPatch } = input;
+  const hasSlotPatch = Object.keys(slotPatch).length > 0;
 
   await prisma.$transaction(async (tx) => {
-    if (Object.keys(slotPatch).length) {
+    if (hasSlotPatch) {
       await tx.eventRoleSlot.update({
         where: { id: slot.id },
         data: slotPatch
@@ -1181,6 +1197,10 @@ export async function updateGuildEventRoleSlot(guildId: string, eventId: string,
           }))
         });
       }
+    }
+
+    if (hasSlotPatch || Array.isArray(allowedRoleIds)) {
+      await touchEvents(tx, [slot.eventId]);
     }
   });
 
@@ -1219,13 +1239,14 @@ export async function updateGuildEventRoleSlotSeries(guildId: string, eventId: s
         groupId: slot.event.groupId
       }
     },
-    select: { id: true }
+    select: { id: true, eventId: true }
   });
   const { allowedRoleIds, ...slotPatch } = input;
+  const hasSlotPatch = Object.keys(slotPatch).length > 0;
 
   await prisma.$transaction(async (tx) => {
     for (const target of targetSlots) {
-      if (Object.keys(slotPatch).length) {
+      if (hasSlotPatch) {
         await tx.eventRoleSlot.update({
           where: { id: target.id },
           data: slotPatch
@@ -1248,6 +1269,11 @@ export async function updateGuildEventRoleSlotSeries(guildId: string, eventId: s
         }
       }
     }
+
+    // Every occurrence of the series that was edited, not just the one the request came from.
+    if (hasSlotPatch || Array.isArray(allowedRoleIds)) {
+      await touchEvents(tx, targetSlots.map((target) => target.eventId));
+    }
   });
 
   return getGuildEventDetail(guildId, eventId);
@@ -1267,7 +1293,10 @@ export async function deleteGuildEventRoleSlot(guildId: string, eventId: string,
     return { blocked: "Slot has participants and cannot be deleted safely." } as const;
   }
 
-  await prisma.eventRoleSlot.delete({ where: { id: slot.id } });
+  await prisma.$transaction(async (tx) => {
+    await tx.eventRoleSlot.delete({ where: { id: slot.id } });
+    await touchEvents(tx, [slot.eventId]);
+  });
   return getGuildEventDetail(guildId, slot.eventId);
 }
 
@@ -1308,6 +1337,8 @@ export async function reorderGuildEventRoleSlots(
         })
       )
     );
+
+    await touchEvents(tx, [eventId]);
   });
 
   return getGuildEventDetail(guildId, eventId);
