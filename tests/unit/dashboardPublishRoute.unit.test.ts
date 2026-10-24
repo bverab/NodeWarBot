@@ -8,12 +8,14 @@ const createDiscordRestGuildAdapter = vi.fn();
 const deleteDiscordMessageByRest = vi.fn();
 const publishEventToDiscord = vi.fn();
 const mapDbEventToDiscordDomain = vi.fn();
-const prisma = { event: { findFirst: vi.fn(), updateMany: vi.fn() } };
+const markEventPublished = vi.fn();
+const prisma = { event: { findFirst: vi.fn() } };
 
 vi.mock("@/lib/server/apiErrors", async () => await vi.importActual("../../apps/dashboard/lib/server/apiErrors"));
 vi.mock("@/lib/server/publishGuards", async () => await vi.importActual("../../apps/dashboard/lib/server/publishGuards"));
 vi.mock("@/lib/server/guildAccess", () => ({ requireManageableDashboardGuild }));
 vi.mock("@/lib/server/prisma", () => ({ prisma }));
+vi.mock("@/lib/server/dashboardData", () => ({ markEventPublished }));
 vi.mock("@/lib/server/eventDomainMapper", () => ({ mapDbEventToDiscordDomain }));
 vi.mock("@/lib/server/nodeWarBotServices", () => ({ publishEventToDiscord }));
 vi.mock("@/lib/server/discordRestEventAdapter", () => ({
@@ -56,7 +58,7 @@ describe("POST /api/guilds/[guildId]/events/[eventId]/publish", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     requireManageableDashboardGuild.mockResolvedValue({ activeGuild: { id: GUILD_ID, manageable: true }, availableGuilds: [], session: {} });
     prisma.event.findFirst.mockResolvedValue(dbEvent());
-    prisma.event.updateMany.mockResolvedValue({ count: 1 });
+    markEventPublished.mockResolvedValue(true);
     validateBotCanPublishToChannel.mockResolvedValue({ ok: true, channel: { id: CHANNEL_ID }, botUserId: "400000000000000004" });
     createDiscordRestGuildAdapter.mockReturnValue({ channels: { fetch: vi.fn() } });
     mapDbEventToDiscordDomain.mockReturnValue({ id: "event_1" });
@@ -70,7 +72,9 @@ describe("POST /api/guilds/[guildId]/events/[eventId]/publish", () => {
     await expect(response.json()).resolves.toMatchObject({ ok: true, messageId: MESSAGE_ID });
     expect(validateBotCanPublishToChannel).toHaveBeenCalledTimes(1);
     expect(createDiscordRestGuildAdapter).toHaveBeenCalledWith(GUILD_ID, { validatedChannel: { id: CHANNEL_ID } });
-    expect(prisma.event.updateMany).toHaveBeenCalledTimes(1);
+    // Message, channel and the publish time (schedule.lastCreatedAt) are stored together by one data-layer call.
+    expect(markEventPublished).toHaveBeenCalledTimes(1);
+    expect(markEventPublished).toHaveBeenCalledWith(GUILD_ID, "event_1", { channelId: CHANNEL_ID, messageId: MESSAGE_ID, publishedAt: expect.any(Date) });
   });
 
   it("refuses to publish a closed event before touching Discord", async () => {
@@ -118,16 +122,26 @@ describe("POST /api/guilds/[guildId]/events/[eventId]/publish", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({ error: "Failed to publish event." });
-    expect(prisma.event.updateMany).not.toHaveBeenCalled();
+    expect(markEventPublished).not.toHaveBeenCalled();
   });
 
   it("compensates by deleting the Discord message when another request published first", async () => {
-    prisma.event.updateMany.mockResolvedValue({ count: 0 });
+    markEventPublished.mockResolvedValue(false);
     deleteDiscordMessageByRest.mockResolvedValue(undefined);
 
     const response = await publish();
 
     expect(response.status).toBe(409);
+    expect(deleteDiscordMessageByRest).toHaveBeenCalledWith(CHANNEL_ID, MESSAGE_ID);
+  });
+
+  it("deletes the Discord message and says so when saving the publication fails", async () => {
+    markEventPublished.mockRejectedValue(new Error("SQLITE_BUSY: database is locked"));
+    deleteDiscordMessageByRest.mockResolvedValue(undefined);
+
+    const response = await publish();
+
+    expect(response.status).toBe(500);
     expect(deleteDiscordMessageByRest).toHaveBeenCalledWith(CHANNEL_ID, MESSAGE_ID);
   });
 });

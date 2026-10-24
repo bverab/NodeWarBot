@@ -1106,6 +1106,18 @@ async function touchEvents(tx: Prisma.TransactionClient, eventIds: string[]) {
   await tx.event.updateMany({ where: { id: { in: ids } }, data: { updatedAt: new Date() } });
 }
 
+// An event published from the web must leave the trace the bot leaves when it publishes: schedule.lastCreatedAt. The
+// bot's weekly recurrence skips an event whose lastCreatedAt is today; without it, it could delete a same-day web
+// publication to post its own. A missing schedule row is created the way the bot reads a missing one (disabled, once).
+function publishedScheduleWrite(publishedAt: Date) {
+  return {
+    upsert: {
+      create: { enabled: false, mode: "once", lastCreatedAt: publishedAt },
+      update: { lastCreatedAt: publishedAt }
+    }
+  };
+}
+
 export async function updateGuildEvent(guildId: string, eventId: string, input: EventMutationInput) {
   const event = await prisma.event.findFirst({
     where: { id: eventId, guildId },
@@ -1118,10 +1130,40 @@ export async function updateGuildEvent(guildId: string, eventId: string, input: 
 
   await prisma.event.update({
     where: { id: event.id },
-    data: input
+    // Linking an existing Discord message makes the event published, so it is recorded like a publication.
+    data: typeof input.messageId === "string" ? { ...input, schedule: publishedScheduleWrite(new Date()) } : input
   });
 
   return getGuildEventDetail(guildId, event.id);
+}
+
+// Stores the result of a web publication: message, channel and publish time, in one transaction. Returns false when the
+// event is not a draft of that guild any more (another request published it first), without changing anything.
+export async function markEventPublished(
+  guildId: string,
+  eventId: string,
+  input: { channelId: string; messageId: string; publishedAt?: Date }
+) {
+  const publishedAt = input.publishedAt ?? new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.event.updateMany({
+      where: { id: eventId, guildId, messageId: null },
+      data: { channelId: input.channelId, messageId: input.messageId }
+    });
+
+    if (updated.count !== 1) {
+      return false;
+    }
+
+    await tx.eventSchedule.upsert({
+      where: { eventId },
+      create: { eventId, enabled: false, mode: "once", lastCreatedAt: publishedAt },
+      update: { lastCreatedAt: publishedAt }
+    });
+
+    return true;
+  });
 }
 
 export async function setGuildEventClosed(guildId: string, eventId: string, isClosed: boolean) {

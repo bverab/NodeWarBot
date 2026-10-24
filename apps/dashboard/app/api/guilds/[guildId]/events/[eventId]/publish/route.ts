@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/server/apiErrors";
+import { markEventPublished } from "@/lib/server/dashboardData";
 import { mapDbEventToDiscordDomain } from "@/lib/server/eventDomainMapper";
 import { prisma } from "@/lib/server/prisma";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
@@ -113,15 +114,14 @@ export async function POST(_request: Request, context: RouteContext) {
     }
 
     try {
-      const updated = await prisma.event.updateMany({
-        where: { id: event.id, guildId, messageId: null },
-        data: {
-          channelId: event.channelId,
-          messageId: publishResult.messageId
-        }
+      // Message, channel and the publish time (schedule.lastCreatedAt, which the bot's recurrence reads) go in one transaction.
+      const saved = await markEventPublished(guildId, event.id, {
+        channelId: event.channelId,
+        messageId: publishResult.messageId,
+        publishedAt: new Date()
       });
 
-      if (updated.count !== 1) {
+      if (!saved) {
         await deleteDiscordMessageByRest(event.channelId, publishResult.messageId).catch((error) => {
           console.error("Failed to compensate duplicate dashboard publish.", error);
         });
