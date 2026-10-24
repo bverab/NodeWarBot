@@ -181,9 +181,6 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
-      node-cron:
-        specifier: ^4.2.1
-        version: 4.2.1
       prisma:
         specifier: ^6.15.0
         version: 6.15.0(magicast@0.3.5)(typescript@5.9.3)
@@ -224,6 +221,9 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      server-only:
+        specifier: 0.0.1
+        version: 0.0.1
       zod:
         specifier: ^4.4.3
         version: 4.6.7
@@ -1112,10 +1112,6 @@ packages:
       sass:
         optional: true
 
-  node-cron@4.2.1:
-    resolution: {integrity: sha512-lgimEHPE/QDgFlywTd8yTR61ptugX3Qer29efeyWw2rv259HtGBNn1vZVmp8lB9uo9wC0t/AT4iGqXxia+CJFg==}
-    engines: {node: '>=6.0.0'}
-
   node-fetch-native@1.6.7:
     resolution: {integrity: sha512-g9yhqoedzIUm0nTnTqAQvueMPVOuIY16bqgAJJC8XOOubYFNwz6IER9qs0Gq2Xd0+CecCKFjtdDTMA4u4xG06Q==}
 
@@ -1230,6 +1226,9 @@ packages:
     resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
     engines: {node: '>=10'}
     hasBin: true
+
+  server-only@0.0.1:
+    resolution: {integrity: sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA==}
 
   sharp@0.35.5:
     resolution: {integrity: sha512-Ywn4OnzGukp7CDMrp08RQ50YKmuwG47brZgIVPTvBaaAfQlRlygrRqSrxdCiL9M+LlzLBiJ68IR1QqvzHyjC7g==}
@@ -2166,8 +2165,6 @@ snapshots:
       - '@types/node'
       - babel-plugin-macros
 
-  node-cron@4.2.1: {}
-
   node-fetch-native@1.6.7: {}
 
   nypm@0.6.5:
@@ -2287,6 +2284,8 @@ snapshots:
 
   semver@7.8.5:
     optional: true
+
+  server-only@0.0.1: {}
 
   sharp@0.35.5(@types/node@22.20.5):
     dependencies:
