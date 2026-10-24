@@ -340,3 +340,55 @@ la ruta), los comandos de primer nivel (los loaders solo leen ese nivel), `handl
 
 Las reproducciones ejecutadas están en el historial de la sesión; cada corrección del plan añade
 además un test de regresión que falla antes del cambio y pasa después.
+
+## 8. Estado final (2026-10-24, rama `chore/pnpm-and-audit`)
+
+### Antes / después
+
+| Métrica | Antes (`76d7fe3`) | Después |
+|---------|-------------------|---------|
+| Tests | 139/141 (2 rotos por D-1, 5 que solo pasaban de ~19:00 a ~01:00) | **642/642**, a cualquier hora |
+| Cobertura sentencias / ramas | 49,0 % / 40,9 % (solo archivos cargados) | **57,5 % / 47,2 %** (todo `src/**` y `apps/dashboard/lib/**`) |
+| Cobertura `src/commands` / `src/handlers` | 12 % / 24 % | 38 % / 47 % |
+| First Load JS `/guilds/[guildId]/events/[eventId]` | 168 kB | **161 kB** |
+| First Load JS `/guilds/[guildId]/templates/new` | 161 kB | **154 kB** |
+| `getWarByMessageId` (2.000 eventos) | ~40 ms por clic | ~0,04 ms |
+| Consulta del dashboard por `guildId` + `eventType` | `SCAN Event` | `SEARCH … USING INDEX` |
+| Lint / typecheck / CI | No existían | ESLint (0 errores, 46 avisos informativos), `pnpm typecheck`, workflow de CI (pendiente del primer push) |
+
+### Qué se cerró
+
+- **Fases 1–5 del plan** (ver `ACTION_PLAN.md`), más 1.12, 4.0 (NEW-1) y 4.6: los cuatro defectos críticos
+  del §1, la pérdida de datos entre bot y dashboard (D-2, D-3), la pérdida de inscripciones por escrituras
+  concurrentes (H-3, C-8, D-4), y los huecos de seguridad del dashboard (S-3, S-4, S-7, S-8).
+- **Revisión independiente final**: H1–H8 corregidos (republicación sobre mensajes vivos, nombres de slot,
+  IDs de slot estables, script `pnpm db:repair-lifecycle` para datos dañados por NEW-1, activación sin
+  refresco, límites de los modales, eventos expirados en la web, emojis de bandera y keycap).
+- **Revisión de seguridad** de la rama: sin vulnerabilidades nuevas.
+- **Migraciones nuevas** probadas sobre una base con el esquema anterior y datos: conteos idénticos en
+  todas las tablas y `PRAGMA foreign_key_check` limpio.
+
+### Pendiente (documentado, no bloqueante)
+
+- **1.5**: publicación tardía de la recurrencia semanal si se pierde el minuto exacto (decisión §5.13).
+- **H9**: escritores que todavía guardan copias completas con `updateWar` en vez de mutators:
+  `eventManagementService.updateEvent`, `eventPublicationService` (activación), `pveService.configureAccess`,
+  `recurrenceSeriesService.editSeriesDay` (mismo id) y los resultados de la autopublicación web en
+  `schedulerService`. Ventanas de carrera cortas; siguiente paso natural.
+- El campo de icono del panel admin (`parseRoleIconInput`) no acepta keycaps escritos a mano
+  (`/eventadmin role_icon` y `/editrole icon` sí).
+- La opción `texto` de `/eventadmin recap` sigue limitada a 250 caracteres (subirla requiere `pnpm register`).
+- Un borrador nunca publicado, cerrado a mano y con fecha vencida aparece como "closed" en la web y no se
+  puede borrar como borrador (efecto de H5; regla más estricta posible si molesta).
+- Fuera de alcance de esta pasada (§7 de `ACTION_PLAN.md`): diseño y accesibilidad del dashboard, partir
+  los archivos monolíticos, mover el dominio a `src/domain/`, harness de tests en paralelo, export JSON
+  completo.
+
+### Decisiones de producto
+
+Las 15 de §5 siguen abiertas; ninguna se implementó sin aprobación.
+
+### Cómo probarlo
+
+Guía paso a paso en [`MANUAL_TESTING.md`](MANUAL_TESTING.md). Notas de despliegue en el `README.md`
+("Upgrading to the audit release"): detener bot y dashboard, `pnpm db:backup`, migrar, `pnpm register`.
