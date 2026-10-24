@@ -1,21 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+
+// Loaded once at file level: the cold import of next-auth and its providers is slow and must not eat a test's timeout.
+const { authOptions } = await import("../../apps/dashboard/lib/auth");
+const callbacks = authOptions.callbacks as {
+  jwt: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  session: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+};
 
 describe("dashboard auth callbacks", () => {
-  afterEach(() => {
-    vi.resetModules();
-  });
-
-  async function loadCallbacks() {
-    const { authOptions } = await import("../../apps/dashboard/lib/auth");
-    return authOptions.callbacks as {
-      jwt: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
-      session: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
-    };
-  }
-
   it("stores the sign-in provider in the token at sign-in", async () => {
-    const callbacks = await loadCallbacks();
-
     const token = await callbacks.jwt({
       token: {},
       account: { provider: "discord", access_token: "discord-token", providerAccountId: "123456789012345678" }
@@ -31,16 +24,12 @@ describe("dashboard auth callbacks", () => {
   });
 
   it("keeps the stored provider on later requests, where no account is passed", async () => {
-    const callbacks = await loadCallbacks();
-
     const token = await callbacks.jwt({ token: { provider: "google", userId: "google-sub" } });
 
     expect(token).toMatchObject({ provider: "google", userId: "google-sub" });
   });
 
   it("does not invent a provider for tokens issued before it was stored", async () => {
-    const callbacks = await loadCallbacks();
-
     const token = await callbacks.jwt({ token: { accessToken: "old-token", userId: "123456789012345678" } });
     const session = await callbacks.session({ session: { user: {} }, token });
 
@@ -49,8 +38,6 @@ describe("dashboard auth callbacks", () => {
   });
 
   it("exposes the provider in the session", async () => {
-    const callbacks = await loadCallbacks();
-
     const session = await callbacks.session({
       session: { user: {} },
       token: { provider: "google", accessToken: "google-token", userId: "google-sub" }
