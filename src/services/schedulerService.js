@@ -128,6 +128,9 @@ async function runSchedulerTick() {
 
       if (!war.schedule || !war.schedule.enabled) continue;
       if ((war.dayOfWeek === null || war.dayOfWeek === undefined) || !war.time) continue;
+      // Nunca se republica sobre un mensaje vigente (p. ej. una serie web publicada a mano ese dia):
+      // las ocurrencias del bot ya expiraron (messageId null) cuando llega su siguiente slot.
+      if (war.messageId && Number.isFinite(war.expiresAt) && nowMs < war.expiresAt) continue;
 
       if (!shouldExecute(war.dayOfWeek, war.time, now, war.timezone)) continue;
 
@@ -262,7 +265,9 @@ async function publishScheduledWebEvent(event, now = new Date()) {
       messageId: publishResult.messageId,
       autoPublishEnabled: false,
       publishError: null,
-      lastPublishAttemptAt: attemptedAt.getTime()
+      lastPublishAttemptAt: attemptedAt.getTime(),
+      // Como las publicaciones del bot: evita que la recurrencia semanal la vuelva a publicar ese dia.
+      schedule: { ...(event.schedule || {}), lastCreatedAt: attemptedAt.getTime() }
     });
 
     logInfo('[scheduler:auto-publish] published event', {
