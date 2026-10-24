@@ -48,6 +48,7 @@ module.exports = {
   markScheduledPublishAttempt: withDbLog('markScheduledPublishAttempt', repository.markScheduledPublishAttempt),
   completeScheduledPublishIfUnpublished: withDbLog('completeScheduledPublishIfUnpublished', repository.completeScheduledPublishIfUnpublished),
   updateWarByMessageId: withDbLog('updateWarByMessageId', repository.updateWarByMessageId),
+  updateWarById: withDbLog('updateWarById', repository.updateWarById),
   deleteWarByMessageId: withDbLog('deleteWarByMessageId', repository.deleteWarByMessageId),
   deleteWarById: withDbLog('deleteWarById', repository.deleteWarById),
   replaceWarId: withDbLog('replaceWarId', repository.replaceWarId),

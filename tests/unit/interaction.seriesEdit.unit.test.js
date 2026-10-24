@@ -1,4 +1,5 @@
 const { resetSrcModules, requireSrc } = require('../support/interaction/freshRequire');
+const { routeUpdateWarByIdThroughUpdateWar } = require('../helpers/warServiceMocks');
 const { createInteraction, asAdmin, createModalFields, collectReplies } = require('../support/interaction/fakes');
 const { buildWar } = require('../factories/warFactory');
 
@@ -40,6 +41,7 @@ describe('ediciones de serie: validar todas las ocurrencias antes de guardar nin
     warService = requireSrc('src/services/warService');
     warService.loadWars = vi.fn(() => wars);
     warService.updateWar = vi.fn(async war => war);
+    routeUpdateWarByIdThroughUpdateWar(warService);
     requireSrc('src/services/discordEventSyncService').updateEventDiscordMessage = vi.fn(async () => ({ ok: true }));
     modalActions = requireSrc('src/handlers/modal/eventAdminModalActions').EVENT_ADMIN_MODAL_ACTIONS;
     requireSrc('src/utils/eventAdminContextStore').setSelectedEventContext(

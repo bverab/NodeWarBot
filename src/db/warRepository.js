@@ -495,9 +495,11 @@ function loadWars() {
 }
 
 async function loadWarsFresh() {
-  const normalized = normalizeWarsInput(await readWarsFromSqlite());
-  warsCache = normalized;
-  initialized = true;
+  // Bajo el lock global y recargando cada evento dentro de su lock: no pisa escrituras en curso.
+  await withGlobalWriteLock(async () => {
+    await syncWarsFromDatabase();
+    initialized = true;
+  });
   return loadWars();
 }
 
@@ -596,15 +598,10 @@ async function updateWarByMessageId(messageId, updater) {
   let result = null;
 
   await withEventLock(initial.id, async () => {
-    let current = warsCache.find(war => war.messageId === value);
-    if (!current) return;
-
-    // Si otro proceso (dashboard) escribio el evento despues de la cache, se parte de la fila actual.
-    const dbRow = await prisma.event.findUnique({ where: { id: current.id }, select: { updatedAt: true } });
-    if (!dbRow || !Number.isFinite(current.updatedAt) || toNumber(dbRow.updatedAt) > current.updatedAt) {
-      current = await refreshCachedWarFromSqlite(current.id);
-      if (!current || current.messageId !== value) return;
-    }
+    const cached = warsCache.find(war => war.messageId === value);
+    if (!cached) return;
+    const current = await getFreshWarInLock(cached.id);
+    if (!current || current.messageId !== value) return;
 
     const draft = normalizeWar(current);
     result = updater(draft);
@@ -615,6 +612,42 @@ async function updateWarByMessageId(messageId, updater) {
   });
 
   if (!normalized) return { war: null, result: null };
+  return { war: normalized, result };
+}
+
+// Debe llamarse dentro de withEventLock(eventId). Si otro proceso (dashboard) escribio el evento
+// despues de la cache, o la cache no lo tiene, se parte de la fila actual de SQLite.
+async function getFreshWarInLock(eventId) {
+  const id = String(eventId);
+  const current = warsCache.find(war => war.id === id) || null;
+  const dbRow = await prisma.event.findUnique({ where: { id }, select: { updatedAt: true } });
+  if (!dbRow || !current || !Number.isFinite(current.updatedAt) || toNumber(dbRow.updatedAt) > current.updatedAt) {
+    return await refreshCachedWarFromSqlite(id);
+  }
+  return current;
+}
+
+// Mutacion atomica: relee el evento dentro de su lock, aplica el mutator sobre esa copia fresca y
+// persiste. El mutator es sincrono y solo debe tocar los campos que cambia; si devuelve false no
+// se guarda nada (p. ej. el rol ya no existe en la copia fresca).
+async function updateWarById(eventId, mutator) {
+  const id = String(eventId);
+  let normalized = null;
+  let result = null;
+
+  await withEventLock(id, async () => {
+    const current = await getFreshWarInLock(id);
+    if (!current) return;
+
+    const draft = normalizeWar(current);
+    result = mutator(draft);
+    if (result === false) return;
+    normalized = normalizeWar(draft);
+
+    normalized.updatedAt = await persistSingleWarToSqlite(normalized);
+    cacheWar(normalized);
+  });
+
   return { war: normalized, result };
 }
 
@@ -729,6 +762,7 @@ module.exports = {
   getLatestWarByChannelId,
   updateWar,
   updateWarByMessageId,
+  updateWarById,
   deleteWarById,
   replaceWarId,
   deleteWarByMessageId,

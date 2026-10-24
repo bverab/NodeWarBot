@@ -1,4 +1,5 @@
 const { resetSrcModules, requireSrc } = require('../support/interaction/freshRequire');
+const { routeUpdateWarByIdThroughUpdateWar } = require('../helpers/warServiceMocks');
 const { createInteraction, asAdmin, createModalFields, collectReplies } = require('../support/interaction/fakes');
 const { buildWar, buildWarRole } = require('../factories/warFactory');
 
@@ -235,6 +236,7 @@ describe('roles de un evento ya publicado (H-9, C-4)', () => {
     const warService = requireSrc('src/services/warService');
     warService.loadWars = vi.fn(() => [war]);
     warService.updateWar = vi.fn(async updated => updated);
+    routeUpdateWarByIdThroughUpdateWar(warService);
     const { EVENT_ADMIN_MODAL_ACTIONS } = requireSrc('src/handlers/modal/eventAdminModalActions');
     requireSrc('src/utils/eventAdminContextStore').setSelectedEventContext('user_1', 'guild_1', 'channel_1', war.id, {});
     const interaction = asAdmin(createInteraction({
@@ -257,6 +259,7 @@ describe('roles de un evento ya publicado (H-9, C-4)', () => {
     const warService = requireSrc('src/services/warService');
     warService.loadWars = vi.fn(() => [war]);
     warService.updateWar = vi.fn(async updated => updated);
+    routeUpdateWarByIdThroughUpdateWar(warService);
     const { EVENT_ADMIN_MODAL_ACTIONS } = requireSrc('src/handlers/modal/eventAdminModalActions');
     requireSrc('src/utils/eventAdminContextStore').setSelectedEventContext('user_1', 'guild_1', 'channel_1', war.id, {});
     const interaction = asAdmin(createInteraction({
@@ -278,6 +281,7 @@ describe('roles de un evento ya publicado (H-9, C-4)', () => {
     const warService = requireSrc('src/services/warService');
     warService.loadWars = vi.fn(() => [war]);
     warService.updateWar = vi.fn(async updated => updated);
+    routeUpdateWarByIdThroughUpdateWar(warService);
     const eventadmin = requireSrc('src/commands/eventadmin');
     const interaction = asAdmin(createInteraction({
       isAutocomplete: () => false,

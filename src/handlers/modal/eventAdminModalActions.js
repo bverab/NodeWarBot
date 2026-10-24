@@ -1,5 +1,5 @@
 const { parseEmojiInput } = require('../../utils/emojiHelper');
-const { loadWars, updateWar } = require('../../services/warService');
+const { loadWars, updateWarById } = require('../../services/warService');
 const pveService = require('../../services/pveService');
 const eventManagementService = require('../../services/eventManagementService');
 const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../../utils/textSafety');
@@ -73,19 +73,23 @@ async function handleEventRoleAddModal(interaction) {
     }
   }
 
-  context.war.roles.push({
-    name,
-    max: slots,
-    emoji: parsed?.emoji || null,
-    emojiSource: parsed?.emojiSource || null,
-    users: [],
-    allowedRoleIds: [],
-    allowedRoles: []
+  // Sobre la copia fresca se repiten las validaciones: otro admin pudo agregar roles mientras tanto.
+  const { war: updated } = await updateWarById(context.war.id, fresh => {
+    if (fresh.roles.length >= MAX_ROLES) return false;
+    if (fresh.roles.some(role => String(role.name).toLowerCase() === name.toLowerCase())) return false;
+    fresh.roles.push({
+      name,
+      max: slots,
+      emoji: parsed?.emoji || null,
+      emojiSource: parsed?.emojiSource || null,
+      users: [],
+      allowedRoleIds: [],
+      allowedRoles: []
+    });
   });
-
-  const updated = await updateWar(context.war);
+  if (!updated) return await safeModalReply(interaction, { content: 'No se pudo agregar el rol: el evento cambio. Revisa el editor e intenta de nuevo.' });
   if (updated.messageId) await refreshWarMessage(interaction, updated);
-  const selectedRoleIndex = updated.roles.length - 1;
+  const selectedRoleIndex = updated.roles.findIndex(role => role.name === name);
 
   await replyWithRolesEditor(interaction, updated, selectedRoleIndex, `Rol agregado: **${name}** (${slots})`);
 }
@@ -111,14 +115,18 @@ async function handleEventRoleRenameModal(interaction) {
   }
 
   const previousName = context.role.name;
-  context.role.name = newName;
-  context.war.waitlist = context.war.waitlist.map(entry => (
-    entry.roleName === previousName ? { ...entry, roleName: newName } : entry
-  ));
-
-  const updated = await updateWar(context.war);
+  const saved = await saveRoleChange(context, (role, fresh) => {
+    if (fresh.roles.some(entry => entry !== role && String(entry.name).toLowerCase() === newName.toLowerCase())) return false;
+    role.name = newName;
+    fresh.waitlist = fresh.waitlist.map(entry => (
+      entry.roleName === previousName ? { ...entry, roleName: newName } : entry
+    ));
+  });
+  if (saved.error) return await safeModalReply(interaction, { content: saved.error });
+  const updated = saved.updated;
   if (updated.messageId) await refreshWarMessage(interaction, updated);
-  await replyWithRolesEditor(interaction, updated, context.roleIndex, `Rol renombrado: **${previousName}** -> **${newName}**`);
+  const renamedIndex = updated.roles.findIndex(role => role.name === newName);
+  await replyWithRolesEditor(interaction, updated, renamedIndex >= 0 ? renamedIndex : context.roleIndex, `Rol renombrado: **${previousName}** -> **${newName}**`);
 }
 
 async function handleEventRoleSlotsModal(interaction) {
@@ -139,11 +147,16 @@ async function handleEventRoleSlotsModal(interaction) {
     return await safeModalReply(interaction, { content: `No puedes bajar a ${slots}; hay ${usersCount} inscritos.` });
   }
 
-  context.role.max = slots;
-  const promotedUsers = promoteAllFromWaitlist(context.war, context.role.name);
-  const updated = await updateWar(context.war);
+  let promotedUsers = [];
+  const saved = await saveRoleChange(context, (role, fresh) => {
+    if (role.users.length > slots) return false;
+    role.max = slots;
+    promotedUsers = promoteAllFromWaitlist(fresh, role.name);
+  });
+  if (saved.error) return await safeModalReply(interaction, { content: saved.error });
+  const { updated, roleIndex } = saved;
   if (updated.messageId) await refreshWarMessage(interaction, updated);
-  await replyWithRolesEditor(interaction, updated, context.roleIndex, `Slots actualizados para **${context.role.name}**: ${slots}`);
+  await replyWithRolesEditor(interaction, updated, roleIndex, `Slots actualizados para **${context.role.name}**: ${slots}`);
   for (const promotedUser of promotedUsers) {
     await notifyPromotion(interaction, updated, promotedUser);
   }
@@ -157,21 +170,23 @@ async function handleEventRoleIconModal(interaction) {
     maxLength: 80,
     allowEmpty: true
   }).value || '';
-  if (!iconRaw) {
-    context.role.emoji = null;
-    context.role.emojiSource = null;
-  } else {
+  let icon = { emoji: null, emojiSource: null };
+  if (iconRaw) {
     const parsed = parseRoleIconInput(iconRaw, interaction.guild);
     if (!parsed) {
       return await safeModalReply(interaction, { content: 'Icono invalido. Usa unicode o <:nombre:id> o <a:nombre:id>.' });
     }
-    context.role.emoji = parsed.emoji;
-    context.role.emojiSource = parsed.emojiSource;
+    icon = { emoji: parsed.emoji, emojiSource: parsed.emojiSource };
   }
 
-  const updated = await updateWar(context.war);
+  const saved = await saveRoleChange(context, role => {
+    role.emoji = icon.emoji;
+    role.emojiSource = icon.emojiSource;
+  });
+  if (saved.error) return await safeModalReply(interaction, { content: saved.error });
+  const { updated, roleIndex } = saved;
   if (updated.messageId) await refreshWarMessage(interaction, updated);
-  await replyWithRolesEditor(interaction, updated, context.roleIndex, `Icono actualizado para **${context.role.name}**.`);
+  await replyWithRolesEditor(interaction, updated, roleIndex, `Icono actualizado para **${context.role.name}**.`);
 }
 
 async function handleEventEditDataBasicModal(interaction) {
@@ -193,10 +208,11 @@ async function handleEventEditDataBasicModal(interaction) {
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
   for (const war of targets) {
-    war.name = name;
-    war.type = type || war.type;
-    const updated = await updateWar(war);
-    if (updated.messageId) await refreshWarMessage(interaction, updated);
+    const { war: updated } = await updateWarById(war.id, fresh => {
+      fresh.name = name;
+      fresh.type = type || fresh.type;
+    });
+    if (updated?.messageId) await refreshWarMessage(interaction, updated);
   }
 
   const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
@@ -250,8 +266,10 @@ async function handleEventEditCloseModal(interaction) {
   }
 
   for (const { war, lifecycle } of plans) {
-    const updated = await updateWar(applyLifecycleToWar(war, lifecycle));
-    if (updated.messageId) await refreshWarMessage(interaction, updated);
+    const { war: updated } = await updateWarById(war.id, fresh => {
+      applyLifecycleToWar(fresh, lifecycle);
+    });
+    if (updated?.messageId) await refreshWarMessage(interaction, updated);
   }
 
   const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
@@ -289,14 +307,15 @@ async function handleEventEditRecapModal(interaction) {
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
   for (const war of targets) {
-    if (!war.recap || typeof war.recap !== 'object') {
-      war.recap = { enabled: false, minutesBeforeExpire: 0, messageText: '', threadId: null, lastPostedAt: null };
-    }
-    war.recap.minutesBeforeExpire = minutesBeforeExpire;
-    war.recap.messageText = messageText;
-    war.recap.enabled = minutesBeforeExpire > 0;
-    const updated = await updateWar(war);
-    if (updated.messageId) await refreshWarMessage(interaction, updated);
+    const { war: updated } = await updateWarById(war.id, fresh => {
+      if (!fresh.recap || typeof fresh.recap !== 'object') {
+        fresh.recap = { enabled: false, minutesBeforeExpire: 0, messageText: '', threadId: null, lastPostedAt: null };
+      }
+      fresh.recap.minutesBeforeExpire = minutesBeforeExpire;
+      fresh.recap.messageText = messageText;
+      fresh.recap.enabled = minutesBeforeExpire > 0;
+    });
+    if (updated?.messageId) await refreshWarMessage(interaction, updated);
   }
 
   const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
@@ -369,13 +388,15 @@ async function handleEventEditScheduleModal(interaction) {
   }
 
   for (const { war, lifecycle } of plans) {
-    war.time = time;
-    war.dayOfWeek = day;
-    if (!war.schedule) {
-      war.schedule = { enabled: false, mode: 'recurring' };
-    }
-    const updated = await updateWar(applyLifecycleToWar(war, lifecycle));
-    if (updated.messageId) await refreshWarMessage(interaction, updated);
+    const { war: updated } = await updateWarById(war.id, fresh => {
+      fresh.time = time;
+      fresh.dayOfWeek = day;
+      if (!fresh.schedule) {
+        fresh.schedule = { enabled: false, mode: 'recurring' };
+      }
+      applyLifecycleToWar(fresh, lifecycle);
+    });
+    if (updated?.messageId) await refreshWarMessage(interaction, updated);
   }
 
   const refreshedWars = loadWars().filter(war => targetIds.includes(war.id) && war.channelId === interaction.channelId);
@@ -749,6 +770,26 @@ async function safeModalReply(interaction, payload) {
   }
 
   await interaction.reply({ flags: 64, ...sanitizedPayload });
+}
+
+// Aplica un cambio de rol sobre la copia fresca del evento dentro de su lock (no pisa inscripciones
+// que llegaron mientras el admin editaba). El rol se busca por nombre en esa copia.
+async function saveRoleChange(context, mutateRole) {
+  const roleName = context.role.name;
+  const { war: updated, result } = await updateWarById(context.war.id, fresh => {
+    const role = fresh.roles.find(entry => entry.name === roleName);
+    if (!role) return false;
+    return mutateRole(role, fresh);
+  });
+  if (!updated) {
+    return {
+      error: result === false
+        ? 'No se pudo aplicar el cambio: el rol cambio mientras editabas. Revisa el editor e intenta de nuevo.'
+        : 'El evento seleccionado ya no existe en este canal.'
+    };
+  }
+  const roleIndex = updated.roles.findIndex(entry => entry.name === roleName);
+  return { updated, roleIndex: roleIndex >= 0 ? roleIndex : context.roleIndex };
 }
 
 function getSelectedWarContext(interaction) {
