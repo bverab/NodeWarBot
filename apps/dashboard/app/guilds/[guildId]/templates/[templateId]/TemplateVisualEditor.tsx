@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid";
 import { Button } from "@/components/ui/Button";
+import { MAX_SLOT_NAME_LENGTH } from "@/lib/slotLimits";
 import { Card } from "@/components/ui/Card";
 import { sortSlotsByOrder } from "@/lib/slotOrdering";
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
@@ -231,7 +232,7 @@ export function TemplateVisualEditor({ guildId, templateId, manageable, template
       {addingSlot ? (
         <Card className={`${styles.slotCardCompact} ${styles.slotCardEditing}`}>
           <form className={styles.compactForm} onSubmit={(event) => void createSlot(event)}>
-            <label>Name<input name="name" required maxLength={80} /></label>
+            <label>Name<input name="name" required maxLength={MAX_SLOT_NAME_LENGTH} /></label>
             <label>Capacity<input name="max" type="text" inputMode="numeric" pattern="[0-9]*" defaultValue="1" /></label>
             {/* Future: drag-and-drop ordering using @dnd-kit. */}
             <label>Display order<input className={styles.orderInput} name="position" type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={String(sortedSlots.length)} /><small>Slots are rendered left to right by order.</small></label>
@@ -254,7 +255,7 @@ export function TemplateVisualEditor({ guildId, templateId, manageable, template
           <Card className={`${styles.slotCardCompact} ${editingSlotId === slot.id ? styles.slotCardEditing : ""}`} key={slot.id}>
             {editingSlotId === slot.id ? (
               <form className={styles.compactForm} onSubmit={(event) => void saveSlot(slot.id, event)}>
-                <label>Name<input defaultValue={slot.name} name="name" required maxLength={80} /></label>
+                <label>Name<input defaultValue={slot.name} name="name" required maxLength={MAX_SLOT_NAME_LENGTH} /></label>
                 <label>Capacity<input defaultValue={String(slot.max)} name="max" type="text" inputMode="numeric" pattern="[0-9]*" /></label>
                 <label>Display order<input className={styles.orderInput} defaultValue={String(slot.position)} name="position" type="text" inputMode="numeric" pattern="[0-9]*" /><small>Slots are rendered left to right by order.</small></label>
                 <EmojiPicker guildId={guildId} defaultValue={slot.emoji} defaultSource={slot.emojiSource} />

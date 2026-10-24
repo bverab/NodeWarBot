@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { buildEventDateTime, calculateScheduledPublishAt, normalizeTimezoneInfo } from "@/lib/eventDateTime";
+import { MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE } from "../slotLimits";
 
 const timeSchema = z.string().regex(/^\d{1,2}:\d{2}$/).refine((value) => {
   const [hours, minutes] = value.split(":").map(Number);
@@ -48,7 +49,7 @@ export const createEventSchema = z.object({
   slots: z
     .array(
       z.object({
-        name: z.string().trim().min(1).max(80),
+        name: z.string().trim().min(1).max(MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE),
         max: z.coerce.number().int().min(1).max(100),
         position: z.coerce.number().int().min(0).max(999).optional(),
         emoji: z.string().trim().max(128).nullable().optional(),

@@ -5,6 +5,7 @@ import { calculateEventLifecycleDates, calculateScheduledPublishAt, normalizeTim
 import { fetchDiscordGuildMembers } from "@/lib/server/discordMembers";
 import { prisma } from "@/lib/server/prisma";
 import { InputError } from "./apiErrors";
+import { MAX_SLOT_NAME_LENGTH } from "../slotLimits";
 
 export type EventListItem = {
   id: string;
@@ -893,6 +894,15 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
 
       if (!template) {
         throw new InputError("Template not found for this guild and event type.");
+      }
+
+      // Templates saved before the 60 character limit may hold longer names. They are not cut silently (two of them could
+      // collapse into the same name): the template has to be fixed first.
+      const tooLongSlot = template.roleSlots.find((slot) => slot.name.length > MAX_SLOT_NAME_LENGTH);
+      if (tooLongSlot) {
+        throw new InputError(
+          `Template slot "${tooLongSlot.name.slice(0, 30)}..." is longer than ${MAX_SLOT_NAME_LENGTH} characters. Shorten it in the template before creating events from it.`
+        );
       }
 
       templateDefaults = {

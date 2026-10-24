@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getGuildTemplates } from "@/lib/server/dashboardData";
 import { z } from "zod";
 import { normalizeTimezoneInfo } from "@/lib/eventDateTime";
+import { MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE } from "@/lib/slotLimits";
 import { errorResponse } from "@/lib/server/apiErrors";
 import { createGuildTemplate } from "@/lib/server/dashboardData";
 import { getGuildRoles } from "@/lib/server/discordGuildConfig";
@@ -32,7 +33,7 @@ const createTemplateSchema = z.object({
   slots: z
     .array(
       z.object({
-        name: z.string().trim().min(1).max(80),
+        name: z.string().trim().min(1).max(MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE),
         max: z.coerce.number().int().min(1).max(100),
         position: z.coerce.number().int().min(0).max(999).optional(),
         emoji: z.string().trim().max(128).nullable().optional(),
