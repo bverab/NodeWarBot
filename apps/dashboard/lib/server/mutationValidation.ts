@@ -19,8 +19,54 @@ export const PUBLISHED_EVENT_LOCKED_FIELDS = [
   "messageId"
 ] as const;
 
+export const INVALID_BODY_ERROR = "Request body must be a JSON object.";
+export const MAX_REORDER_SLOTS = 100;
+
 export function getLockedPublishedEventPatchFields(body: Record<string, unknown>) {
   return PUBLISHED_EVENT_LOCKED_FIELDS.filter((field) => Object.prototype.hasOwnProperty.call(body, field));
+}
+
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// null when the body is not valid JSON or is not an object (null, array, string, number...).
+export async function readJsonObject(request: Request) {
+  const body: unknown = await request.json().catch(() => null);
+  return isPlainObject(body) ? body : null;
+}
+
+export function parseSlotReorder(value: unknown) {
+  const invalid = { error: "Invalid slot order payload." } as const;
+  if (!Array.isArray(value)) {
+    return invalid;
+  }
+  if (value.length > MAX_REORDER_SLOTS) {
+    return { error: `Too many slots (maximum ${MAX_REORDER_SLOTS}).` } as const;
+  }
+
+  const slots: Array<{ id: string; order: number }> = [];
+  for (const slot of value) {
+    if (!isPlainObject(slot)) {
+      return invalid;
+    }
+
+    const order = typeof slot.order === "number" ? slot.order : Number(slot.order);
+    if (typeof slot.id !== "string" || !slot.id || !Number.isFinite(order)) {
+      return invalid;
+    }
+
+    slots.push({ id: slot.id, order: Math.max(1, Math.trunc(order)) });
+  }
+
+  if (new Set(slots.map((slot) => slot.id)).size !== slots.length) {
+    return { error: "Duplicate slot IDs are not allowed." } as const;
+  }
+  if (new Set(slots.map((slot) => slot.order)).size !== slots.length) {
+    return { error: "Slot positions must be unique." } as const;
+  }
+
+  return { slots } as const;
 }
 
 export function parseOptionalDate(value: unknown, timezone?: string | null) {
@@ -120,6 +166,10 @@ export function normalizeTimeInput(value: unknown) {
 }
 
 export function parseEventPatch(body: Record<string, unknown>, options: { timezone?: string | null } = {}) {
+  if (!isPlainObject(body)) {
+    return { error: INVALID_BODY_ERROR } as const;
+  }
+
   const patch: EventMutationInput = {};
 
   const name = readString(body.name, 120);
@@ -217,6 +267,10 @@ export function parseEventPatch(body: Record<string, unknown>, options: { timezo
 }
 
 export function parseTemplatePatch(body: Record<string, unknown>) {
+  if (!isPlainObject(body)) {
+    return { error: INVALID_BODY_ERROR } as const;
+  }
+
   const patch: TemplateMutationInput = {};
 
   const name = readString(body.name, 120);
@@ -276,6 +330,10 @@ export function parseTemplatePatch(body: Record<string, unknown>) {
 }
 
 export function parseRoleSlotPatch(body: Record<string, unknown>, requireNameAndMax = false) {
+  if (!isPlainObject(body)) {
+    return { error: INVALID_BODY_ERROR } as const;
+  }
+
   const patch: RoleSlotMutationInput = {};
 
   const name = readString(body.name, 80);

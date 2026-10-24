@@ -43,7 +43,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const body = (await request.json()) as unknown;
+    const body: unknown = await request.json().catch(() => null);
     const parsed = createEventSchema.safeParse(body);
 
     if (!parsed.success) {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { errorResponse } from "@/lib/server/apiErrors";
 import { deleteGuildTemplateRoleSlot, updateGuildTemplateRoleSlot } from "@/lib/server/dashboardData";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
-import { parseRoleSlotPatch } from "@/lib/server/mutationValidation";
+import { INVALID_BODY_ERROR, parseRoleSlotPatch, readJsonObject } from "@/lib/server/mutationValidation";
 
 type RouteContext = {
   params: Promise<{ guildId: string; templateId: string; slotId: string }>;
@@ -17,7 +17,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const body = (await request.json()) as Record<string, unknown>;
+    const body = await readJsonObject(request);
+    if (!body) {
+      return NextResponse.json({ error: INVALID_BODY_ERROR }, { status: 400 });
+    }
     const result = parseRoleSlotPatch(body);
     if ("error" in result) {
       return NextResponse.json({ error: result.error }, { status: 400 });
