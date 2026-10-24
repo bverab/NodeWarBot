@@ -219,7 +219,9 @@ async function handleJoinRole(interaction) {
       };
     }
 
-    if (state.isClosed) {
+    // Salir siempre se permite (rama anterior); entrar exige inscripciones abiertas y antes de closesAt,
+    // porque el cierre automatico puede tardar hasta el siguiente tick del scheduler.
+    if (state.isClosed || (Number.isFinite(state.closesAt) && Date.now() >= state.closesAt)) {
       return { type: 'closed' };
     }
 
@@ -227,6 +229,19 @@ async function handleJoinRole(interaction) {
 
     if (selectedRole.users.length >= selectedRole.max) {
       const promotedUsers = [];
+
+      // Re-clic en un rol lleno estando ya en su waitlist: conserva la posicion.
+      const alreadyWaiting = state.waitlist.some(entry =>
+        entry.userId === participant.userId && entry.roleName === selectedRole.name
+      );
+      if (alreadyWaiting && !currentRole) {
+        return {
+          type: 'waitlist_exists',
+          roleName: selectedRole.name,
+          queueSize: state.waitlist.length,
+          promotedUsers
+        };
+      }
 
       if (currentRole && currentRole.name !== selectedRole.name) {
         const previousRoleName = currentRole.name;
@@ -382,7 +397,18 @@ async function refreshPublicEventMessage(interaction, event) {
 
   if (result.ok) return true;
 
-  throw new Error(`Failed to refresh public event message: ${result.errorMessage || result.status}`);
+  // El cambio ya esta persistido: un fallo al refrescar el mensaje no debe tapar el resultado al usuario.
+  logWarn('No se pudo refrescar el mensaje publico del evento', {
+    action: 'public_event_button_refresh',
+    guildId: interaction.guildId,
+    userId: interaction.user?.id,
+    eventId: event.id,
+    channelId: event.channelId,
+    messageId: event.messageId,
+    reason: result.errorMessage || result.status,
+    code: result.errorCode
+  });
+  return false;
 }
 
 async function deletePublicEventMessage(interaction, event) {

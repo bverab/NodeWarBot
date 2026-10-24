@@ -13,15 +13,22 @@ const templateService = require('../services/templateService');
 const pveService = require('../services/pveService');
 const {
   getDraftWar,
-  setDraftWar
+  setDraftWar,
+  clearDraftSession
 } = require('../utils/draftSessionStore');
 const scheduleFlow = require('./modal/scheduleFlow');
 const { EVENT_ADMIN_MODAL_ACTIONS } = require('./modal/eventAdminModalActions');
+const { isAdminExecutor } = require('../commands/eventadminShared');
+const { MIN_ROLE_SLOTS, MAX_ROLE_SLOTS } = require('../constants/eventLimits');
+const { hasDuplicateRoleName, isValidRoleSlots, validateNewRoles } = require('../utils/roleLimits');
 
 module.exports = async interaction => {
   try {
     const eventAdminModalHandler = EVENT_ADMIN_MODAL_ACTIONS[interaction.customId];
     if (eventAdminModalHandler) {
+      if (!isAdminExecutor(interaction)) {
+        return await safeRespond(interaction, 'Solo Admin puede gestionar eventos.');
+      }
       return await eventAdminModalHandler(interaction);
     }
 
@@ -193,6 +200,7 @@ async function handleWarCreation(interaction) {
     allowedUserIds: []
   };
 
+  clearDraftSession(interaction.user.id);
   setDraftWar(interaction.user.id, warData);
 
   await interaction.editReply({ content: '\u2705 Evento iniciado' });
@@ -327,18 +335,21 @@ async function handleAddRolesBulkModal(interaction) {
   }).value;
   const lines = rolesText.split('\n').map(l => l.trim()).filter(Boolean);
 
-  let added = 0;
+  const newRoles = [];
   for (const line of lines) {
     const role = parseRoleLine(line, interaction);
-    if (role) {
-      warData.roles.push(role);
-      added++;
-    }
+    if (role) newRoles.push(role);
   }
 
-  if (added === 0) {
+  if (newRoles.length === 0) {
     return await interaction.reply({ content: '\u274C Formato: `Nombre: slots` (ej: Dosa: 3)', flags: 64 });
   }
+
+  const validation = validateNewRoles(warData.roles, newRoles);
+  if (!validation.ok) {
+    return await interaction.reply({ content: `\u274C ${validation.message}`, flags: 64 });
+  }
+  warData.roles.push(...newRoles);
 
   await interaction.deferReply({ flags: 64 });
   await showRolesEditor(interaction, warData);
@@ -414,6 +425,9 @@ async function handlePanelEditNameModal(interaction) {
   if (hadMassMentions) {
     logInfo('Se neutralizo mention masiva en rename de rol', { userId: interaction.user?.id });
   }
+  if (hasDuplicateRoleName(selected.warData.roles, newName, selected.roleIndex)) {
+    return await interaction.reply({ content: `Ya existe un rol llamado **${newName}**.`, flags: 64 });
+  }
 
   selected.role.name = newName;
   await interaction.reply({ content: `Nombre actualizado: **${newName}**`, flags: 64 });
@@ -432,6 +446,9 @@ async function handlePanelEditSlotsModal(interaction) {
   const qty = Number.parseInt(raw, 10);
   if (!Number.isInteger(qty) || qty < 1) {
     return await interaction.reply({ content: 'Slots invalidos. Debe ser un numero mayor a 0.', flags: 64 });
+  }
+  if (!isValidRoleSlots(qty)) {
+    return await interaction.reply({ content: `Slots invalidos. Deben estar entre ${MIN_ROLE_SLOTS} y ${MAX_ROLE_SLOTS}.`, flags: 64 });
   }
 
   if (selected.role.users.length > qty) {

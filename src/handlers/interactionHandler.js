@@ -17,7 +17,10 @@ const {
 const { ROLE_PANEL_ACTIONS } = require('./interaction/rolePanelActions');
 const { EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/eventAdminPanelActions');
 const { PVE_EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/pveEventAdminPanelActions');
+const { isAdminExecutor } = require('../commands/eventadminShared');
+const { safeEphemeralReply } = require('../utils/interactionReply');
 const { consumeRateLimit, buildInteractionRateKey } = require('../utils/rateLimiter');
+const { buildModalTitle, clampInputValue } = require('../utils/modalLimits');
 const { logError } = require('../utils/appLogger');
 
 module.exports = async interaction => {
@@ -60,15 +63,17 @@ module.exports = async interaction => {
       return await rolePanelHandler(interaction);
     }
 
-    const eventPanelHandler = EVENT_ADMIN_PANEL_ACTIONS[customId];
-    if (eventPanelHandler) {
-      return await eventPanelHandler(interaction);
+    // Paneles de administracion de eventos: el permiso se comprueba en cada accion, no solo al abrir el panel.
+    const adminPanelHandler = EVENT_ADMIN_PANEL_ACTIONS[customId] || PVE_EVENT_ADMIN_PANEL_ACTIONS[customId];
+    if (adminPanelHandler) {
+      if (!isAdminExecutor(interaction)) {
+        return await safeEphemeralReply(interaction, 'Solo Admin puede gestionar eventos.');
+      }
+      return await adminPanelHandler(interaction);
     }
 
-    const pveEventPanelHandler = PVE_EVENT_ADMIN_PANEL_ACTIONS[customId];
-    if (pveEventPanelHandler) {
-      return await pveEventPanelHandler(interaction);
-    }
+    // customId sin handler (p. ej. un boton de un mensaje antiguo): se responde en vez de dejar la interaccion colgada.
+    return await safeEphemeralReply(interaction, 'Accion no disponible.');
   } catch (error) {
     logError('Error en interactionHandler', error, {
       action: 'panel_interaction',
@@ -139,7 +144,7 @@ async function handleConfigurePveSlots(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('configure_pve_slots_modal')
-    .setTitle(`Configurar horarios PvE: ${warData.name}`);
+    .setTitle(buildModalTitle('Configurar horarios PvE', warData.name));
 
   const timesInput = new TextInputBuilder()
     .setCustomId('pve_slots_times_input')
@@ -153,7 +158,7 @@ async function handleConfigurePveSlots(interaction) {
     ? warData.timeSlots.map(slot => slot.time).filter(Boolean).join(';')
     : '';
   if (currentTimes) {
-    timesInput.setValue(currentTimes.slice(0, 300));
+    timesInput.setValue(clampInputValue(currentTimes, 300));
   }
 
   const capacityInput = new TextInputBuilder()
@@ -163,7 +168,7 @@ async function handleConfigurePveSlots(interaction) {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(3)
-    .setValue(String(Number.isInteger(warData.slotCapacity) ? warData.slotCapacity : 5));
+    .setValue(clampInputValue(Number.isInteger(warData.slotCapacity) ? warData.slotCapacity : 5, 3));
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(timesInput),
@@ -339,7 +344,7 @@ async function handleConfigureRecap(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('schedule_recap_modal')
-    .setTitle(`Configurar hilo final: ${warData.name}`);
+    .setTitle(buildModalTitle('Configurar hilo final', warData.name));
 
   const minutesInput = new TextInputBuilder()
     .setCustomId('recap_minutes_before_expire_input')
@@ -348,7 +353,7 @@ async function handleConfigureRecap(interaction) {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(4)
-    .setValue(String(Number.isFinite(warData.recap?.minutesBeforeExpire) ? warData.recap.minutesBeforeExpire : 0));
+    .setValue(clampInputValue(Number.isFinite(warData.recap?.minutesBeforeExpire) ? warData.recap.minutesBeforeExpire : 0, 4));
 
   const textInput = new TextInputBuilder()
     .setCustomId('recap_message_text_input')
@@ -359,7 +364,7 @@ async function handleConfigureRecap(interaction) {
     .setMaxLength(250);
 
   if (warData.recap?.messageText) {
-    textInput.setValue(String(warData.recap.messageText).slice(0, 250));
+    textInput.setValue(clampInputValue(warData.recap.messageText, 250));
   }
 
   modal.addComponents(

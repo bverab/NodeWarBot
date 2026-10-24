@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const {
   loadWars,
   getLatestWarByChannelId,
@@ -13,14 +13,16 @@ const {
   pickWaitlistForRole,
   getFakeUserIdFromName
 } = require('../utils/warState');
-const { refreshWarMessage } = require('./eventadminShared');
+const { refreshWarMessage, isAdminExecutor } = require('./eventadminShared');
 const { notifyPromotion } = require('../utils/promotionNotifier');
+const { replyOrEdit } = require('../utils/interactionReply');
 
 // Comando de test local para simular usuarios y validar waitlist/promociones.
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('fakeuser')
     .setDescription('Herramientas de testing para waitlist y roles')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand(subcommand =>
       subcommand
         .setName('add')
@@ -54,7 +56,12 @@ module.exports = {
   async execute(interaction) {
     try {
       if (interaction.isAutocomplete()) {
+        if (!isAdminExecutor(interaction)) return await interaction.respond([]);
         return await handleAutocomplete(interaction);
+      }
+
+      if (!isAdminExecutor(interaction)) {
+        return await interaction.reply({ content: 'Solo Admin puede usar este comando.', flags: 64 });
       }
 
       const subcommand = interaction.options.getSubcommand();
@@ -67,9 +74,7 @@ module.exports = {
       }
     } catch (error) {
       console.error('Error en fakeuser:', error);
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: 'Error ejecutando comando', flags: 64 });
-      }
+      await replyOrEdit(interaction, 'Error ejecutando comando');
     }
   }
 };

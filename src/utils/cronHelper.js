@@ -2,6 +2,7 @@
  * Validaciones y helpers para scheduling
  */
 const DEFAULT_TIMEZONE = 'America/Bogota';
+const TIMEZONE_CACHE_MAX_ENTRIES = 200;
 const timezoneCache = new Map();
 const timezoneAliases = {
   'america/brasil': 'America/Sao_Paulo',
@@ -71,7 +72,7 @@ function shouldExecute(dayOfWeek, time, currentDate = new Date(), timezone = 'Am
 function getZonedDateParts(date, timezone) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
-    hour12: false,
+    hourCycle: 'h23',
     weekday: 'short',
     hour: '2-digit',
     minute: '2-digit'
@@ -109,8 +110,7 @@ function normalizeTimeZoneInfo(timezone) {
 
   const cacheKey = raw.toLowerCase();
   if (timezoneCache.has(cacheKey)) {
-    const cached = timezoneCache.get(cacheKey);
-    return { timezone: cached, source: cached === DEFAULT_TIMEZONE ? 'fallback' : 'cache' };
+    return { ...timezoneCache.get(cacheKey) };
   }
 
   const hasAlias = Boolean(timezoneAliases[cacheKey]);
@@ -131,13 +131,19 @@ function normalizeTimeZoneInfo(timezone) {
 
   for (const candidate of candidates) {
     if (isValidIanaTimezone(candidate)) {
-      timezoneCache.set(cacheKey, candidate);
-      return { timezone: candidate, source: hasAlias ? 'alias' : 'exact' };
+      return cacheTimezoneInfo(cacheKey, { timezone: candidate, source: hasAlias ? 'alias' : 'exact' });
     }
   }
 
-  timezoneCache.set(cacheKey, DEFAULT_TIMEZONE);
-  return { timezone: DEFAULT_TIMEZONE, source: 'fallback' };
+  return cacheTimezoneInfo(cacheKey, { timezone: DEFAULT_TIMEZONE, source: 'fallback' });
+}
+
+function cacheTimezoneInfo(cacheKey, info) {
+  if (timezoneCache.size >= TIMEZONE_CACHE_MAX_ENTRIES) {
+    timezoneCache.delete(timezoneCache.keys().next().value);
+  }
+  timezoneCache.set(cacheKey, info);
+  return { ...info };
 }
 
 function isValidIanaTimezone(timezone) {

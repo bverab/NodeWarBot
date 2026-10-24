@@ -8,7 +8,10 @@ const {
 const { refreshGarmothLink } = require('../services/garmothProfileService');
 const { validateAndNormalizeGarmothProfileUrl } = require('../utils/garmothUrlHelper');
 const { resolveClassIconFile } = require('../utils/classIconResolver');
-const { safeEphemeralReply } = require('../utils/interactionReply');
+const { safeEphemeralReply, replyOrEdit } = require('../utils/interactionReply');
+const { consumeRateLimit } = require('../utils/rateLimiter');
+
+const SYNC_COOLDOWN_MS = 60 * 1000;
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -65,7 +68,7 @@ module.exports = {
       }
     } catch (error) {
       console.error('Error en garmoth:', error);
-      await safeEphemeralReply(interaction, 'Error procesando comando de Garmoth.');
+      await replyOrEdit(interaction, 'Error procesando comando de Garmoth.');
     }
   }
 };
@@ -78,6 +81,11 @@ async function handleLink(interaction) {
       interaction,
       `URL invalida: ${validation.reason}. Ejemplo esperado: https://garmoth.com/character/...`
     );
+  }
+
+  const cooldownMessage = consumeSyncCooldown(interaction);
+  if (cooldownMessage) {
+    return await safeEphemeralReply(interaction, cooldownMessage);
   }
 
   const saved = await upsertCharacterLink({
@@ -158,6 +166,11 @@ async function handleRefresh(interaction) {
       interaction,
       'No tienes perfil de Garmoth vinculado en este servidor. Usa `/garmoth link <url>`. '
     );
+  }
+
+  const cooldownMessage = consumeSyncCooldown(interaction);
+  if (cooldownMessage) {
+    return await safeEphemeralReply(interaction, cooldownMessage);
   }
 
   try {
@@ -253,6 +266,16 @@ function normalizeGearScore(value) {
 function normalizeProfileUrl(value) {
   const normalized = String(value || '').trim();
   return normalized || '';
+}
+
+// `link` y `refresh` consultan Garmoth: un solo intento por usuario cada SYNC_COOLDOWN_MS.
+function consumeSyncCooldown(interaction) {
+  const rate = consumeRateLimit(`garmoth_sync:${interaction.user.id}`, {
+    windowMs: SYNC_COOLDOWN_MS,
+    maxHits: 1
+  });
+  if (rate.allowed) return null;
+  return `Espera ${Math.ceil(rate.retryAfterMs / 1000)}s antes de volver a sincronizar tu perfil de Garmoth.`;
 }
 
 async function runRefreshAndPersist(interaction, link) {

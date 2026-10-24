@@ -15,6 +15,8 @@ const {
 } = require('../../utils/eventAdminUi');
 const { refreshWarMessage } = require('../../commands/eventadminShared');
 const { getSelectedEventContext, setSelectedEventContext } = require('../../utils/eventAdminContextStore');
+const { buildModalTitle, clampInputValue } = require('../../utils/modalLimits');
+const { respondUpdate, respondError, withDeferredUpdate } = require('../../utils/panelResponses');
 
 function getSelectedPveContext(interaction) {
   const context = getSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId);
@@ -26,7 +28,7 @@ function getSelectedPveContext(interaction) {
 }
 
 async function updateWithContext(interaction, payload, eventId, contextPatch = {}) {
-  await interaction.update(payload);
+  await respondUpdate(interaction, payload);
   setSelectedEventContext(interaction.user.id, interaction.guildId, interaction.channelId, eventId, {
     panelMessageId: interaction.message?.id || null,
     ...contextPatch
@@ -41,7 +43,7 @@ async function refreshIfPublished(interaction, war) {
 
 async function handlePveEditAccess(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   await updateWithContext(
     interaction,
@@ -53,10 +55,10 @@ async function handlePveEditAccess(interaction) {
 
 async function handlePveToggleClose(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const result = await eventManagementService.toggleEventClosed(context.war.id, { channelId: interaction.channelId });
-  if (!result.ok) return await interaction.update({ content: 'El evento seleccionado ya no existe.', embeds: [], components: [] });
+  if (!result.ok) return await respondUpdate(interaction, { content: 'El evento seleccionado ya no existe.', embeds: [], components: [] });
   const updated = result.event;
   await refreshIfPublished(interaction, updated);
 
@@ -78,7 +80,7 @@ async function handlePveToggleClose(interaction) {
 async function handlePveAccessModeSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const mode = interaction.values?.[0] === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
   const result = await eventManagementService.updatePveAllowedUsers(
@@ -87,7 +89,7 @@ async function handlePveAccessModeSelect(interaction) {
     context.war.allowedUserIds || [],
     { channelId: interaction.channelId }
   );
-  if (!result.ok) return await interaction.update({ content: 'No se pudo actualizar acceso PvE.', embeds: [], components: [] });
+  if (!result.ok) return await respondUpdate(interaction, { content: 'No se pudo actualizar acceso PvE.', embeds: [], components: [] });
   const updated = result.event;
   await refreshIfPublished(interaction, updated);
 
@@ -102,7 +104,7 @@ async function handlePveAccessModeSelect(interaction) {
 async function handlePveAccessUsersSelect(interaction) {
   if (!interaction.isUserSelectMenu()) return;
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const userIds = Array.from(new Set((interaction.values || []).map(String).filter(Boolean)));
   const result = await eventManagementService.updatePveAllowedUsers(
@@ -111,7 +113,7 @@ async function handlePveAccessUsersSelect(interaction) {
     userIds,
     { channelId: interaction.channelId }
   );
-  if (!result.ok) return await interaction.update({ content: 'No se pudo actualizar usuarios permitidos PvE.', embeds: [], components: [] });
+  if (!result.ok) return await respondUpdate(interaction, { content: 'No se pudo actualizar usuarios permitidos PvE.', embeds: [], components: [] });
   const updated = result.event;
   await refreshIfPublished(interaction, updated);
 
@@ -125,7 +127,7 @@ async function handlePveAccessUsersSelect(interaction) {
 
 async function handlePveAccessBack(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   await updateWithContext(
     interaction,
@@ -148,14 +150,14 @@ async function renderSlotsEditor(interaction, war, context, notice = '') {
 
 async function handlePveEditSlots(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   await renderSlotsEditor(interaction, context.war, context.context);
 }
 
 async function handlePveSlotsSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const selectedOptionId = String(interaction.values?.[0] || '').trim();
   const view = await pveService.getEventPveView(context.war);
@@ -171,7 +173,7 @@ async function handlePveSlotAdd(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await interaction.reply({ content: context.message, flags: 64 });
 
-  const modal = new ModalBuilder().setCustomId('panel_pve_slot_add_modal').setTitle(`Agregar horario: ${trimTitle(context.war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_pve_slot_add_modal').setTitle(buildModalTitle('Agregar horario', context.war.name));
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_pve_slot_time')
     .setLabel('Hora (HH:mm)')
@@ -204,21 +206,21 @@ async function handlePveSlotEdit(interaction) {
   const option = view.options.find(entry => String(entry.id) === String(optionId));
   if (!option) return await interaction.reply({ content: 'El horario seleccionado ya no existe.', flags: 64 });
 
-  const modal = new ModalBuilder().setCustomId('panel_pve_slot_edit_modal').setTitle(`Editar horario: ${trimTitle(context.war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_pve_slot_edit_modal').setTitle(buildModalTitle('Editar horario', context.war.name));
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_pve_slot_time')
     .setLabel('Hora (HH:mm)')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(5)
-    .setValue(String(option.time || '').slice(0, 5));
+    .setValue(clampInputValue(option.time || '', 5));
   const capInput = new TextInputBuilder()
     .setCustomId('panel_pve_slot_capacity')
     .setLabel('Cupo (1-500)')
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(3)
-    .setValue(String(option.capacity || 1));
+    .setValue(clampInputValue(option.capacity || 1, 3));
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(timeInput),
@@ -229,10 +231,10 @@ async function handlePveSlotEdit(interaction) {
 
 async function handlePveSlotDelete(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const optionId = context.context.pendingPveOptionId;
-  if (!optionId) return await interaction.reply({ content: 'Selecciona un horario primero.', flags: 64 });
+  if (!optionId) return await respondError(interaction, 'Selecciona un horario primero.');
 
   const result = await eventManagementService.deletePveSlot(context.war.id, optionId, { channelId: interaction.channelId });
   const updated = result.event || context.war;
@@ -242,10 +244,10 @@ async function handlePveSlotDelete(interaction) {
 
 async function handlePveSlotMove(interaction, direction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const optionId = context.context.pendingPveOptionId;
-  if (!optionId) return await interaction.reply({ content: 'Selecciona un horario primero.', flags: 64 });
+  if (!optionId) return await respondError(interaction, 'Selecciona un horario primero.');
 
   const result = await eventManagementService.movePveSlot(context.war.id, optionId, direction, { channelId: interaction.channelId });
   const updated = result.event || context.war;
@@ -255,7 +257,7 @@ async function handlePveSlotMove(interaction, direction) {
 
 async function handlePveSlotsBack(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   await updateWithContext(
     interaction,
@@ -282,14 +284,14 @@ async function renderEnrollmentsEditor(interaction, war, context, notice = '') {
 
 async function handlePveManageEnrollments(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
   await renderEnrollmentsEditor(interaction, context.war, context.context);
 }
 
 async function handlePveEnrollSlotSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const selectedOptionId = String(interaction.values?.[0] || '').trim();
   const view = await pveService.getEventPveView(context.war);
@@ -304,7 +306,7 @@ async function handlePveEnrollSlotSelect(interaction) {
 async function handlePveEnrollUserSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const selectedEnrollmentKey = String(interaction.values?.[0] || '').trim();
   const view = await pveService.getEventPveView(context.war);
@@ -329,12 +331,12 @@ function parseEnrollmentKey(value) {
 
 async function handlePveEnrollRemove(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const optionId = context.context.pendingPveOptionId;
   const parsed = parseEnrollmentKey(context.context.pendingPveEnrollmentKey);
   if (!optionId || !parsed) {
-    return await interaction.reply({ content: 'Selecciona un inscrito/filler primero.', flags: 64 });
+    return await respondError(interaction, 'Selecciona un inscrito/filler primero.');
   }
 
   const result = await eventManagementService.removePveEnrollment(context.war.id, optionId, parsed.userId, { channelId: interaction.channelId });
@@ -345,12 +347,12 @@ async function handlePveEnrollRemove(interaction) {
 
 async function handlePveEnrollPromote(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   const optionId = context.context.pendingPveOptionId;
   const parsed = parseEnrollmentKey(context.context.pendingPveEnrollmentKey);
   if (!optionId || !parsed) {
-    return await interaction.reply({ content: 'Selecciona un filler primero.', flags: 64 });
+    return await respondError(interaction, 'Selecciona un filler primero.');
   }
 
   const result = await eventManagementService.promotePveFiller(context.war.id, optionId, parsed.userId, { channelId: interaction.channelId });
@@ -368,7 +370,7 @@ async function handlePveEnrollMove(interaction) {
   const optionId = context.context.pendingPveOptionId;
   if (!optionId || !parsed) return await interaction.reply({ content: 'Selecciona un inscrito/filler primero.', flags: 64 });
 
-  const modal = new ModalBuilder().setCustomId('panel_pve_enroll_move_modal').setTitle(`Mover inscrito: ${trimTitle(context.war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_pve_enroll_move_modal').setTitle(buildModalTitle('Mover inscrito', context.war.name));
   const timeInput = new TextInputBuilder()
     .setCustomId('panel_pve_enroll_target_time')
     .setLabel('Horario destino (HH:mm)')
@@ -384,7 +386,7 @@ async function handlePveEnrollAdd(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await interaction.reply({ content: context.message, flags: 64 });
 
-  const modal = new ModalBuilder().setCustomId('panel_pve_enroll_add_modal').setTitle(`Agregar inscrito: ${trimTitle(context.war.name)}`);
+  const modal = new ModalBuilder().setCustomId('panel_pve_enroll_add_modal').setTitle(buildModalTitle('Agregar inscrito', context.war.name));
   const userInput = new TextInputBuilder()
     .setCustomId('panel_pve_enroll_add_user_id')
     .setLabel('Discord userId')
@@ -422,7 +424,7 @@ async function handlePveEnrollAdd(interaction) {
 
 async function handlePveEnrollmentsBack(interaction) {
   const context = getSelectedPveContext(interaction);
-  if (!context.ok) return await interaction.update({ content: context.message, embeds: [], components: [] });
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
   await updateWithContext(
     interaction,
@@ -432,30 +434,25 @@ async function handlePveEnrollmentsBack(interaction) {
   );
 }
 
-function trimTitle(text) {
-  const value = String(text || '').trim();
-  return value.length <= 45 ? value : `${value.slice(0, 42)}...`;
-}
-
 const PVE_EVENT_ADMIN_PANEL_ACTIONS = {
-  panel_pve_toggle_close: handlePveToggleClose,
+  panel_pve_toggle_close: withDeferredUpdate(handlePveToggleClose),
   panel_pve_edit_slots: handlePveEditSlots,
   panel_pve_slots_select: handlePveSlotsSelect,
   panel_pve_slot_add: handlePveSlotAdd,
   panel_pve_slot_edit: handlePveSlotEdit,
-  panel_pve_slot_delete: handlePveSlotDelete,
-  panel_pve_slot_up: async interaction => handlePveSlotMove(interaction, 'up'),
-  panel_pve_slot_down: async interaction => handlePveSlotMove(interaction, 'down'),
+  panel_pve_slot_delete: withDeferredUpdate(handlePveSlotDelete),
+  panel_pve_slot_up: withDeferredUpdate(async interaction => handlePveSlotMove(interaction, 'up')),
+  panel_pve_slot_down: withDeferredUpdate(async interaction => handlePveSlotMove(interaction, 'down')),
   panel_pve_slots_back: handlePveSlotsBack,
   panel_pve_edit_access: handlePveEditAccess,
-  panel_pve_access_mode_select: handlePveAccessModeSelect,
-  panel_pve_access_users_select: handlePveAccessUsersSelect,
+  panel_pve_access_mode_select: withDeferredUpdate(handlePveAccessModeSelect),
+  panel_pve_access_users_select: withDeferredUpdate(handlePveAccessUsersSelect),
   panel_pve_access_back: handlePveAccessBack,
   panel_pve_manage_enrollments: handlePveManageEnrollments,
   panel_pve_enroll_slot_select: handlePveEnrollSlotSelect,
   panel_pve_enroll_user_select: handlePveEnrollUserSelect,
-  panel_pve_enroll_remove: handlePveEnrollRemove,
-  panel_pve_enroll_promote: handlePveEnrollPromote,
+  panel_pve_enroll_remove: withDeferredUpdate(handlePveEnrollRemove),
+  panel_pve_enroll_promote: withDeferredUpdate(handlePveEnrollPromote),
   panel_pve_enroll_move: handlePveEnrollMove,
   panel_pve_enroll_add: handlePveEnrollAdd,
   panel_pve_enrollments_back: handlePveEnrollmentsBack

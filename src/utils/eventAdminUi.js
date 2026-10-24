@@ -913,7 +913,7 @@ function buildPanelDescription(war, scope) {
 
 function truncate(text, max) {
   const value = neutralizeMassMentions(String(text || ''));
-  return value.length <= max ? value : `${value.slice(0, max - 1)}...`;
+  return value.length <= max ? value : `${value.slice(0, max - 3)}...`;
 }
 
 module.exports = {

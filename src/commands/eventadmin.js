@@ -16,10 +16,13 @@ const { notifyPromotion } = require('../utils/promotionNotifier');
 const { parseEmojiInput } = require('../utils/emojiHelper');
 const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../utils/textSafety');
 const { logError, logWarn } = require('../utils/appLogger');
+const { replyOrEdit } = require('../utils/interactionReply');
+const { MAX_ROLES } = require('../constants/eventLimits');
 const {
   resolveTargetWar,
   refreshWarMessage,
   promoteFromWaitlist,
+  promoteAllFromWaitlist,
   isAdminExecutor
 } = require('./eventadminShared');
 
@@ -279,9 +282,7 @@ module.exports = {
       if (subcommand === 'recap') return await handleRecapConfig(interaction);
     } catch (error) {
       logError('Error en eventadmin', error, { userId: interaction.user?.id, command: 'eventadmin' });
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: 'Error ejecutando eventadmin', flags: 64 });
-      }
+      await replyOrEdit(interaction, 'Error ejecutando eventadmin');
     }
   }
 };
@@ -533,6 +534,9 @@ async function handleRoleAdd(interaction) {
   const slots = interaction.options.getInteger('slots', true);
   const iconRaw = getSanitizedOption(interaction, 'icono', { maxLength: 80, allowEmpty: true }) || '';
 
+  if (war.roles.length >= MAX_ROLES) {
+    return await interaction.editReply({ content: `Un evento admite como maximo ${MAX_ROLES} roles.` });
+  }
   if (war.roles.some(role => role.name.toLowerCase() === roleName.toLowerCase())) {
     return await interaction.editReply({ content: `Ya existe un rol llamado **${roleName}**.` });
   }
@@ -612,9 +616,14 @@ async function handleRoleSlots(interaction) {
   }
 
   role.max = slots;
+  const promotedUsers = promoteAllFromWaitlist(war, role.name);
   const updatedWar = await updateWar(war);
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Slots actualizados para **${roleName}**: ${slots}` });
+
+  for (const promotedUser of promotedUsers) {
+    await notifyPromotion(interaction, updatedWar, promotedUser);
+  }
 }
 
 async function handleRoleIcon(interaction) {

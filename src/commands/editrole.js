@@ -3,6 +3,8 @@ const { parseEmojiInput } = require('../utils/emojiHelper');
 const { getDraftWar: getDraftWarFromStore } = require('../utils/draftSessionStore');
 const { sanitizeUserInput, safeMessageContent } = require('../utils/textSafety');
 const { logError, logWarn } = require('../utils/appLogger');
+const { MIN_ROLE_SLOTS, MAX_ROLE_SLOTS } = require('../constants/eventLimits');
+const { hasDuplicateRoleName, isValidRoleSlots } = require('../utils/roleLimits');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -40,9 +42,10 @@ module.exports = {
         .addIntegerOption(option =>
           option
             .setName('cantidad')
-            .setDescription('Slots (mayor a 0)')
+            .setDescription('Slots (1-999)')
             .setRequired(true)
-            .setMinValue(1)
+            .setMinValue(MIN_ROLE_SLOTS)
+            .setMaxValue(MAX_ROLE_SLOTS)
         )
     )
     .addSubcommand(subcommand =>
@@ -121,6 +124,9 @@ module.exports = {
         if (newNameInput.hadMassMentions) {
           logWarn('Mention masiva neutralizada en /editrole rename', { userId: interaction.user?.id });
         }
+        if (hasDuplicateRoleName(warData.roles, newName, roleContext.index)) {
+          return await interaction.editReply({ content: `Ya existe un rol llamado **${newName}**.` });
+        }
 
         roleContext.role.name = newName;
         return await interaction.editReply({ content: `Nombre actualizado: **${newName}**` });
@@ -128,6 +134,9 @@ module.exports = {
 
       if (subcommand === 'slots') {
         const qty = interaction.options.getInteger('cantidad', true);
+        if (!isValidRoleSlots(qty)) {
+          return await interaction.editReply({ content: `Slots invalidos. Deben estar entre ${MIN_ROLE_SLOTS} y ${MAX_ROLE_SLOTS}.` });
+        }
         if (roleContext.role.users.length > qty) {
           return await interaction.editReply({
             content: `No puedes bajar a ${qty} porque hay ${roleContext.role.users.length} inscritos en ese rol.`

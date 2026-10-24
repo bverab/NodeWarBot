@@ -5,8 +5,10 @@ const eventManagementService = require('../../services/eventManagementService');
 const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../../utils/textSafety');
 const { logWarn } = require('../../utils/appLogger');
 const { getSelectedEventContext, setSelectedEventContext } = require('../../utils/eventAdminContextStore');
-const { refreshWarMessage } = require('../../commands/eventadminShared');
+const { refreshWarMessage, promoteAllFromWaitlist } = require('../../commands/eventadminShared');
+const { notifyPromotion } = require('../../utils/promotionNotifier');
 const { isValidTime } = require('../../utils/cronHelper');
+const { MAX_ROLES } = require('../../constants/eventLimits');
 const {
   applyLifecycleToWar,
   deriveLifecycleForExistingEvent,
@@ -55,6 +57,9 @@ async function handleEventRoleAddModal(interaction) {
   }
   if (!Number.isInteger(slots) || slots < 1 || slots > 999) {
     return await safeModalReply(interaction, { content: 'Slots invalidos. Deben estar entre 1 y 999.' });
+  }
+  if (context.war.roles.length >= MAX_ROLES) {
+    return await safeModalReply(interaction, { content: `Un evento admite como maximo ${MAX_ROLES} roles.` });
   }
   if (context.war.roles.some(role => String(role.name).toLowerCase() === name.toLowerCase())) {
     return await safeModalReply(interaction, { content: `Ya existe un rol llamado **${name}**.` });
@@ -135,9 +140,13 @@ async function handleEventRoleSlotsModal(interaction) {
   }
 
   context.role.max = slots;
+  const promotedUsers = promoteAllFromWaitlist(context.war, context.role.name);
   const updated = await updateWar(context.war);
   if (updated.messageId) await refreshWarMessage(interaction, updated);
   await replyWithRolesEditor(interaction, updated, context.roleIndex, `Slots actualizados para **${context.role.name}**: ${slots}`);
+  for (const promotedUser of promotedUsers) {
+    await notifyPromotion(interaction, updated, promotedUser);
+  }
 }
 
 async function handleEventRoleIconModal(interaction) {
@@ -224,6 +233,9 @@ async function handleEventEditCloseModal(interaction) {
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
+
+  // Primero se calcula y valida cada ocurrencia; solo si todas son validas se guarda alguna.
+  const plans = [];
   for (const war of targets) {
     const lifecycle = deriveLifecycleForExistingEvent({
       event: war,
@@ -234,7 +246,10 @@ async function handleEventEditCloseModal(interaction) {
     });
     const validation = validateLifecycleForEdit(war, lifecycle, { allowPastPublish: true });
     if (!validation.ok) return await safeModalReply(interaction, { content: validation.message });
+    plans.push({ war, lifecycle });
+  }
 
+  for (const { war, lifecycle } of plans) {
     const updated = await updateWar(applyLifecycleToWar(war, lifecycle));
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
@@ -337,22 +352,28 @@ async function handleEventEditScheduleModal(interaction) {
 
   const targets = getScopeTargets(context.war, context.context.scope, interaction.channelId);
   const targetIds = targets.map(war => war.id);
+
+  // Primero se calcula y valida cada ocurrencia (sin mutarlas); solo si todas son validas se guarda alguna.
+  const plans = [];
   for (const war of targets) {
-    war.time = time;
-    war.dayOfWeek = day;
-    if (!war.schedule) {
-      war.schedule = { enabled: false, mode: 'recurring' };
-    }
     const lifecycle = deriveLifecycleForScheduledEvent({
-      dayOfWeek: war.dayOfWeek,
-      publishTime: war.time,
+      dayOfWeek: day,
+      publishTime: time,
       signupCloseTime,
       eventEndTime,
       timezone: war.timezone
     });
     const validation = validateLifecycleForEdit(war, lifecycle);
     if (!validation.ok) return await safeModalReply(interaction, { content: validation.message });
+    plans.push({ war, lifecycle });
+  }
 
+  for (const { war, lifecycle } of plans) {
+    war.time = time;
+    war.dayOfWeek = day;
+    if (!war.schedule) {
+      war.schedule = { enabled: false, mode: 'recurring' };
+    }
     const updated = await updateWar(applyLifecycleToWar(war, lifecycle));
     if (updated.messageId) await refreshWarMessage(interaction, updated);
   }
