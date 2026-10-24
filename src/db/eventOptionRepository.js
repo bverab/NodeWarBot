@@ -102,6 +102,10 @@ async function joinEventOption({ eventId, optionId, userId, displayName, isFake 
     const event = await tx.event.findUnique({ where: { id: eventIdValue } });
     if (!event) return { ok: false, reason: 'event_missing' };
     if (event.isClosed) return { ok: false, reason: 'closed' };
+    // Entre closesAt y el tick del scheduler el evento aun no esta marcado como cerrado.
+    if (event.closesAt instanceof Date && event.closesAt.getTime() <= Date.now()) {
+      return { ok: false, reason: 'closed' };
+    }
 
     const option = await tx.eventOption.findUnique({ where: { id: optionIdValue } });
     if (!option || option.eventId !== eventIdValue) {
