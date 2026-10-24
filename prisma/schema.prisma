@@ -57,8 +57,8 @@ model Event {
   fillers                 EventFillerEntry[]
 
   @@index([channelId])
-  @@index([messageId])
   @@index([groupId])
+  @@index([guildId, eventType])
   @@index([createdAt])
   @@index([channelId, createdAt])
   @@index([autoPublishEnabled, scheduledPublishAt])
@@ -145,7 +145,6 @@ model EventRoleSlot {
 
   @@unique([eventId, name])
   @@unique([eventId, position])
-  @@index([eventId, position])
 }
 
 model EventParticipant {
@@ -161,7 +160,6 @@ model EventParticipant {
 
   @@unique([roleSlotId, userId])
   @@unique([eventId, userId])
-  @@index([eventId])
   @@index([userId])
 }
 
@@ -188,7 +186,6 @@ model EventWaitlistEntry {
 
   @@unique([eventId, userId])
   @@unique([eventId, position])
-  @@index([eventId, position])
 }
 
 model EventNotifyTarget {
@@ -241,7 +238,6 @@ model GarmothProfile {
 
   @@unique([guildId, discordUserId])
   @@index([discordUserId])
-  @@index([guildId])
 }
 
 model EventTemplate {
@@ -281,7 +277,6 @@ model EventTemplateRoleSlot {
 
   @@unique([templateId, name])
   @@unique([templateId, position])
-  @@index([templateId, position])
 }
 
 model EventTemplateRolePermission {
