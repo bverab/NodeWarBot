@@ -145,6 +145,16 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
       messageId: normalizedWar.messageId,
       reason: updateResult.errorMessage || updateResult.status
     });
+
+    // Solo se republica si el mensaje ya no existe; con otros errores se evita duplicarlo.
+    if (updateResult.status !== 'missing_message') {
+      return {
+        ok: false,
+        status: updateResult.status,
+        reason: updateResult.errorMessage || updateResult.status,
+        errorCode: updateResult.errorCode
+      };
+    }
   }
 
   if (mustRepublish && normalizedWar.messageId) {
