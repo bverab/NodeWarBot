@@ -280,12 +280,22 @@ Estos puntos cambian reglas del producto o requieren información que no está e
     (b) publicar con retraso dentro de la ventana hasta el cierre, relajando la regla para eventos que
     nunca se publicaron; (c) lo anterior y ajustar los tests que crean el evento en el mismo minuto.
 
+14. **Eventos con cierre = fin** (NEW-2): con "Close before end" en 0 (el valor por defecto), el cierre
+    coincide con el fin y el cálculo del ciclo interpreta el fin como del día siguiente, así que el
+    mensaje se borra 24 h después del cierre. ¿Debe ser válido cerrar justo al terminar (y entonces
+    terminar ese mismo día), o hay que exigir un margen mínimo? Hoy `validateFutureLifecycle` lo
+    rechaza para `/event publish`.
+
 ### Hallazgos nuevos durante la implementación
 
 - **NEW-1 [Alto]** · Los eventos creados con `/event create` se publican con cierre y fin a la hora del
   día en que se crearon (no a la del evento). 🔍 leído. `modalHandler.js:183`,
   `scheduleFlow.js:324-325`, `schedulerService.js` (`executeWarPublication`). Fase 4, ítem 4.0.
 - **Tests dependientes de la hora** · 5 tests solo pasan de ~19:00 a ~01:00 (Chile). Ítem 1.12.
+- **NEW-2 [Medio]** · Cierre = fin hace que el fin se calcule al día siguiente (desde `76d7fe3`).
+  Verificado por `bot-core` con un script. Decisión pendiente (§5, punto 14).
+- **Escrituras del dashboard en tablas hijas** · No actualizan `Event.updatedAt`, por lo que el bot
+  (que desde la fase 4 sincroniza por `updatedAt`) no las ve. Ítem 4.6.
 
 ## 6. Arquitectura
 

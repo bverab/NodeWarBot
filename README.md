@@ -227,6 +227,13 @@ Notes:
   Both processes use the same SQLite file (WAL mode); set the same `DATABASE_URL` for both.
 - Run the tests (`pnpm check` runs lint + typecheck + tests) before deploying changes.
 
+**Upgrading to the audit release** (branch `chore/pnpm-and-audit`, see `docs/audit/`): stop the bot
+and the dashboard, run `pnpm db:backup`, then the steps above. Two new migrations are applied:
+`event_updated_at` rebuilds the `Event` table to add `updatedAt` (existing rows get the migration
+time) and `event_indexes` adjusts indexes. `pnpm register` is required this time (`/fakeuser` became
+admin-only and `/editrole` slots are capped at 999). Try the migrations on a copy of the production
+database first.
+
 ### Backups
 
 ```bash
