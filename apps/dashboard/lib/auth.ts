@@ -44,10 +44,16 @@ export const authOptions: NextAuthOptions = {
         token.userId = account.providerAccountId;
       }
 
+      // Only set at sign-in; tokens issued before this field existed keep working without it.
+      if (account?.provider) {
+        token.provider = account.provider;
+      }
+
       return token;
     },
     async session({ session, token }) {
       session.accessToken = typeof token.accessToken === "string" ? token.accessToken : undefined;
+      session.provider = typeof token.provider === "string" ? token.provider : undefined;
       if (session.user && typeof token.userId === "string") {
         session.user.id = token.userId;
       }
