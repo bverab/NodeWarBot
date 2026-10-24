@@ -28,6 +28,13 @@ export async function POST(_request: Request, context: RouteContext) {
       );
     }
 
+    if (result.status === "ended") {
+      return NextResponse.json(
+        { error: "This event has ended. Ended events keep their signups for history and cannot be deleted as a draft." },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json({ status: "deleted" }, { status: 200 });
   } catch {
     return NextResponse.json({ error: "Failed to delete event." }, { status: 500 });

@@ -28,6 +28,8 @@ type EventActionsProps = {
   initialMessageId: string | null;
   initialIsRecurring: boolean;
   isClosed: boolean;
+  // Closed and past its end without a Discord message: what the bot leaves after expiring an event. Not a draft.
+  isEnded?: boolean;
 };
 
 async function postAction(url: string) {
@@ -70,7 +72,8 @@ export function EventActions({
   initialChannelId,
   initialMessageId,
   initialIsRecurring,
-  isClosed
+  isClosed,
+  isEnded = false
 }: EventActionsProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -93,7 +96,7 @@ export function EventActions({
   const [autoPublishEnabled, setAutoPublishEnabled] = useState(initialAutoPublishEnabled);
   const [publishBeforeMinutes, setPublishBeforeMinutes] = useState(initialPublishBeforeMinutes);
   const isPublished = Boolean(initialMessageId);
-  const canPublish = manageable && !isPublished && Boolean(initialChannelId);
+  const canPublish = manageable && !isPublished && !isEnded && Boolean(initialChannelId);
   const eventsListHref = initialEventType === "pve" ? guildRoutes.pveEvents(guildId) : guildRoutes.events(guildId);
 
   useEffect(() => {
@@ -199,7 +202,7 @@ export function EventActions({
   };
 
   const deleteEvent = async () => {
-    if (!manageable || isPublished) {
+    if (!manageable || isPublished || isEnded) {
       return;
     }
 
@@ -339,7 +342,7 @@ export function EventActions({
           <Button
             disabled={!canPublish || busy}
             onClick={() => setPublishConfirmOpen(true)}
-            title={!initialChannelId ? "Select a Discord channel before publishing this event." : undefined}
+            title={isEnded ? "This event has ended and cannot be published." : !initialChannelId ? "Select a Discord channel before publishing this event." : undefined}
             type="button"
             variant="ghost"
           >
@@ -348,9 +351,9 @@ export function EventActions({
           </Button>
         )}
         <Button
-          disabled={!manageable || busy || isPublished}
+          disabled={!manageable || busy || isPublished || isEnded}
           onClick={() => setDeleteConfirmOpen(true)}
-          title={isPublished ? "Unpublish from Discord before deleting this event." : "Delete this event permanently."}
+          title={isPublished ? "Unpublish from Discord before deleting this event." : isEnded ? "Ended events keep their signups and cannot be deleted from here." : "Delete this event permanently."}
           type="button"
           variant="ghost"
         >
@@ -372,7 +375,7 @@ export function EventActions({
 
       {message ? <p className={styles.formNotice}>{message}</p> : null}
 
-      {!isPublished && !initialChannelId ? (
+      {!isPublished && !isEnded && !initialChannelId ? (
         <p className={styles.formHint}>
           <Lock size={14} aria-hidden="true" />
           Select a Discord channel before publishing this event.

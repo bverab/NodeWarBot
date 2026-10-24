@@ -112,8 +112,8 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
                       <td>{event.name}</td>
                       <td>{event.eventType || event.type}</td>
                       <td>
-                        <span className={`${styles.status} ${event.published ? statusClass(event.status) : event.autoPublishEnabled ? styles.statusOpen : statusClass(event.status)}`}>
-                          {event.published ? event.status : event.autoPublishEnabled ? "scheduled" : event.status}
+                        <span className={`${styles.status} ${event.status === "draft" && event.autoPublishEnabled ? styles.statusOpen : statusClass(event.status)}`}>
+                          {event.status === "draft" && event.autoPublishEnabled ? "scheduled" : event.status}
                         </span>
                       </td>
                       <td>{event.time ? `${event.time} ${event.timezone}` : formatDateTime(event.closesAt)}</td>
@@ -157,14 +157,14 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
                           <DisabledIconAction
                             ariaLabel={`Archive unavailable for ${event.name}`}
                             className={`${styles.iconActionButton} ${styles.archiveIconButton}`}
-                            title="Drafts can be deleted directly."
+                            title={event.canDelete ? "Drafts can be deleted directly." : "This event has already ended."}
                           >
                             <Archive size={16} aria-hidden="true" />
                           </DisabledIconAction>
                         )}
                       </td>
                       <td className={styles.actionCell}>
-                        {activeGuild.manageable && !event.published ? (
+                        {activeGuild.manageable && event.canDelete ? (
                           <ConfirmResourceAction
                             actionAriaLabel={`Delete ${event.name} permanently`}
                             actionClassName={`${styles.iconActionButton} ${styles.deleteIconButton}`}
@@ -181,7 +181,7 @@ export default async function EventsPage({ params, searchParams }: PageProps) {
                           <DisabledIconAction
                             ariaLabel={`Delete unavailable for ${event.name}`}
                             className={`${styles.iconActionButton} ${styles.deleteIconButton}`}
-                            title="Unpublish from Discord before deleting this event."
+                            title={event.published ? "Unpublish from Discord before deleting this event." : "Ended events keep their signups and cannot be deleted from here."}
                           >
                             <Trash2 size={16} aria-hidden="true" />
                           </DisabledIconAction>

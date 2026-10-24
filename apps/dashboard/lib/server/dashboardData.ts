@@ -14,6 +14,8 @@ export type EventListItem = {
   type: string;
   status: "draft" | "open" | "closed" | "expired";
   published: boolean;
+  // False for published events and for ended ones (see isEventEnded): only real drafts can be deleted permanently.
+  canDelete: boolean;
   groupId: string | null;
   dayOfWeek: number | null;
   recurrenceMode: "once" | "recurring";
@@ -218,24 +220,35 @@ function toIso(value: Date) {
   return value.toISOString();
 }
 
-function getEventStatus(event: Pick<Event, "isClosed" | "expiresAt" | "closesAt" | "channelId" | "messageId">): EventListItem["status"] {
+// An event without a Discord message is normally a draft. It is not one when it is closed and past its end: that is what
+// is left after the bot expires an event (it deletes the message, sets messageId = null and isClosed = true). Such an
+// event has history (roster, waitlist) and must not look like, or be deletable as, a never-published draft.
+export function isEventEnded(event: Pick<Event, "isClosed" | "expiresAt">, now = Date.now()) {
+  return event.isClosed && event.expiresAt.getTime() <= now;
+}
+
+export function getEventStatus(
+  event: Pick<Event, "isClosed" | "expiresAt" | "closesAt" | "messageId">,
+  now = Date.now()
+): EventListItem["status"] {
   if (!event.messageId) {
-    return "draft";
+    return isEventEnded(event, now) ? "closed" : "draft";
   }
 
   if (event.isClosed) {
     return "closed";
   }
 
-  return event.expiresAt.getTime() < Date.now() || event.closesAt.getTime() < Date.now() ? "expired" : "open";
+  return event.expiresAt.getTime() < now || event.closesAt.getTime() < now ? "expired" : "open";
 }
 
 export function isEventPublishedForDashboard(event: Pick<Event, "messageId">) {
   return Boolean(event.messageId);
 }
 
-export function canDeleteEventPermanently(event: Pick<Event, "messageId">) {
-  return !isEventPublishedForDashboard(event);
+// Only real drafts can be deleted permanently: not published events and not ended ones.
+export function canDeleteEventPermanently(event: Pick<Event, "messageId" | "isClosed" | "expiresAt">, now = Date.now()) {
+  return !isEventPublishedForDashboard(event) && !isEventEnded(event, now);
 }
 
 function isFillerEnrollment(enrollment: Pick<EventEnrollment, "enrollmentType">) {
@@ -328,6 +341,7 @@ function toEventListItem(
     type: event.type,
     status: getEventStatus(event),
     published: isEventPublishedForDashboard(event),
+    canDelete: canDeleteEventPermanently(event),
     groupId: event.groupId,
     dayOfWeek: event.dayOfWeek,
     recurrenceMode: event.schedule?.mode === "recurring" ? "recurring" : "once",
@@ -698,15 +712,20 @@ export async function deleteGuildDraftEvent(guildId: string, eventId: string) {
   return prisma.$transaction(async (tx) => {
     const event = await tx.event.findFirst({
       where: { id: eventId, guildId },
-      select: { id: true, messageId: true }
+      select: { id: true, messageId: true, isClosed: true, expiresAt: true }
     });
 
     if (!event) {
       return { status: "not_found" as const };
     }
 
-    if (!canDeleteEventPermanently(event)) {
+    if (isEventPublishedForDashboard(event)) {
       return { status: "not_draft" as const };
+    }
+
+    // The bot leaves expired events without a message: they keep their roster and are not drafts.
+    if (!canDeleteEventPermanently(event)) {
+      return { status: "ended" as const };
     }
 
     await tx.event.delete({ where: { id: event.id } });
