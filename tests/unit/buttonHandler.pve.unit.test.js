@@ -32,6 +32,7 @@ describe('buttonHandler PvE success responses', () => {
     const eventRenderService = require('../../src/services/eventRenderService');
 
     warService.getWarByMessageId = vi.fn(() => ({ id: 'event_1', eventType: 'pve', channelId: 'channel_1', messageId: 'msg_1' }));
+    warService.resolveWarByMessageId = vi.fn(async () => warService.getWarByMessageId());
     warService.updateWarByMessageId = vi.fn();
     warService.deleteWarByMessageId = vi.fn();
     pveService.joinSlot = vi.fn(async () => joinResult);

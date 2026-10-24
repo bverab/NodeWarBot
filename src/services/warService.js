@@ -42,6 +42,8 @@ module.exports = {
     }
   },
   updateWar: withDbLog('updateWar', repository.updateWar),
+  resolveWarByMessageId: withDbLog('resolveWarByMessageId', repository.resolveWarByMessageId),
+  syncWarsFromDatabase: withDbLog('syncWarsFromDatabase', repository.syncWarsFromDatabase),
   loadDueScheduledPublishEvents: withDbLog('loadDueScheduledPublishEvents', repository.loadDueScheduledPublishEvents),
   markScheduledPublishAttempt: withDbLog('markScheduledPublishAttempt', repository.markScheduledPublishAttempt),
   completeScheduledPublishIfUnpublished: withDbLog('completeScheduledPublishIfUnpublished', repository.completeScheduledPublishIfUnpublished),

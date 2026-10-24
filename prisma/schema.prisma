@@ -42,6 +42,7 @@ model Event {
   expiresAt               DateTime
   closesAt                DateTime
   isClosed                Boolean            @default(false)
+  updatedAt               DateTime           @default(now()) @updatedAt
   guild                   Guild?             @relation(fields: [guildId], references: [id])
   roleSlots               EventRoleSlot[]
   participants            EventParticipant[]

@@ -12,6 +12,7 @@ function setup({ war, refreshResult = { ok: true } }) {
 
   const warService = requireSrc('src/services/warService');
   warService.getWarByMessageId = vi.fn(() => state.war);
+  warService.resolveWarByMessageId = vi.fn(async () => state.war);
   warService.updateWarByMessageId = vi.fn(async (messageId, updater) => {
     const draft = structuredClone(state.war);
     const result = updater(draft);

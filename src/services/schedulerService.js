@@ -92,6 +92,13 @@ function checkAndExecuteEvents() {
 async function runSchedulerTick() {
   try {
     schedulerInstance.lastCheck = Date.now();
+    // Trae a la cache lo que el dashboard creo, publico, edito o borro desde el ultimo tick.
+    try {
+      await warService.syncWarsFromDatabase();
+    } catch (error) {
+      logError('Error sincronizando cache de eventos con la base', error, { action: 'scheduler_cache_sync' });
+    }
+    if (!schedulerInstance) return;
     const wars = warService.loadWars();
     const nowMs = Date.now();
     const now = new Date(nowMs);

@@ -171,7 +171,9 @@ function normalizeWar(war = {}) {
     createdAt,
     expiresAt,
     closesAt,
-    isClosed: Boolean(war.isClosed)
+    isClosed: Boolean(war.isClosed),
+    // Version de la fila en SQLite (Event.updatedAt): la cache la usa para detectar escrituras externas.
+    updatedAt: Number.isFinite(war.updatedAt) ? war.updatedAt : null
   };
 }
 
