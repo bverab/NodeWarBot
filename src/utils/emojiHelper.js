@@ -1,3 +1,11 @@
+// Un emoji unicode valido para un boton es un unico grafema (incluye ZWJ, tonos de piel y VS16).
+function isSingleUnicodeEmoji(text) {
+  const value = String(text || '').trim();
+  if (!value || !/\p{Extended_Pictographic}/u.test(value)) return false;
+  const segments = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value));
+  return segments.length === 1;
+}
+
 function parseEmojiInput(text, guild) {
   const value = String(text || '').trim();
   if (!value) return null;
@@ -12,7 +20,7 @@ function parseEmojiInput(text, guild) {
     };
   }
 
-  if (/\p{Extended_Pictographic}/u.test(value)) {
+  if (isSingleUnicodeEmoji(value)) {
     return {
       emoji: value,
       emojiSource: 'unicode'
@@ -49,6 +57,7 @@ function extractEmojiAndName(text, guild) {
 }
 
 module.exports = {
+  isSingleUnicodeEmoji,
   parseEmojiInput,
   extractEmojiAndName
 };
