@@ -1,4 +1,4 @@
-const { parseEmojiInput } = require('../../src/utils/emojiHelper');
+const { isSingleUnicodeEmoji, parseEmojiInput } = require('../../src/utils/emojiHelper');
 const { buildWarMessagePayload, buildWarReadOnlyPayload } = require('../../src/utils/warMessageBuilder');
 const { buildWar, buildWarRole } = require('../factories/warFactory');
 
@@ -28,6 +28,41 @@ describe('parseEmojiInput exige un solo emoji (C-6)', () => {
     expect(parseEmojiInput(input, null)).toBeNull();
   });
 
+  it.each([
+    ['bandera (par de indicadores regionales)', '\u{1F1E8}\u{1F1F1}'],
+    ['otra bandera', '\u{1F1FA}\u{1F1F8}'],
+    ['keycap 1 con VS16', '1️⃣'],
+    ['keycap # con VS16', '#️⃣'],
+    ['keycap * con VS16', '*️⃣'],
+    ['keycap 0 con VS16', '0️⃣'],
+    ['keycap 9 sin VS16', '9⃣']
+  ])('acepta %s', (_label, input) => {
+    expect(parseEmojiInput(input, null)).toEqual({ emoji: input, emojiSource: 'unicode' });
+    expect(isSingleUnicodeEmoji(input)).toBe(true);
+  });
+
+  it.each([
+    ['bandera con texto', '\u{1F1E8}\u{1F1F1}x'],
+    ['texto antes de la bandera', 'x\u{1F1E8}\u{1F1F1}'],
+    ['indicador regional suelto', '\u{1F1E8}'],
+    ['tres indicadores regionales', '\u{1F1E8}\u{1F1F1}\u{1F1FA}'],
+    ['dos banderas', '\u{1F1E8}\u{1F1F1}\u{1F1FA}\u{1F1F8}'],
+    ['bandera y emoji', '\u{1F1E8}\u{1F1F1}✅'],
+    ['keycap con texto', 'hola 1️⃣'],
+    ['keycap seguido de texto', '1️⃣x'],
+    ['dos keycaps', '1️⃣2️⃣'],
+    ['keycap y emoji', '1️⃣✅'],
+    ['digito suelto', '1'],
+    ['almohadilla suelta', '#'],
+    ['asterisco suelto', '*'],
+    ['letra con marca de keycap', 'a️⃣'],
+    ['dos digitos con marca de keycap', '12⃣'],
+    ['marca de keycap suelta', '⃣']
+  ])('rechaza %s', (_label, input) => {
+    expect(parseEmojiInput(input, null)).toBeNull();
+    expect(isSingleUnicodeEmoji(input)).toBe(false);
+  });
+
   it('tolera espacios alrededor de un emoji valido', () => {
     expect(parseEmojiInput('  ✅  ', null)).toEqual({ emoji: '✅', emojiSource: 'unicode' });
   });
@@ -55,6 +90,23 @@ describe('botones de rol con iconos invalidos persistidos (C-6)', () => {
 
   it('un icono sin fuente y con texto cae al circulo blanco', () => {
     const war = buildWar({ roles: [buildWarRole({ name: 'Tank', emoji: 'texto', emojiSource: null })] });
+    expect(firstButtonEmoji(buildWarMessagePayload, war)).toMatchObject({ name: '⚪' });
+  });
+
+  it.each([
+    ['bandera', '\u{1F1E8}\u{1F1F1}'],
+    ['keycap con VS16', '1️⃣'],
+    ['keycap #', '#️⃣']
+  ])('un rol existente con %s conserva su icono en los botones (no cae al circulo blanco)', (_label, emoji) => {
+    const war = buildWar({ roles: [buildWarRole({ name: 'Tank', emoji, emojiSource: 'unicode' })] });
+
+    expect(firstButtonEmoji(buildWarMessagePayload, war)).toMatchObject({ name: emoji });
+    expect(firstButtonEmoji(buildWarReadOnlyPayload, war)).toMatchObject({ name: emoji });
+  });
+
+  it('un icono con texto pegado a una bandera sigue cayendo al circulo blanco', () => {
+    const war = buildWar({ roles: [buildWarRole({ name: 'Tank', emoji: '\u{1F1E8}\u{1F1F1}x', emojiSource: 'unicode' })] });
+
     expect(firstButtonEmoji(buildWarMessagePayload, war)).toMatchObject({ name: '⚪' });
   });
 
