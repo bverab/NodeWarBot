@@ -18,7 +18,7 @@ import {
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
 import { ParticipantChip, type ParticipantChipData } from "@/app/guilds/[guildId]/_components/shared/ParticipantChip";
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
-import { RoleMultiSelect, type RoleOption } from "@/app/guilds/[guildId]/events/new/NewEventForm";
+import { RoleMultiSelect, type RoleOption } from "@/components/dashboard/selectors/GuildSelectors";
 import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 type EventSlot = {

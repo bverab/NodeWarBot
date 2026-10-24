@@ -11,7 +11,7 @@ import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicke
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
 import overviewStyles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 import createStyles from "../../events/new/EventCreate.module.css";
-import { RoleMultiSelect, type RoleOption } from "../../events/new/NewEventForm";
+import { RoleMultiSelect, type RoleOption } from "@/components/dashboard/selectors/GuildSelectors";
 
 type TemplateSlot = {
   id: string;
