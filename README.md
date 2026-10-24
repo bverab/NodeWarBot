@@ -232,7 +232,9 @@ and the dashboard, run `pnpm db:backup`, then the steps above. Two new migration
 `event_updated_at` rebuilds the `Event` table to add `updatedAt` (existing rows get the migration
 time) and `event_indexes` adjusts indexes. `pnpm register` is required this time (`/fakeuser` became
 admin-only and `/editrole` slots are capped at 999). Try the migrations on a copy of the production
-database first.
+database first. Then run `pnpm db:repair-lifecycle` (dry run) to list recurring events created with
+`/event create` whose close/end times were derived from their creation time, and
+`pnpm db:repair-lifecycle --apply` to fix them (it takes a `VACUUM INTO` backup first).
 
 ### Backups
 

@@ -147,6 +147,17 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
     });
 
     // Solo se republica si el mensaje ya no existe; con otros errores se evita duplicarlo.
+    if (updateResult.status !== 'missing_message' && shouldActivate) {
+      // La activacion ya quedo guardada: se informa aparte de un fallo real.
+      return {
+        ok: false,
+        saved: true,
+        status: 'saved_message_not_updated',
+        reason: `Cambios guardados, pero no se pudo actualizar el mensaje de Discord: ${updateResult.errorMessage || updateResult.status}`,
+        errorCode: updateResult.errorCode,
+        war: persisted
+      };
+    }
     if (updateResult.status !== 'missing_message') {
       return {
         ok: false,

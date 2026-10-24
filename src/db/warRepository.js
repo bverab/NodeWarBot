@@ -78,9 +78,6 @@ async function replaceWarChildren(tx, eventId) {
   await tx.eventRolePermission.deleteMany({
     where: { roleSlot: { eventId } }
   });
-  await tx.eventRoleSlot.deleteMany({
-    where: { eventId }
-  });
   await tx.eventWaitlistEntry.deleteMany({
     where: { eventId }
   });
@@ -102,6 +99,46 @@ async function replaceWarChildren(tx, eventId) {
   await tx.eventFillerEntry.deleteMany({
     where: { eventId }
   });
+}
+
+// Conserva los ids de EventRoleSlot (el dashboard los usa en sus formularios): los roles se
+// emparejan por nombre (unico por evento), se actualizan los que siguen, se crean los nuevos y se
+// borran los que ya no estan. Devuelve los ids en el orden de roles.
+async function syncRoleSlotsTx(tx, eventId, roles) {
+  const existing = await tx.eventRoleSlot.findMany({ where: { eventId }, select: { id: true, name: true } });
+  const desiredNames = new Set(roles.map(role => role.name));
+  const removedIds = existing.filter(slot => !desiredNames.has(slot.name)).map(slot => slot.id);
+  if (removedIds.length) {
+    await tx.eventRoleSlot.deleteMany({ where: { id: { in: removedIds } } });
+  }
+
+  const kept = existing.filter(slot => desiredNames.has(slot.name));
+  // Dos fases: primero posiciones temporales negativas para no chocar con @@unique([eventId, position]).
+  for (let index = 0; index < kept.length; index += 1) {
+    await tx.eventRoleSlot.update({ where: { id: kept[index].id }, data: { position: -1 - index } });
+  }
+
+  const keptByName = new Map(kept.map(slot => [slot.name, slot]));
+  const slotIds = [];
+  for (let roleIndex = 0; roleIndex < roles.length; roleIndex += 1) {
+    const role = roles[roleIndex];
+    const data = {
+      position: roleIndex,
+      max: role.max,
+      emoji: role.emoji || null,
+      emojiSource: role.emojiSource || null
+    };
+    const current = keptByName.get(role.name);
+    if (current) {
+      keptByName.delete(role.name);
+      await tx.eventRoleSlot.update({ where: { id: current.id }, data });
+      slotIds.push(current.id);
+    } else {
+      const created = await tx.eventRoleSlot.create({ data: { eventId, name: role.name, ...data } });
+      slotIds.push(created.id);
+    }
+  }
+  return slotIds;
 }
 
 async function upsertWarTx(tx, warInput) {
@@ -166,19 +203,11 @@ async function upsertWarTx(tx, warInput) {
   });
 
   await replaceWarChildren(tx, war.id);
+  const roleSlotIds = await syncRoleSlotsTx(tx, war.id, war.roles);
 
   for (let roleIndex = 0; roleIndex < war.roles.length; roleIndex += 1) {
     const role = war.roles[roleIndex];
-    const createdRole = await tx.eventRoleSlot.create({
-      data: {
-        eventId: war.id,
-        position: roleIndex,
-        name: role.name,
-        max: role.max,
-        emoji: role.emoji || null,
-        emojiSource: role.emojiSource || null
-      }
-    });
+    const roleSlotId = roleSlotIds[roleIndex];
 
     const dedupRoleIds = Array.from(new Set((role.allowedRoleIds || []).map(String).filter(Boolean)));
     const dedupRoleNames = Array.from(new Set((role.allowedRoles || []).map(String).filter(Boolean)));
@@ -186,7 +215,7 @@ async function upsertWarTx(tx, warInput) {
     for (const allowedRoleId of dedupRoleIds) {
       await tx.eventRolePermission.create({
         data: {
-          roleSlotId: createdRole.id,
+          roleSlotId,
           discordRoleId: allowedRoleId,
           discordRoleName: null
         }
@@ -196,7 +225,7 @@ async function upsertWarTx(tx, warInput) {
     for (const allowedRoleName of dedupRoleNames) {
       await tx.eventRolePermission.create({
         data: {
-          roleSlotId: createdRole.id,
+          roleSlotId,
           discordRoleId: null,
           discordRoleName: allowedRoleName
         }
@@ -207,7 +236,7 @@ async function upsertWarTx(tx, warInput) {
       await tx.eventParticipant.create({
         data: {
           eventId: war.id,
-          roleSlotId: createdRole.id,
+          roleSlotId,
           userId: String(user.userId),
           displayName: String(user.displayName || 'Usuario'),
           isFake: Boolean(user.isFake),
