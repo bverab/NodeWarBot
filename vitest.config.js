@@ -1,9 +1,10 @@
-const { defineConfig } = require('vitest/config');
+const { configDefaults, defineConfig } = require('vitest/config');
 
 module.exports = defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    exclude: [...configDefaults.exclude, '.worktrees/**'],
     setupFiles: ['tests/setup/env.js'],
     sequence: {
       concurrent: false
