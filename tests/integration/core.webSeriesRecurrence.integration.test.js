@@ -123,4 +123,23 @@ describe('core: la recurrencia semanal no pisa series web publicadas', () => {
     expect(mocks.deleted).toEqual([]);
     expect(persisted.messageId).toBe('core_web_series_msg_1');
   });
+
+  it('autopublicacion programada en el mismo minuto que la recurrencia publica una sola vez', async () => {
+    vi.setSystemTime(SLOT);
+    await createWebWeeklyEvent({
+      id: 'web_series_same_minute',
+      messageId: null,
+      autoPublishEnabled: true,
+      scheduledPublishAt: SLOT
+    });
+    const mocks = createSchedulerMocks();
+
+    initScheduler(mocks.client);
+    await checkAndExecuteEvents();
+
+    const persisted = warService.loadWars().find(war => war.id === 'web_series_same_minute');
+    expect(mocks.sent.length).toBe(1);
+    expect(mocks.deleted).toEqual([]);
+    expect(persisted.messageId).toBe('core_web_series_msg_1');
+  });
 });

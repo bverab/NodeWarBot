@@ -99,7 +99,6 @@ async function runSchedulerTick() {
       logError('Error sincronizando cache de eventos con la base', error, { action: 'scheduler_cache_sync' });
     }
     if (!schedulerInstance) return;
-    const wars = warService.loadWars();
     const nowMs = Date.now();
     const now = new Date(nowMs);
 
@@ -108,6 +107,10 @@ async function runSchedulerTick() {
     } catch (error) {
       logError('Error en auto publish web programado', error, { action: 'scheduler_web_auto_publish' });
     }
+
+    // Despues de autopublicar: un evento publicado en este tick ya tiene messageId y lastCreatedAt, y la
+    // recurrencia semanal del mismo minuto no lo vuelve a publicar.
+    const wars = warService.loadWars();
 
     for (const war of wars) {
       // stopScheduler durante el tick: termina el evento en curso y no sigue con el resto.
