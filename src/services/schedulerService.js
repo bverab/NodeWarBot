@@ -8,6 +8,7 @@ const {
 const warService = require('./warService');
 const { shouldExecute } = require('../utils/cronHelper');
 const pveService = require('./pveService');
+const pveCloseReviewService = require('./pveCloseReviewService');
 const { safeMessageContent, neutralizeMassMentions } = require('../utils/textSafety');
 const { logInfo, logWarn, logError } = require('../utils/appLogger');
 const {
@@ -112,12 +113,21 @@ async function runSchedulerTick() {
     // recurrencia semanal del mismo minuto no lo vuelve a publicar.
     const wars = warService.loadWars();
 
-    for (const war of wars) {
+    for (const snapshot of wars) {
       // stopScheduler durante el tick: termina el evento en curso y no sigue con el resto.
       if (!schedulerInstance) break;
+      let war = snapshot;
 
       if (war.messageId && !war.isClosed && Number.isFinite(war.closesAt) && nowMs >= war.closesAt) {
         await closeWarSignups(war);
+      }
+
+      // PvE con recap: revision de cierre (horario confirmado, votacion de prorroga o randoms).
+      let votePending = false;
+      if (war.messageId && pveCloseReviewService.isPveCloseReviewEvent(war) && schedulerInstance) {
+        ({ votePending } = await pveCloseReviewService.processCloseReview(schedulerInstance.client, war, nowMs));
+        // Una prorroga aprobada reabre el evento y mueve cierre y fin.
+        war = warService.getWarById(war.id) || war;
       }
 
       if (war.messageId && shouldPublishRecapThread(war, nowMs)) {
@@ -125,6 +135,8 @@ async function runSchedulerTick() {
       }
 
       if (isWarExpired(war, nowMs)) {
+        // Con la votacion de prorroga abierta el mensaje no se borra aunque haya pasado expiresAt.
+        if (votePending) continue;
         await expireWarMessage(war);
         continue;
       }
@@ -455,6 +467,8 @@ function isWarExpired(war, nowMs) {
 function shouldPublishRecapThread(war, nowMs) {
   if (!war.messageId) return false;
   if (!war.recap?.enabled) return false;
+  // En PvE la revision de cierre reemplaza al hilo de recap por tiempo.
+  if (pveCloseReviewService.isPveCloseReviewEvent(war)) return false;
   if (war.recap.lastPostedAt) return false;
   if (!Number.isFinite(war.expiresAt) || war.expiresAt <= 0) return false;
 

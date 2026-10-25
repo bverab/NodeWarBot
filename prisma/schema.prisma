@@ -55,6 +55,7 @@ model Event {
   accessUsers             EventAccessUser[]
   accessRoles             EventAccessRole[]
   fillers                 EventFillerEntry[]
+  pveCloseReview          EventPveCloseReview?
 
   @@index([channelId])
   @@index([groupId])
@@ -216,6 +217,24 @@ model EventRecapConfig {
   threadId             String?
   lastPostedAt         DateTime?
   event                Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+// Revision de cierre de eventos PvE con recap (horario confirmado, votacion de prorroga o aviso de
+// "randoms"). Fuera del agregado del evento: las escrituras completas del evento no la pisan.
+model EventPveCloseReview {
+  eventId       String    @id
+  messageId     String
+  threadId      String?
+  voteMessageId String?
+  voteEndsAt    DateTime?
+  status        String?
+  extensionUsed Boolean   @default(false)
+  finalizedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([voteMessageId])
 }
 
 model GarmothProfile {

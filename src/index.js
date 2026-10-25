@@ -1,9 +1,10 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Events, Partials } = require('discord.js');
 const commandHandler = require('./handlers/commandHandler');
 const buttonHandler = require('./handlers/buttonHandler');
 const modalHandler = require('./handlers/modalHandler');
 const interactionHandler = require('./handlers/interactionHandler');
+const { handleMessageReaction } = require('./handlers/reactionHandler');
 const { initScheduler } = require('./services/schedulerService');
 const { primeApplicationEmojiCache } = require('./utils/applicationEmojiResolver');
 const { initializePersistence } = require('./db/init');
@@ -66,8 +67,11 @@ async function main() {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.DirectMessages,
-      GatewayIntentBits.MessageContent
-    ]
+      GatewayIntentBits.MessageContent,
+      // Votacion de prorroga de la revision de cierre PvE (reacciones en el hilo del evento).
+      GatewayIntentBits.GuildMessageReactions
+    ],
+    partials: [Partials.Message, Partials.Reaction, Partials.User]
   });
   global.discordClient = client;
 
@@ -89,6 +93,9 @@ async function main() {
     // Iniciar scheduler de eventos automaticos
     initScheduler(client);
   });
+
+  client.on(Events.MessageReactionAdd, handleMessageReaction);
+  client.on(Events.MessageReactionRemove, handleMessageReaction);
 
   client.on(Events.InteractionCreate, async interaction => {
     try {
