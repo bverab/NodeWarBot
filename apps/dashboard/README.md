@@ -40,12 +40,18 @@ this folder, not the ones in the repository root) and fill it in.
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | no | Enables Google sign-in. It identifies the person but gives **no access to any server** (see the authorization model). |
 | `NEXT_PUBLIC_DISCORD_BOT_INVITE_URL`, `NEXT_PUBLIC_DISCORD_CLIENT_ID` | no | Invite link shown when the user has no server with Spectre installed. |
 | `DISCORD_APPLICATION_ID` | no | Application ID used to read the bot's application emojis. Falls back to `DISCORD_CLIENT_ID`, `NEXT_PUBLIC_DISCORD_CLIENT_ID` or `CLIENT_ID`. |
+| `DASHBOARD_ADMIN_USERNAME`, `DASHBOARD_ADMIN_PASSWORD_HASH` | no | **Local testing only.** Enables a username/password sign-in (the classic form on `/login`) that manages **every** server the bot is in, without Discord OAuth. Never active in production builds (`next start`). Create the hash with `pnpm dashboard:admin-password "<password>"` (format `scrypt:<salt>:<hash>`; `$` is avoided because Next.js expands `$NAME` in `.env` files). |
 
 Notes:
 - The Discord Developer Portal must include `http://localhost:3000/api/auth/callback/discord` (adapt host and port to `NEXTAUTH_URL`).
 - Without `NEXTAUTH_SECRET` (nor `AUTH_SECRET`/`DISCORD_CLIENT_SECRET`) the verified-guilds cookie is
   **disabled in production**; in development an insecure built-in secret is used and a warning is logged.
 - `next build` does not need any of these variables.
+- The Discord provider declares `issuer: "https://discord.com"`: Discord adds `iss` to the OAuth callback
+  (RFC 9207) and NextAuth v4 rejects the callback ("issuer must be configured on the issuer") without it.
+- The local admin session has no Discord user: events it creates have `creatorId = "local-admin"`, so the
+  creator-only buttons in Discord (delete, toggle) are not available to anyone for those events; Discord
+  admins still manage them from the admin panel.
 
 ## Run Locally
 

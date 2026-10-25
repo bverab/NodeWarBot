@@ -1,6 +1,7 @@
 import "server-only";
 import type { Session } from "next-auth";
-import { findActiveGuild, getDashboardGuildsDetailed, type DashboardGuildLoadResult } from "@/lib/dashboardGuilds";
+import { findActiveGuild, type DashboardGuildLoadResult } from "@/lib/dashboardGuilds";
+import { getDashboardGuildsForSession } from "@/lib/server/dashboardGuildsForSession";
 import { readVerifiedGuildsCookie } from "@/lib/server/dashboardGuildVerificationCookie";
 
 // "cookie" data was already verified earlier and must never be used to sign a fresh cookie: that would renew it forever without asking Discord.
@@ -21,7 +22,7 @@ export async function getDashboardGuildsForServer(session: Session | null, optio
     return cookieResult(cookieGuilds);
   }
 
-  const result = await getDashboardGuildsDetailed(session);
+  const result = await getDashboardGuildsForSession(session);
   if (!result.error || result.guilds.length) {
     return { ...result, source: "discord" as DashboardGuildSource };
   }

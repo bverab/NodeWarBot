@@ -20,6 +20,7 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "dashboard:dev": "pnpm --filter @spectre/dashboard dev",
     "dashboard:build": "pnpm --filter @spectre/dashboard build",
+    "dashboard:admin-password": "node scripts/hash-dashboard-admin-password.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:migrate:deploy": "prisma migrate deploy",

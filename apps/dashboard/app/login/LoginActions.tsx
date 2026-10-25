@@ -11,6 +11,7 @@ type LoginActionsProps = {
   discordConfigured: boolean;
   discordMissing: string[];
   googleConfigured: boolean;
+  localAdminEnabled: boolean;
   authError?: string;
   showDevWarning: boolean;
 };
@@ -20,15 +21,39 @@ export function LoginActions({
   discordConfigured,
   discordMissing,
   googleConfigured,
+  localAdminEnabled,
   showDevWarning
 }: LoginActionsProps) {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [classicMessage, setClassicMessage] = useState("");
+  const [classicBusy, setClassicBusy] = useState(false);
   const isRegister = authMode === "register";
+  const usesLocalAdmin = localAdminEnabled && !isRegister;
 
-  function handleClassicSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleClassicSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setClassicMessage("Classic accounts are not enabled yet.");
+    if (!usesLocalAdmin) {
+      setClassicMessage("Classic accounts are not enabled yet.");
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
+    setClassicBusy(true);
+    setClassicMessage("");
+    const result = await signIn("local-admin", {
+      username: String(form.get("username") ?? ""),
+      password: String(form.get("password") ?? ""),
+      callbackUrl: routes.guilds,
+      redirect: false
+    });
+
+    if (!result || result.error) {
+      setClassicBusy(false);
+      setClassicMessage("Invalid username or password.");
+      return;
+    }
+
+    window.location.assign(result.url ?? routes.guilds);
   }
 
   function switchMode(nextMode: "login" | "register") {
@@ -115,13 +140,23 @@ export function LoginActions({
           </label>
         ) : null}
 
-        <label className="login-field">
-          <span>Email</span>
-          <span className="login-input-shell">
-            <Mail size={16} aria-hidden="true" />
-            <input autoComplete="email" name="email" placeholder="you@example.com" type="email" />
-          </span>
-        </label>
+        {usesLocalAdmin ? (
+          <label className="login-field">
+            <span>Username</span>
+            <span className="login-input-shell">
+              <UserRound size={16} aria-hidden="true" />
+              <input autoComplete="username" name="username" placeholder="Local admin username" required type="text" />
+            </span>
+          </label>
+        ) : (
+          <label className="login-field">
+            <span>Email</span>
+            <span className="login-input-shell">
+              <Mail size={16} aria-hidden="true" />
+              <input autoComplete="email" name="email" placeholder="you@example.com" type="email" />
+            </span>
+          </label>
+        )}
 
         <label className="login-field">
           <span>Password</span>
@@ -163,8 +198,8 @@ export function LoginActions({
 
         {classicMessage ? <p className="classic-login-message">{classicMessage}</p> : null}
 
-        <Button className="login-submit-button" type="submit">
-          {isRegister ? "Create account" : "Sign in"}
+        <Button className="login-submit-button" disabled={classicBusy} type="submit">
+          {isRegister ? "Create account" : classicBusy ? "Signing in..." : "Sign in"}
         </Button>
       </form>
 

@@ -104,8 +104,10 @@ const BOT_GUILDS_MAX_PAGES = 100;
 const BOT_GUILD_IDS_CACHE_TTL_MS = 60_000;
 
 // The bot's guild list is the same for every dashboard user: one short-lived cache and one in-flight lookup are shared.
-let botGuildIdsCache: { ids: Set<string>; expiresAt: number } | null = null;
-let botGuildIdsInFlight: Promise<Set<string>> | null = null;
+type BotGuildsSnapshot = { guilds: DiscordGuild[]; ids: Set<string>; expiresAt: number };
+
+let botGuildsCache: BotGuildsSnapshot | null = null;
+let botGuildsInFlight: Promise<BotGuildsSnapshot> | null = null;
 
 function getLastGuildId(guilds: Array<Pick<DiscordGuild, "id">>) {
   try {
@@ -115,8 +117,8 @@ function getLastGuildId(guilds: Array<Pick<DiscordGuild, "id">>) {
   }
 }
 
-async function fetchBotGuildIdsFromDiscord(botToken: string): Promise<Set<string>> {
-  const ids = new Set<string>();
+async function fetchBotGuildsFromDiscord(botToken: string): Promise<DiscordGuild[]> {
+  const guildsById = new Map<string, DiscordGuild>();
   let after: string | null = null;
 
   for (let pageIndex = 0; pageIndex < BOT_GUILDS_MAX_PAGES; pageIndex += 1) {
@@ -155,9 +157,15 @@ async function fetchBotGuildIdsFromDiscord(botToken: string): Promise<Set<string
       throw new DiscordGuildFetchError("unexpected_response", "Discord bot guild API returned an unexpected shape.");
     }
 
-    const page = guilds as Array<Pick<DiscordGuild, "id">>;
+    const page = guilds as Array<Partial<DiscordGuild> & Pick<DiscordGuild, "id">>;
     for (const guild of page) {
-      ids.add(guild.id);
+      guildsById.set(guild.id, {
+        id: guild.id,
+        name: guild.name ?? guild.id,
+        icon: guild.icon ?? null,
+        owner: Boolean(guild.owner),
+        permissions: guild.permissions ?? "0"
+      });
     }
 
     if (page.length < BOT_GUILDS_PAGE_SIZE) {
@@ -171,32 +179,42 @@ async function fetchBotGuildIdsFromDiscord(botToken: string): Promise<Set<string
     after = lastId;
   }
 
-  return ids;
+  return Array.from(guildsById.values());
 }
 
-export async function fetchBotGuildIds(): Promise<Set<string>> {
+async function fetchBotGuilds(): Promise<BotGuildsSnapshot> {
   const botToken = getBotToken();
 
   if (!botToken) {
     throw new DiscordGuildFetchError("missing_bot_token", "Missing DISCORD_BOT_TOKEN.");
   }
 
-  if (botGuildIdsCache && botGuildIdsCache.expiresAt > Date.now()) {
-    return botGuildIdsCache.ids;
+  if (botGuildsCache && botGuildsCache.expiresAt > Date.now()) {
+    return botGuildsCache;
   }
 
-  if (!botGuildIdsInFlight) {
-    botGuildIdsInFlight = fetchBotGuildIdsFromDiscord(botToken)
-      .then((ids) => {
-        botGuildIdsCache = { ids, expiresAt: Date.now() + BOT_GUILD_IDS_CACHE_TTL_MS };
-        return ids;
+  if (!botGuildsInFlight) {
+    botGuildsInFlight = fetchBotGuildsFromDiscord(botToken)
+      .then((guilds) => {
+        botGuildsCache = { guilds, ids: new Set(guilds.map((guild) => guild.id)), expiresAt: Date.now() + BOT_GUILD_IDS_CACHE_TTL_MS };
+        return botGuildsCache;
       })
       .finally(() => {
-        botGuildIdsInFlight = null;
+        botGuildsInFlight = null;
       });
   }
 
-  return botGuildIdsInFlight;
+  return botGuildsInFlight;
+}
+
+export async function fetchBotGuildIds(): Promise<Set<string>> {
+  return (await fetchBotGuilds()).ids;
+}
+
+// Every guild the bot is in, as manageable. Only for the local admin (lib/server/localAdmin.ts), which has no Discord user.
+export async function fetchBotDashboardGuilds(): Promise<DashboardGuild[]> {
+  const { guilds } = await fetchBotGuilds();
+  return guilds.map((guild) => ({ ...guild, owner: false, manageable: true }));
 }
 
 export async function fetchAvailableDashboardGuilds(accessToken: string): Promise<DashboardGuild[]> {

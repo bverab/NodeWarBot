@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
 import { getApplicationEmojis, getApplicationId } from "@/lib/server/discordEmojis";
+import { isLocalAdminSession } from "@/lib/server/localAdmin";
 
 export async function GET() {
   const session = await getServerAuthSession();
 
-  if (!session?.accessToken) {
+  if (!session?.accessToken && !isLocalAdminSession(session)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

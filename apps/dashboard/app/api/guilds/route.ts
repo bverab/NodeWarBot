@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
 import { getSessionUserId, requireSession } from "@/lib/apiGuards";
-import { getDashboardGuildsDetailed } from "@/lib/dashboardGuilds";
+import { getDashboardGuildsForSession } from "@/lib/server/dashboardGuildsForSession";
 import { createVerifiedGuildsCookie, readVerifiedGuildsCookie } from "@/lib/server/dashboardGuildVerificationCookie";
 
 export async function GET() {
@@ -28,7 +28,7 @@ export async function GET() {
     );
   }
 
-  const result = await getDashboardGuildsDetailed(session);
+  const result = await getDashboardGuildsForSession(session);
   if (result.error && !result.guilds.length) {
     if (result.error.code === "missing_access_token") {
       return NextResponse.json({ error: result.error.message, code: result.error.code }, { status: 401 });

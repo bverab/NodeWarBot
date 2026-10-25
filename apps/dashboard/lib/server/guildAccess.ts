@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
 import { resolveDashboardGuildForServer } from "@/lib/server/dashboardGuildResolution";
+import { isLocalAdminSession } from "@/lib/server/localAdmin";
 
 export async function requireDashboardGuild(guildId: string) {
   const session = await getServerAuthSession();
 
-  if (!session?.accessToken) {
+  // The local admin (local testing only) has no Discord token; its guilds come from the bot instead.
+  if (!session || (!session.accessToken && !isLocalAdminSession(session))) {
     return {
       error: NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     };
