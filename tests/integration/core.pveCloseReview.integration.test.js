@@ -75,8 +75,9 @@ async function react(discord, message, emoji, userId) {
   await handleMessageReaction(discord.reactionEvent(message, emoji), user);
 }
 
+// Ningun horario se llena, ni siquiera sumando su filler (21:00 queda 3/4).
 const NONE_FULL = {
-  options: [{ time: '20:00', capacity: 3 }, { time: '21:00', capacity: 3 }],
+  options: [{ time: '20:00', capacity: 3 }, { time: '21:00', capacity: 4 }],
   enrollments: [
     { option: 0, userId: 'u1' },
     { option: 0, userId: 'u2' },
@@ -296,10 +297,99 @@ describe('core: revision de cierre PvE', () => {
 
     await checkAndExecuteEvents();
 
+    // Sin recap no hay hilo ni votacion; solo queda registrado que ningun horario se completo.
     expect(eventMessage.thread).toBeNull();
-    expect(await review('pve_no_recap')).toBeNull();
+    expect(await review('pve_no_recap')).toMatchObject({ status: 'unfilled', threadId: null });
+    expect(discord.dms.size).toBe(0);
     expect(warMessage.thread.sent[0].content).toBe('Resumen war\n\n<@w1>');
     expect(warMessage.thread.sent).toHaveLength(2);
     expect(await review('war_with_recap')).toBeNull();
+  });
+
+  // 20:00 (3 cupos) solo tiene 1 titular y 1 filler; 21:00 (3 cupos) se completa con 2 de sus 3 fillers.
+  const FILLERS_COMPLETE = {
+    options: [{ time: '21:00', capacity: 3 }, { time: '20:00', capacity: 3 }],
+    enrollments: [
+      { option: 1, userId: 'u1' },
+      { option: 1, userId: 'early_filler', filler: true },
+      { option: 0, userId: 'u2' },
+      { option: 0, userId: 'filler_a', name: 'Filler A', filler: true },
+      { option: 0, userId: 'filler_fake', name: 'Filler Fake', filler: true, isFake: true },
+      { option: 0, userId: 'filler_c', name: 'Filler C', filler: true }
+    ]
+  };
+
+  async function optionRoster(eventId, time) {
+    const option = (await pveService.getEventPveView(warService.getWarById(eventId))).options.find(entry => entry.time === time);
+    return { titulares: option.enrollments.map(entry => entry.userId), fillers: option.fillers.map(entry => entry.userId) };
+  }
+
+  it('(10) con recap y ningun horario lleno, los fillers completan el horario mas temprano posible y se confirma sin votar', async () => {
+    await createPveEvent('pve_fillers_recap', FILLERS_COMPLETE);
+    const { eventMessage } = setup('pve_fillers_recap');
+    const editsBefore = eventMessage.edits.length;
+
+    await checkAndExecuteEvents();
+
+    expect(await optionRoster('pve_fillers_recap', '21:00')).toEqual({ titulares: ['u2', 'filler_a', 'filler_fake'], fillers: ['filler_c'] });
+    expect(await optionRoster('pve_fillers_recap', '20:00')).toEqual({ titulares: ['u1'], fillers: ['early_filler'] });
+    const thread = threadOf(eventMessage);
+    expect(thread.sent).toHaveLength(2);
+    const [confirmed] = thread.sent;
+    expect(confirmed.content).toContain('✅ Horario confirmado: **21:00** (3/3)');
+    expect(confirmed.content).toContain('Entran desde fillers: Filler A, Filler Fake');
+    expect(confirmed.content).toContain('Suplentes: Filler C');
+    expect(confirmed.payload.allowedMentions).toEqual({ parse: [], users: ['u2', 'filler_a'] });
+    expect(eventMessage.edits.length).toBeGreaterThan(editsBefore);
+    expect(await review('pve_fillers_recap')).toMatchObject({ status: 'confirmed' });
+  });
+
+  it('(11) sin recap los fillers tambien avanzan: se actualiza el mensaje y se avisa por DM (o en el canal si los DM estan cerrados)', async () => {
+    await createPveEvent('pve_fillers_no_recap', { ...FILLERS_COMPLETE, recapEnabled: false });
+    const { discord, channel, eventMessage } = setup('pve_fillers_no_recap');
+    discord.dmBlocked.add('filler_a');
+    const editsBefore = eventMessage.edits.length;
+
+    await checkAndExecuteEvents();
+
+    expect(await optionRoster('pve_fillers_no_recap', '21:00')).toEqual({ titulares: ['u2', 'filler_a', 'filler_fake'], fillers: ['filler_c'] });
+    expect(eventMessage.thread).toBeNull();
+    expect(eventMessage.edits.length).toBeGreaterThan(editsBefore);
+    expect(discord.dms.size).toBe(0);
+    const fallback = channel.sent.filter(message => message.id !== eventMessage.id);
+    expect(fallback).toHaveLength(1);
+    expect(fallback[0].content).toContain('<@filler_a>');
+    expect(fallback[0].content).toContain('21:00');
+    expect(fallback[0].payload.allowedMentions).toEqual({ parse: [], users: ['filler_a'] });
+    expect(await review('pve_fillers_no_recap')).toMatchObject({ status: 'confirmed', threadId: null });
+
+    // Ya decidido: otro tick no vuelve a promover ni a avisar.
+    await checkAndExecuteEvents();
+    expect(channel.sent.filter(message => message.id !== eventMessage.id)).toHaveLength(1);
+  });
+
+  it('(12) sin recap el aviso a quien entra desde fillers va por DM', async () => {
+    await createPveEvent('pve_fillers_dm', { ...FILLERS_COMPLETE, recapEnabled: false });
+    const { discord, channel, eventMessage } = setup('pve_fillers_dm');
+
+    await checkAndExecuteEvents();
+
+    expect(Array.from(discord.dms.keys())).toEqual(['filler_a']);
+    expect(discord.dms.get('filler_a')[0].content).toContain('21:00');
+    expect(channel.sent.filter(message => message.id !== eventMessage.id)).toHaveLength(0);
+  });
+
+  it('(13) si ni con fillers se completa un horario, la sugerencia de randoms lista a los fillers', async () => {
+    await createPveEvent('pve_fillers_randoms', NONE_FULL);
+    const { discord, eventMessage } = setup('pve_fillers_randoms');
+    await checkAndExecuteEvents();
+    const thread = threadOf(eventMessage);
+
+    await react(discord, thread.sent[0], '❌', 'u1');
+    await react(discord, thread.sent[0], '❌', 'u3');
+
+    expect(thread.sent[1].content).toContain('Fillers anotados: Filler Uno');
+    expect(thread.sent[1].payload.allowedMentions.users).toEqual(['u1', 'u2', 'u3']);
+    expect(await optionRoster('pve_fillers_randoms', '21:00')).toEqual({ titulares: ['u3', 'fake_1'], fillers: ['filler_1'] });
   });
 });

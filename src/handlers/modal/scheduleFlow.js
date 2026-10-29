@@ -13,6 +13,7 @@ const {
 } = require('../../utils/draftSessionStore');
 const { normalizeEventType } = require('../../constants/eventTypes');
 const pveService = require('../../services/pveService');
+const { normalizeAccessMode, normalizeIds, buildPublicationMentions, describePveAccess } = require('../../services/pveAccessRules');
 const { sanitizeUserInput, safeMessageContent } = require('../../utils/textSafety');
 const { logWarn } = require('../../utils/appLogger');
 const { applyLifecycleToWar, deriveLifecycleFromDuration } = require('../../utils/eventLifecycleTimes');
@@ -147,7 +148,20 @@ async function handleScheduleWarDays(interaction) {
   });
 }
 
+// PvE por roles o por personas menciona a quienes tienen acceso: no hay roles a mencionar que elegir.
+function mentionsComeFromAccess(warData) {
+  return normalizeEventType(warData.eventType) === 'pve' && normalizeAccessMode(warData.accessMode) !== 'OPEN';
+}
+
+function describePublicationMentions(warData, mentionRoleIds) {
+  return buildPublicationMentions({ ...warData, notifyRoles: mentionRoleIds }, '(sin menciones)').content;
+}
+
 async function showScheduleMentionsSelector(interaction, warData, selectedDays) {
+  if (mentionsComeFromAccess(warData)) {
+    return await showPublishPreview(interaction, warData, selectedDays, [], 'editReply');
+  }
+
   const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const daysText = selectedDays.map(d => dayNames[d]).join(', ');
 
@@ -286,7 +300,6 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
   const scheduleTemp = getScheduleTemp(interaction.user.id) || {};
   const scheduleMode = scheduleTemp.mode === 'once' ? 'once' : 'recurring';
   const isPve = normalizeEventType(warData.eventType) === 'pve';
-  const isRestrictedPve = isPve && String(warData.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
 
   if (!isPve && warData.roles.length === 0) {
     return await finalizeScheduleInteraction(interaction, {
@@ -306,7 +319,8 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
       ...warData,
       dayOfWeek,
       notifyRoles: mentionRoleIds,
-      allowedUserIds: Array.isArray(warData.allowedUserIds) ? warData.allowedUserIds.map(String) : [],
+      allowedUserIds: normalizeIds(warData.allowedUserIds),
+      allowedRoleIds: normalizeIds(warData.allowedRoleIds),
       id: `${warData.groupId}_day${dayOfWeek}`,
       messageId: null,
       schedule: {
@@ -349,17 +363,9 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
 
   const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const daysText = selectedDays.map(d => dayNames[d]).join(', ');
-  const mentionText = mentionRoleIds.length > 0
-    ? mentionRoleIds.map(id => `<@&${id}>`).join(' ')
-    : '(sin menciones)';
-  const restrictedMentionText = isRestrictedPve
-    ? (Array.isArray(warData.allowedUserIds) && warData.allowedUserIds.length > 0
-      ? warData.allowedUserIds.map(id => `<@${id}>`).join(' ')
-      : '(sin usuarios permitidos)')
-    : mentionText;
 
   await finalizeScheduleInteraction(interaction, {
-    content: `Programacion creada: **${warData.name}**\nDias: ${daysText}\nHora: ${warData.time}\nModo: ${scheduleMode === 'once' ? 'Unico' : 'Recurrente'}\nMenciones al publicar: ${restrictedMentionText}`,
+    content: `Programacion creada: **${warData.name}**\nDias: ${daysText}\nHora: ${warData.time}\nModo: ${scheduleMode === 'once' ? 'Unico' : 'Recurrente'}\nMenciones al publicar: ${describePublicationMentions(warData, mentionRoleIds)}`,
     components: []
   });
 }
@@ -367,16 +373,7 @@ async function confirmAndPublish(interaction, warData, selectedDays, mentionRole
 async function showPublishPreview(interaction, warData, selectedDays, mentionRoleIds, mode = 'editReply') {
   const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
   const daysText = selectedDays.map(d => dayNames[d]).join(', ');
-  const mentionText = mentionRoleIds.length > 0
-    ? mentionRoleIds.map(id => `<@&${id}>`).join(' ')
-    : '(sin menciones)';
-  const isRestrictedPve = normalizeEventType(warData.eventType) === 'pve'
-    && String(warData.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
-  const publishMentionText = isRestrictedPve
-    ? (Array.isArray(warData.allowedUserIds) && warData.allowedUserIds.length > 0
-      ? warData.allowedUserIds.map(id => `<@${id}>`).join(' ')
-      : '(sin usuarios permitidos)')
-    : mentionText;
+  const publishMentionText = describePublicationMentions(warData, mentionRoleIds);
   const recapEnabled = Boolean(warData.recap?.enabled);
   const recapMinutes = Number.isFinite(warData.recap?.minutesBeforeExpire) ? warData.recap.minutesBeforeExpire : 0;
   const recapMessage = String(warData.recap?.messageText || '').trim();
@@ -396,6 +393,10 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
       { name: 'Menciones', value: publishMentionText, inline: false },
       { name: 'Hilo de resumen', value: recapText, inline: false }
     );
+  if (normalizeEventType(warData.eventType) === 'pve') {
+    const access = describePveAccess(warData);
+    embed.addFields({ name: 'Acceso', value: `**${access.title}**: ${access.help}`.slice(0, 1024), inline: false });
+  }
 
   const actions = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -403,7 +404,8 @@ async function showPublishPreview(interaction, warData, selectedDays, mentionRol
       .setLabel('Confirmar y publicar')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId('edit_schedule_mentions')
+      // Sin paso de menciones (PvE con acceso restringido) se vuelve a los dias.
+      .setCustomId(mentionsComeFromAccess(warData) ? 'edit_schedule_days' : 'edit_schedule_mentions')
       .setLabel('Volver a editar')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()

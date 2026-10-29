@@ -118,4 +118,35 @@ describe('eventPublicationService integration', () => {
     expect(sentMessages[0].content).toContain('<@user_allowed_2>');
     expect(sentMessages[0].content).not.toContain('role_notify_should_not_be_used');
   });
+
+  it('en pve por roles menciona a los roles permitidos al publicar', async () => {
+    const sentMessages = [];
+    const channel = {
+      send: async payload => {
+        sentMessages.push(payload);
+        return { id: 'msg_pve_roles' };
+      },
+      messages: {
+        fetch: async () => null
+      }
+    };
+    const interaction = createInteractionMock(channel);
+    const event = buildWar({
+      id: 'publish_pve_roles_1',
+      eventType: 'pve',
+      messageId: null,
+      roles: [],
+      waitlist: [],
+      accessMode: 'ROLES',
+      allowedRoleIds: ['role_guild_1', 'role_guild_2'],
+      notifyRoles: ['role_notify_should_not_be_used']
+    });
+    await warService.createWar(event);
+
+    const result = await publishOrRefreshWar(interaction, event);
+
+    expect(result.ok).toBe(true);
+    expect(sentMessages[0].content).toBe('<@&role_guild_1> <@&role_guild_2>');
+    expect(sentMessages[0].allowedMentions).toEqual({ parse: [], roles: ['role_guild_1', 'role_guild_2'] });
+  });
 });

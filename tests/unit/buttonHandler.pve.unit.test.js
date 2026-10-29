@@ -73,4 +73,27 @@ describe('buttonHandler PvE success responses', () => {
     expect(interaction.message.edit).toHaveBeenCalledTimes(1);
     expect(interaction.followUp).not.toHaveBeenCalled();
   });
+
+  it('pasa los roles del miembro a joinSlot y avisa en privado a quien queda como filler', async () => {
+    const { buttonHandler, pveService } = await loadHandlerWithMocks({
+      joinResult: { ok: true, reason: 'joined_as_filler', optionLabel: '20:00' }
+    });
+    const interaction = buildInteraction('pve_join_opt_1');
+    interaction.member = { displayName: 'User One', roles: { cache: new Map([['role_a', {}]]) } };
+    interaction.guild.channels.fetch = vi.fn(async () => ({
+      messages: {
+        fetch: vi.fn(async () => interaction.message)
+      }
+    }));
+
+    await buttonHandler(interaction);
+
+    expect(pveService.joinSlot).toHaveBeenCalledWith('event_1', 'opt_1', expect.objectContaining({ userId: 'user_1', userRoleIds: ['role_a'] }));
+    expect(interaction.message.edit).toHaveBeenCalledTimes(1);
+    expect(interaction.followUp).toHaveBeenCalledTimes(1);
+    const notice = interaction.followUp.mock.calls[0][0];
+    expect(notice.flags).toBe(64);
+    expect(notice.content).toContain('filler');
+    expect(notice.content).toContain('20:00');
+  });
 });

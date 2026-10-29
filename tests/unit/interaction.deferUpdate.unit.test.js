@@ -184,7 +184,7 @@ describe('panel PvE: deferUpdate antes del trabajo lento (H-6)', () => {
       calls.push('deleteSlot');
       return { ok: true, event: pveWar };
     });
-    management.updatePveAllowedUsers = vi.fn(async () => {
+    management.updatePveAccess = vi.fn(async () => {
       calls.push('updateAccess');
       return { ok: true, event: pveWar };
     });
@@ -222,7 +222,7 @@ describe('panel PvE: deferUpdate antes del trabajo lento (H-6)', () => {
   it('access_mode_select defiere antes de actualizar el acceso', async () => {
     const interaction = trackedInteraction(calls, {
       customId: 'panel_pve_access_mode_select',
-      values: ['RESTRICTED'],
+      values: ['USERS'],
       isStringSelectMenu: () => true
     });
 

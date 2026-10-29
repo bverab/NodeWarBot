@@ -7,6 +7,7 @@ const {
 const warService = require('./warService');
 const pveService = require('./pveService');
 const { safeMessageContent } = require('../utils/textSafety');
+const { buildPublicationMentions: buildAccessPublicationMentions } = require('./pveAccessRules');
 const { logWarn, logInfo } = require('../utils/appLogger');
 const {
   applyLifecycleToWar,
@@ -16,48 +17,9 @@ const {
   validateFutureLifecycle
 } = require('../utils/eventLifecycleTimes');
 
-function normalizeNotifyRoles(war) {
-  if (normalizeEventType(war.eventType) === 'pve' && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED') {
-    return Array.from(new Set((Array.isArray(war.allowedUserIds) ? war.allowedUserIds : []).map(String).filter(Boolean)));
-  }
-  return Array.from(new Set((Array.isArray(war.notifyRoles) ? war.notifyRoles : []).map(String).filter(Boolean)));
-}
-
-function buildPublicationContent(notifyTargets, targetType = 'roles') {
-  if (notifyTargets.length <= 0) {
-    return 'Evento publicado manualmente';
-  }
-  if (targetType === 'users') {
-    return safeMessageContent(notifyTargets.map(userId => `<@${userId}>`).join(' '), 'Evento publicado manualmente');
-  }
-  return safeMessageContent(notifyTargets.map(roleId => `<@&${roleId}>`).join(' '), 'Evento publicado manualmente');
-}
-
-function buildAllowedMentions(notifyTargets, targetType = 'roles') {
-  if (notifyTargets.length <= 0) {
-    return { parse: [] };
-  }
-  if (targetType === 'users') {
-    return { parse: [], users: notifyTargets };
-  }
-  return { parse: [], roles: notifyTargets };
-}
-
-function getNotifyTargetType(war) {
-  const isRestrictedPve = normalizeEventType(war.eventType) === 'pve'
-    && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
-  return isRestrictedPve ? 'users' : 'roles';
-}
-
 function buildPublicationMentions(war) {
-  const notifyTargets = normalizeNotifyRoles(war);
-  const targetType = getNotifyTargetType(war);
-  return {
-    notifyTargets,
-    targetType,
-    content: buildPublicationContent(notifyTargets, targetType),
-    allowedMentions: buildAllowedMentions(notifyTargets, targetType)
-  };
+  const mentions = buildAccessPublicationMentions(war, 'Evento publicado manualmente');
+  return { ...mentions, content: safeMessageContent(mentions.content, 'Evento publicado manualmente') };
 }
 
 async function publishOrRefreshWar(interaction, war) {

@@ -1,3 +1,5 @@
+const { buildFillerPromotionText } = require('../services/pveCloseReviewRules');
+
 async function notifyPromotion(interaction, war, promotedUser) {
   if (!promotedUser || promotedUser.isFake) return;
 
@@ -27,6 +29,38 @@ async function notifyPromotion(interaction, war, promotedUser) {
   }
 }
 
+// Fillers que entraron a un horario al cierre (sin hilo de resumen): DM a cada uno; a quienes no
+// aceptan DMs se les menciona en un solo mensaje en el canal del evento.
+async function notifyFillerPromotions({ client, war, option, promoted = [] }) {
+  const realUsers = promoted.filter(entry => entry?.userId && !entry.isFake);
+  if (!client || realUsers.length === 0) return;
+
+  const eventUrl = war?.guildId && war?.channelId && war?.messageId
+    ? `https://discord.com/channels/${war.guildId}/${war.channelId}/${war.messageId}`
+    : null;
+  const text = buildFillerPromotionText({ eventName: war?.name, option, eventUrl });
+  const undelivered = [];
+  for (const entry of realUsers) {
+    try {
+      const user = await client.users.fetch(String(entry.userId));
+      await user.send({ content: text, allowedMentions: { parse: [] } });
+    } catch {
+      undelivered.push(String(entry.userId));
+    }
+  }
+  if (undelivered.length === 0) return;
+
+  try {
+    const channel = await client.channels.fetch(String(war.channelId));
+    await channel.send({
+      content: `${undelivered.map(userId => `<@${userId}>`).join(' ')} ${text}`,
+      allowedMentions: { parse: [], users: undelivered }
+    });
+  } catch {
+    console.log(`No se pudo avisar en el canal a los fillers promovidos de ${war?.id}`);
+  }
+}
+
 function buildEventUrl(interaction, war) {
   const guildId = interaction.guildId;
   const channelId = war?.channelId || interaction.channelId;
@@ -37,5 +71,6 @@ function buildEventUrl(interaction, war) {
 }
 
 module.exports = {
-  notifyPromotion
+  notifyPromotion,
+  notifyFillerPromotions
 };

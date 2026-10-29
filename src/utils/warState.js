@@ -2,6 +2,7 @@ const EMPTY_SLOT = '-';
 const { normalizeEventType } = require('../constants/eventTypes');
 const { normalizeClassIconSource, normalizeParticipantDisplayStyle } = require('./participantDisplayFormatter');
 const { sanitizeDisplayText, sanitizeUserInput } = require('./textSafety');
+const { normalizeAccessMode } = require('../services/pveAccessRules');
 
 // Utilidades de estado del evento:
 // - Normalizacion de datos persistidos
@@ -158,7 +159,7 @@ function normalizeWar(war = {}) {
     publishError: war.publishError || null,
     lastPublishAttemptAt: Number.isFinite(war.lastPublishAttemptAt) ? war.lastPublishAttemptAt : null,
     notifyRoles: Array.isArray(war.notifyRoles) ? war.notifyRoles : [],  // Array de role IDs o user IDs
-    accessMode: String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN',
+    accessMode: normalizeAccessMode(war.accessMode),
     allowedUserIds: Array.isArray(war.allowedUserIds) ? war.allowedUserIds.map(String).filter(Boolean) : [],
     allowedRoleIds: Array.isArray(war.allowedRoleIds) ? war.allowedRoleIds.map(String).filter(Boolean) : [],
     fillers: Array.isArray(war.fillers) ? war.fillers.map(normalizeFillerEntry).filter(Boolean) : [],

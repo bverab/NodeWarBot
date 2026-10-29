@@ -11,6 +11,7 @@ const { sanitizeUserInput, sanitizeDisplayText, safeEmbedTitle, safeEmbedDescrip
 const { logError, logWarn, logInfo } = require('../utils/appLogger');
 const templateService = require('../services/templateService');
 const pveService = require('../services/pveService');
+const { describePveAccess } = require('../services/pveAccessRules');
 const {
   getDraftWar,
   setDraftWar,
@@ -197,7 +198,8 @@ async function handleWarCreation(interaction) {
     timeSlots: [],
     slotCapacity: 5,
     accessMode: 'OPEN',
-    allowedUserIds: []
+    allowedUserIds: [],
+    allowedRoleIds: []
   };
 
   clearDraftSession(interaction.user.id);
@@ -272,11 +274,8 @@ async function showRolesEditor(interaction, warData, notice = '') {
 async function showPveEditor(interaction, warData, notice = '') {
   const eventMeta = getEventTypeMeta(warData.eventType);
   const slots = Array.isArray(warData.timeSlots) ? warData.timeSlots : [];
-  const accessMode = String(warData.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-  const allowedUserIds = Array.isArray(warData.allowedUserIds) ? warData.allowedUserIds : [];
-  const accessText = accessMode === 'RESTRICTED'
-    ? (allowedUserIds.length ? allowedUserIds.map(id => `<@${id}>`).join(', ') : 'Restringido (sin usuarios)')
-    : 'Open';
+  const access = describePveAccess(warData);
+  const accessText = access.mode === 'OPEN' ? access.title : `${access.title}: ${access.targets}`;
   const slotDisplay = slots.length
     ? slots.map(slot => `⏰ ${slot.time} (${slot.capacity})`).join('\n')
     : '*(ninguno)*';
@@ -290,7 +289,7 @@ async function showPveEditor(interaction, warData, notice = '') {
       { name: '🕒 Publicacion', value: safeEmbedFieldValue(`${warData.time} (${warData.duration} min)`), inline: true },
       { name: '🔐 Acceso', value: safeEmbedFieldValue(accessText), inline: false },
       { name: '⏰ Horarios', value: safeEmbedFieldValue(slotDisplay), inline: false },
-      { name: '📝 Pasos', value: safeEmbedFieldValue('1. Configura horarios y cupo\n2. Haz click en **Publicar** para elegir dias y @mentions'), inline: false }
+      { name: '📝 Pasos', value: safeEmbedFieldValue('1. Configura horarios y cupo\n2. En **Configurar Acceso** elige quien entra como titular: todos, por roles o por personas (el resto queda como filler)\n3. Haz click en **Publicar** para elegir dias y @mentions'), inline: false }
     );
 
   if (notice) {

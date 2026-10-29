@@ -10,6 +10,7 @@ const { shouldExecute } = require('../utils/cronHelper');
 const pveService = require('./pveService');
 const pveCloseReviewService = require('./pveCloseReviewService');
 const { safeMessageContent, neutralizeMassMentions } = require('../utils/textSafety');
+const { buildPublicationMentions } = require('./pveAccessRules');
 const { logInfo, logWarn, logError } = require('../utils/appLogger');
 const {
   applyLifecycleToWar,
@@ -122,9 +123,9 @@ async function runSchedulerTick() {
         await closeWarSignups(war);
       }
 
-      // PvE con recap: revision de cierre (horario confirmado, votacion de prorroga o randoms).
+      // PvE: revision de cierre (avance de fillers y, con recap, horario confirmado, votacion o randoms).
       let votePending = false;
-      if (war.messageId && pveCloseReviewService.isPveCloseReviewEvent(war) && schedulerInstance) {
+      if (war.messageId && pveCloseReviewService.isPveEvent(war) && schedulerInstance) {
         ({ votePending } = await pveCloseReviewService.processCloseReview(schedulerInstance.client, war, nowMs));
         // Una prorroga aprobada reabre el evento y mueve cierre y fin.
         war = warService.getWarById(war.id) || war;
@@ -305,24 +306,9 @@ async function publishScheduledWebEvent(event, now = new Date()) {
   }
 }
 
-function buildScheduledPublicationMentions(event) {
-  const isRestrictedPve = normalizeEventType(event.eventType) === 'pve'
-    && String(event.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
-  const notifyTargets = isRestrictedPve
-    ? Array.from(new Set((Array.isArray(event.allowedUserIds) ? event.allowedUserIds : []).map(String).filter(Boolean)))
-    : Array.from(new Set((Array.isArray(event.notifyRoles) ? event.notifyRoles : []).map(String).filter(Boolean)));
-  const content = notifyTargets.length > 0
-    ? (isRestrictedPve
-      ? notifyTargets.map(userId => `<@${userId}>`).join(' ')
-      : notifyTargets.map(roleId => `<@&${roleId}>`).join(' '))
-    : 'Evento publicado automaticamente';
-
-  return {
-    content: safeMessageContent(content, 'Evento publicado automaticamente'),
-    allowedMentions: notifyTargets.length > 0
-      ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
-      : { parse: [] }
-  };
+function buildScheduledPublicationMentions(event, fallbackContent = 'Evento publicado automaticamente') {
+  const { content, allowedMentions } = buildPublicationMentions(event, fallbackContent);
+  return { content: safeMessageContent(content, fallbackContent), allowedMentions };
 }
 
 /**
@@ -360,16 +346,6 @@ async function executeWarPublication(war) {
     }
 
     const publicationTimestamp = Date.now();
-    const isRestrictedPve = normalizeEventType(war.eventType) === 'pve'
-      && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
-    const notifyTargets = isRestrictedPve
-      ? Array.from(new Set((Array.isArray(war.allowedUserIds) ? war.allowedUserIds : []).map(String).filter(Boolean)))
-      : (Array.isArray(war.notifyRoles) ? war.notifyRoles.map(String).filter(Boolean) : []);
-    const publishContent = notifyTargets.length > 0
-      ? (isRestrictedPve
-        ? notifyTargets.map(userId => `<@${userId}>`).join(' ')
-        : notifyTargets.map(roleId => `<@&${roleId}>`).join(' '))
-      : 'Evento creado automaticamente';
 
     const lifecycle = deriveLifecycleForScheduledEvent({
       dayOfWeek: war.dayOfWeek,
@@ -413,12 +389,7 @@ async function executeWarPublication(war) {
     const publishResult = await publishEventToDiscord({
       client,
       event: warForPublication,
-      messageOptions: {
-        content: safeMessageContent(publishContent, 'Evento creado automaticamente'),
-        allowedMentions: notifyTargets.length > 0
-          ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
-          : { parse: [] }
-      }
+      messageOptions: buildScheduledPublicationMentions(war, 'Evento creado automaticamente')
     });
     if (!publishResult.ok) {
       logWarn('No se encontro canal para evento programado', {

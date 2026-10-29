@@ -1,6 +1,7 @@
-// Revision de cierre de eventos PvE con recap activado. Al cerrar inscripciones publica en el hilo
-// del evento el horario confirmado (el primero lleno), o una votacion para extender 1 hora, o la
-// sugerencia de completar con "randoms". Reemplaza al hilo de recap por tiempo para estos eventos.
+// Revision de cierre de eventos PvE. Al cerrar inscripciones, si ningun horario se lleno con titulares,
+// los fillers completan el horario mas temprano posible. Con recap activado ademas publica en el hilo
+// del evento el horario confirmado, o una votacion para extender 1 hora, o la sugerencia de completar
+// con "randoms" (reemplaza al hilo de recap por tiempo); sin recap avisa por DM a quien entra.
 // El estado vive en EventPveCloseReview; cada evento se procesa en serie (tick y reacciones).
 const { normalizeEventType } = require('../constants/eventTypes');
 const warService = require('./warService');
@@ -9,6 +10,7 @@ const reviewRepository = require('../db/pveCloseReviewRepository');
 const { updateEventDiscordMessage } = require('./discordEventSyncService');
 const { buildPveReadOnlyPayload } = require('../utils/pveMessageBuilder');
 const rules = require('./pveCloseReviewRules');
+const { notifyFillerPromotions } = require('../utils/promotionNotifier');
 const { logInfo, logWarn, logError } = require('../utils/appLogger');
 
 const reviewLocks = new Map();
@@ -23,8 +25,13 @@ function withReviewLock(eventId, task) {
   });
 }
 
+function isPveEvent(war) {
+  return normalizeEventType(war?.eventType) === 'pve';
+}
+
+// PvE con recap: la revision publica en el hilo y reemplaza al recap por tiempo.
 function isPveCloseReviewEvent(war) {
-  return normalizeEventType(war?.eventType) === 'pve' && Boolean(war?.recap?.enabled);
+  return isPveEvent(war) && Boolean(war?.recap?.enabled);
 }
 
 function isReadyForReview(war, nowMs) {
@@ -102,6 +109,55 @@ async function postCopy(thread, war, view) {
   await thread.send(buildPveReadOnlyPayload({ ...war, isClosed: true }, view));
 }
 
+async function refreshEventMessage(client, war) {
+  const result = await updateEventDiscordMessage({ client, event: war });
+  if (!result.ok) {
+    logWarn('No se pudo actualizar el mensaje del evento tras el avance de fillers', {
+      action: 'pve_close_review_fillers',
+      eventId: war.id,
+      reason: result.errorMessage || result.status
+    });
+  }
+}
+
+// Sin horario lleno: los fillers del horario mas temprano que se completa pasan a titulares.
+// Devuelve el horario ya completo y quienes entraron, o null si ningun horario se completa.
+async function advanceFillers(client, war, view) {
+  const candidate = rules.selectFillerPromotion(view.options);
+  if (!candidate) return null;
+
+  const result = await pveService.promoteFillers(war.id, candidate.option.id, candidate.fillers.map(entry => entry.userId));
+  const promotedIds = new Set((result.promoted || []).map(String));
+  if (promotedIds.size === 0) return null;
+
+  const fresh = await pveService.getEventPveView(war);
+  const option = fresh.options.find(entry => entry.id === candidate.option.id) || candidate.option;
+  await refreshEventMessage(client, war);
+  logInfo('Revision de cierre PvE: fillers completan un horario', {
+    action: 'pve_close_review_fillers',
+    eventId: war.id,
+    optionId: option.id,
+    promoted: promotedIds.size
+  });
+  return { option, view: fresh, promoted: candidate.fillers.filter(entry => promotedIds.has(String(entry.userId))) };
+}
+
+// Sin recap: solo el avance de fillers, con aviso por DM a quienes entran.
+async function runFillerStep(client, war, nowMs) {
+  const view = await pveService.getEventPveView(war);
+  if (rules.selectConfirmedOption(view.options)) {
+    await reviewRepository.updateReview(war.id, { status: 'confirmed', finalizedAt: nowMs });
+    return;
+  }
+
+  const advance = await advanceFillers(client, war, view);
+  // El estado se guarda antes de avisar: un fallo al avisar no repite la promocion ni los avisos.
+  await reviewRepository.updateReview(war.id, { status: advance ? 'confirmed' : 'unfilled', finalizedAt: nowMs });
+  if (advance) {
+    await notifyFillerPromotions({ client, war, option: advance.option, promoted: advance.promoted });
+  }
+}
+
 async function finishWithRandoms(client, war, review, { afterExtension, thread = null, view = null, nowMs = Date.now() }) {
   const target = thread || await ensureReviewThread(client, war, review);
   if (!target) return;
@@ -109,23 +165,29 @@ async function finishWithRandoms(client, war, review, { afterExtension, thread =
   await target.send(rules.buildRandomsMessage({
     customText: war.recap?.messageText,
     titularIds: rules.listTitularIds(fullView.options),
-    afterExtension
+    afterExtension,
+    options: fullView.options
   }));
   await postCopy(target, war, fullView);
   await reviewRepository.updateReview(war.id, { status: 'randoms', finalizedAt: nowMs });
   logInfo('Revision de cierre PvE: sugerencia de randoms', { action: 'pve_close_review', eventId: war.id, afterExtension });
 }
 
-// Paso A: horario confirmado, votacion de prorroga o randoms.
+// Paso A: horario confirmado (lleno con titulares o completado con fillers), votacion de prorroga o randoms.
 async function runCloseStep(client, war, review, nowMs) {
   const thread = await ensureReviewThread(client, war, review);
   if (!thread) return;
 
-  const view = await pveService.getEventPveView(war);
+  let view = await pveService.getEventPveView(war);
   const customText = war.recap?.messageText;
-  const chosen = rules.selectConfirmedOption(view.options);
+  let chosen = rules.selectConfirmedOption(view.options);
+  let promoted = [];
+  if (!chosen) {
+    const advance = await advanceFillers(client, war, view);
+    if (advance) ({ option: chosen, view, promoted } = advance);
+  }
   if (chosen) {
-    await thread.send(rules.buildConfirmedMessage({ customText, option: chosen }));
+    await thread.send(rules.buildConfirmedMessage({ customText, option: chosen, promoted }));
     await postCopy(thread, war, { ...view, options: [chosen] });
     await reviewRepository.updateReview(war.id, { status: 'confirmed', finalizedAt: nowMs });
     logInfo('Revision de cierre PvE: horario confirmado', { action: 'pve_close_review', eventId: war.id, optionId: chosen.id });
@@ -220,9 +282,14 @@ async function evaluateVote(client, war, review, nowMs) {
   await finishWithRandoms(client, war, { ...review, status: 'rejected' }, { afterExtension: false, thread, view, nowMs });
 }
 
-// Desde el tick del scheduler. Devuelve si la votacion sigue abierta (el mensaje no debe expirar).
+// Desde el tick del scheduler, para todo PvE publicado. Devuelve si la votacion sigue abierta (el
+// mensaje no debe expirar).
 async function processCloseReview(client, war, nowMs = Date.now()) {
-  if (!isPveCloseReviewEvent(war) || !war.messageId || !client) return { votePending: false };
+  if (!isPveEvent(war) || !war.messageId || !client) return { votePending: false };
+  // Sin recap no hay votacion: antes del cierre no hay nada que revisar (evita consultas en cada tick).
+  // Se mira la copia de la cache: el mismo tick pudo cerrar las inscripciones.
+  const cached = warService.getWarById(war.id) || war;
+  if (!isPveCloseReviewEvent(cached) && !isReadyForReview(cached, nowMs)) return { votePending: false };
 
   return await withReviewLock(war.id, async () => {
     const current = warService.getWarById(war.id) || war;
@@ -233,7 +300,13 @@ async function processCloseReview(client, war, nowMs = Date.now()) {
       // Otra ocurrencia (republicacion semanal): se empieza de cero.
       if (review && review.messageId !== current.messageId) review = null;
 
-      if (review?.status === 'pending') {
+      if (!isPveCloseReviewEvent(current)) {
+        // Sin recap: una sola decision por ocurrencia.
+        if (isReadyForReview(current, nowMs) && (!review || review.status === null)) {
+          if (!review) await reviewRepository.startReview(current.id, current.messageId);
+          await runFillerStep(client, current, nowMs);
+        }
+      } else if (review?.status === 'pending') {
         await evaluateVote(client, current, review, nowMs);
       } else if (review?.status === 'rejected') {
         await finishWithRandoms(client, current, review, { afterExtension: false, nowMs });
@@ -269,6 +342,7 @@ async function handleVoteReaction({ client, messageId }) {
 }
 
 module.exports = {
+  isPveEvent,
   isPveCloseReviewEvent,
   processCloseReview,
   handleVoteReaction

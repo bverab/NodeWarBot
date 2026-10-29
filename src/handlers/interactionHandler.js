@@ -3,8 +3,6 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ModalBuilder,
-  UserSelectMenuBuilder,
-  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle
 } = require('discord.js');
@@ -22,6 +20,8 @@ const { safeEphemeralReply } = require('../utils/interactionReply');
 const { consumeRateLimit, buildInteractionRateKey } = require('../utils/rateLimiter');
 const { buildModalTitle, clampInputValue } = require('../utils/modalLimits');
 const { logError } = require('../utils/appLogger');
+const { normalizeAccessMode, normalizeIds } = require('../services/pveAccessRules');
+const { buildPveAccessView, splitUsersByChannelAccess, buildRejectedUsersNotice } = require('../utils/pveAccessUi');
 
 module.exports = async interaction => {
   const { customId } = interaction;
@@ -54,7 +54,8 @@ module.exports = async interaction => {
     if (customId === 'configure_pve_slots') return await handleConfigurePveSlots(interaction);
     if (customId === 'configure_pve_access') return await handleConfigurePveAccess(interaction);
     if (customId === 'pve_access_mode_select') return await handlePveAccessModeSelect(interaction);
-    if (customId === 'pve_access_users_select' || customId === 'pve_access_roles_select') return await handlePveAccessUsersSelect(interaction);
+    if (customId === 'pve_access_users_select') return await handlePveAccessUsersSelect(interaction);
+    if (customId === 'pve_access_roles_select') return await handlePveAccessRolesSelect(interaction);
     if (customId === 'pve_access_save') return await handlePveAccessSave(interaction);
     if (customId === 'pve_access_back') return await handlePveAccessBack(interaction);
 
@@ -187,34 +188,21 @@ async function handleConfigurePveAccess(interaction) {
     return await interaction.reply({ content: 'Esta accion solo aplica a eventos PvE.', flags: 64 });
   }
 
-  const accessMode = String(warData.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-  const allowedUserIds = Array.isArray(warData.allowedUserIds) ? warData.allowedUserIds : [];
-  const selectedText = allowedUserIds.length
-    ? allowedUserIds.map(id => `<@${id}>`).join(', ')
-    : 'Sin usuarios seleccionados';
+  await showPveAccessEditor(interaction, warData);
+}
 
-  const modeMenu = new StringSelectMenuBuilder()
-    .setCustomId('pve_access_mode_select')
-    .setPlaceholder('Selecciona el modo de acceso')
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions([
-      { label: 'Open', value: 'OPEN', default: accessMode === 'OPEN' },
-      { label: 'Restricted', value: 'RESTRICTED', default: accessMode === 'RESTRICTED' }
-    ]);
-
-  const userPicker = new UserSelectMenuBuilder()
-    .setCustomId('pve_access_users_select')
-    .setPlaceholder('Usuarios permitidos (solo para Restricted)')
-    .setMinValues(0)
-    .setMaxValues(25);
-
-  await interaction.update({
-    content: `Configurar acceso PvE\nModo actual: **${accessMode}**\nUsuarios permitidos: ${selectedText}`,
-    embeds: [],
+// El borrador se publica en el canal donde se creo: ahi se valida a las personas elegidas.
+async function showPveAccessEditor(interaction, warData, notice = '') {
+  const { embed, rows } = buildPveAccessView(warData, {
+    customIds: { mode: 'pve_access_mode_select', roles: 'pve_access_roles_select', users: 'pve_access_users_select' },
+    title: `🔐 Acceso PvE: ${warData.name || 'Evento'}`,
+    notice
+  });
+  const payload = {
+    content: '',
+    embeds: [embed],
     components: [
-      new ActionRowBuilder().addComponents(modeMenu),
-      new ActionRowBuilder().addComponents(userPicker),
+      ...rows,
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('pve_access_save')
@@ -226,7 +214,12 @@ async function handleConfigurePveAccess(interaction) {
           .setStyle(ButtonStyle.Secondary)
       )
     ]
-  });
+  };
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+  } else {
+    await interaction.update(payload);
+  }
 }
 
 async function handlePveAccessModeSelect(interaction) {
@@ -234,8 +227,18 @@ async function handlePveAccessModeSelect(interaction) {
   if (!warData) {
     return await interaction.update({ content: 'Sesion expirada', components: [] });
   }
-  warData.accessMode = interaction.values?.[0] === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-  await handleConfigurePveAccess(interaction);
+  warData.accessMode = normalizeAccessMode(interaction.values?.[0]);
+  await showPveAccessEditor(interaction, warData);
+}
+
+async function handlePveAccessRolesSelect(interaction) {
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData) {
+    return await interaction.update({ content: 'Sesion expirada', components: [] });
+  }
+  await interaction.deferUpdate();
+  warData.allowedRoleIds = normalizeIds(interaction.values);
+  await showPveAccessEditor(interaction, warData, 'Roles con acceso actualizados.');
 }
 
 async function handlePveAccessUsersSelect(interaction) {
@@ -243,8 +246,15 @@ async function handlePveAccessUsersSelect(interaction) {
   if (!warData) {
     return await interaction.update({ content: 'Sesion expirada', components: [] });
   }
-  warData.allowedUserIds = (interaction.values || []).map(String);
-  await handleConfigurePveAccess(interaction);
+  // Consultar a cada miembro puede tardar: se reconoce la interaccion antes.
+  await interaction.deferUpdate();
+  const { allowed, rejected } = await splitUsersByChannelAccess({
+    guild: interaction.guild,
+    channelId: warData.channelId || interaction.channelId,
+    userIds: interaction.values
+  });
+  warData.allowedUserIds = allowed;
+  await showPveAccessEditor(interaction, warData, buildRejectedUsersNotice(rejected) || 'Personas con acceso actualizadas.');
 }
 
 async function handlePveAccessSave(interaction) {

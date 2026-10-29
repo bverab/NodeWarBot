@@ -16,17 +16,67 @@ function primaryEnrollments(option) {
   return Array.isArray(option?.enrollments) ? option.enrollments : [];
 }
 
-function isOptionFull(option) {
-  const capacity = Number(option?.capacity);
-  return Number.isFinite(capacity) && capacity > 0 && primaryEnrollments(option).length >= capacity;
+// Fillers del horario por orden de llegada (a igual hora se conserva el orden recibido).
+function fillerEnrollments(option) {
+  const fillers = Array.isArray(option?.fillers) ? option.fillers : [];
+  return fillers
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => ((Number(a.entry.joinedAt) || 0) - (Number(b.entry.joinedAt) || 0)) || (a.index - b.index))
+    .map(({ entry }) => entry);
 }
 
-// El horario lleno mas temprano (HH:mm); a igual hora, la posicion menor. Los fillers no cuentan.
-function selectConfirmedOption(options = []) {
-  const sorted = [...(Array.isArray(options) ? options : [])].sort((a, b) =>
+function optionCapacity(option) {
+  const capacity = Number(option?.capacity);
+  return Number.isFinite(capacity) && capacity > 0 ? capacity : 0;
+}
+
+function isOptionFull(option) {
+  const capacity = optionCapacity(option);
+  return capacity > 0 && primaryEnrollments(option).length >= capacity;
+}
+
+// Por hora (HH:mm); a igual hora, la posicion menor.
+function sortByTime(options) {
+  return [...(Array.isArray(options) ? options : [])].sort((a, b) =>
     (timeToMinutes(a.time) - timeToMinutes(b.time)) || ((a.position ?? 0) - (b.position ?? 0))
   );
-  return sorted.find(isOptionFull) || null;
+}
+
+// El horario lleno mas temprano. Los fillers no cuentan.
+function selectConfirmedOption(options = []) {
+  return sortByTime(options).find(isOptionFull) || null;
+}
+
+// Sin horario lleno: el mas temprano que titulares + sus fillers completan. Cada filler se anoto en un
+// horario concreto (esta disponible a esa hora), asi que solo completa ese horario. Entran los que
+// faltan, por orden de llegada; los falsos tambien ocupan cupo.
+function selectFillerPromotion(options = []) {
+  for (const option of sortByTime(options)) {
+    const missing = optionCapacity(option) - primaryEnrollments(option).length;
+    if (missing <= 0) continue;
+    const fillers = fillerEnrollments(option);
+    if (fillers.length >= missing) return { option, fillers: fillers.slice(0, missing) };
+  }
+  return null;
+}
+
+function displayNames(entries) {
+  return entries.map(entry => sanitizeDisplayText(entry.displayName, { maxLength: 64, fallback: 'Usuario' }));
+}
+
+// Fillers de todos los horarios, sin repetir personas.
+function listFillerEntries(options = []) {
+  const seen = new Set();
+  const entries = [];
+  for (const option of sortByTime(options)) {
+    for (const entry of fillerEnrollments(option)) {
+      const key = String(entry.userId);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      entries.push(entry);
+    }
+  }
+  return entries;
 }
 
 // Titulares: inscritos primarios reales (los usuarios falsos no se pueden mencionar ni votan).
@@ -101,14 +151,16 @@ function optionLabel(option) {
   return sanitizeDisplayText(option?.label || option?.time, { maxLength: 60, fallback: 'Horario' });
 }
 
-function buildConfirmedMessage({ customText, option }) {
+// promoted: fillers que acaban de entrar a este horario (ya figuran como titulares en option).
+function buildConfirmedMessage({ customText, option, promoted = [] }) {
   const titularIds = listOptionTitularIds(option);
-  const substitutes = (Array.isArray(option?.fillers) ? option.fillers : [])
-    .map(entry => sanitizeDisplayText(entry.displayName, { maxLength: 64, fallback: 'Usuario' }));
+  const substitutes = displayNames(fillerEnrollments(option));
+  const entered = displayNames(Array.isArray(promoted) ? promoted : []);
   return {
     content: composeContent(customText, [
       `✅ Horario confirmado: **${optionLabel(option)}** (${primaryEnrollments(option).length}/${option.capacity})`,
       mentionLine(titularIds),
+      entered.length > 0 ? `Entran desde fillers: ${entered.join(', ')}` : null,
       substitutes.length > 0 ? `Suplentes: ${substitutes.join(', ')}` : null
     ]),
     allowedMentions: { parse: [], users: titularIds }
@@ -136,15 +188,25 @@ function buildVoteMessage({ customText, titularIds, tally, voteEndsAt, result = 
   };
 }
 
-function buildRandomsMessage({ customText, titularIds, afterExtension }) {
+// Los fillers anotados se listan sin mencion: son los primeros candidatos a "randoms".
+function buildRandomsMessage({ customText, titularIds, afterExtension, options = [] }) {
+  const fillers = displayNames(listFillerEntries(options));
   return {
     content: composeContent(customText, [
       `⚠️ Ningun horario completo sus cupos${afterExtension ? ' tras la prorroga.' : ' y no se aprobo la prorroga.'}`,
       mentionLine(titularIds),
-      'Se sugiere completar los grupos eligiendo personas "randoms".'
+      'Se sugiere completar los grupos eligiendo personas "randoms".',
+      fillers.length > 0 ? `Fillers anotados: ${fillers.join(', ')}` : null
     ]),
     allowedMentions: { parse: [], users: titularIds }
   };
+}
+
+// Aviso a quien entra desde fillers cuando no hay hilo de resumen (DM, o en el canal si falla).
+function buildFillerPromotionText({ eventName, option, eventUrl }) {
+  const name = sanitizeDisplayText(eventName, { maxLength: 90, fallback: 'Evento' });
+  const event = eventUrl ? `[${name}](${eventUrl})` : `**${name}**`;
+  return `**Entraste!** Ningun horario se lleno con titulares al cierre de ${event}, asi que pasaste de filler a titular en el horario **${optionLabel(option)}**.`;
 }
 
 function buildExtensionApprovedMessage({ yes, eligible, closesAt }) {
@@ -160,11 +222,14 @@ module.exports = {
   VOTE_DURATION_MS,
   EXTENSION_MS,
   selectConfirmedOption,
+  selectFillerPromotion,
+  isOptionFull,
   listOptionTitularIds,
   listTitularIds,
   computeVoteTally,
   buildConfirmedMessage,
   buildVoteMessage,
   buildRandomsMessage,
+  buildFillerPromotionText,
   buildExtensionApprovedMessage
 };

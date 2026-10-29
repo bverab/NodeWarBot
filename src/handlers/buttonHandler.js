@@ -11,6 +11,7 @@ const {
   deleteEventDiscordMessage
 } = require('../services/discordEventSyncService');
 const pveService = require('../services/pveService');
+const { getMemberRoleIds } = require('../services/pveAccessRules');
 const {
   getRoleByName,
   findParticipantRole,
@@ -338,7 +339,8 @@ async function handleJoinPveSlot(interaction) {
       maxLength: 64,
       fallback: 'Usuario'
     }),
-    isFake: false
+    isFake: false,
+    userRoleIds: getMemberRoleIds(interaction.member)
   };
 
   const result = await pveService.joinSlot(event.id, optionId, participant);
@@ -347,6 +349,16 @@ async function handleJoinPveSlot(interaction) {
     const refreshed = getWarByMessageId(interaction.message.id);
     if (refreshed) {
       await refreshPublicEventMessage(interaction, refreshed);
+    }
+    // Inscribirse como titular no necesita aviso; quedar como filler si, porque no es evidente.
+    if (result.reason === 'joined_as_filler') {
+      await interaction.followUp({
+        content: safeMessageContent(
+          `Quedaste como **filler** (lista de espera) en **${sanitizeDisplayText(result.optionLabel, { maxLength: 60, fallback: 'ese horario' })}**: este evento esta restringido y no tienes acceso como titular. Si al cierre ningun horario se lleno, los fillers completan el horario mas temprano posible por orden de llegada. Vuelve a marcar el horario para salir.`,
+          'Quedaste como filler en ese horario.'
+        ),
+        flags: 64
+      });
     }
     return;
   }

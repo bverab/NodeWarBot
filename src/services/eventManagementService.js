@@ -62,13 +62,15 @@ async function getEventDashboardView(eventId, filter = {}) {
   return { ok: true, event, pve };
 }
 
-async function updatePveAllowedUsers(eventId, accessMode, allowedUserIds = [], filter = {}) {
+// access: { accessMode, allowedUserIds?, allowedRoleIds? }; options.resolveMemberRoleIds para el modo por roles.
+async function updatePveAccess(eventId, access = {}, filter = {}, options = {}) {
   const event = getEventById(eventId, filter);
   if (!event) return { ok: false, reason: 'event_missing' };
   if (normalizeEventType(event.eventType) !== 'pve') return { ok: false, reason: 'not_pve' };
 
-  const updated = await pveService.configureAccess(event.id, accessMode, allowedUserIds);
-  return { ok: true, event: updated };
+  const { event: updated, promoted } = await pveService.configureAccess(event.id, access, options);
+  if (!updated) return { ok: false, reason: 'event_missing' };
+  return { ok: true, event: updated, promoted };
 }
 
 async function addPveSlot(eventId, time, capacity, filter = {}) {
@@ -157,7 +159,7 @@ module.exports = {
   setEventClosed,
   toggleEventClosed,
   getEventDashboardView,
-  updatePveAllowedUsers,
+  updatePveAccess,
   addPveSlot,
   updatePveSlot,
   deletePveSlot,

@@ -7,6 +7,9 @@ const {
 const pveService = require('../../services/pveService');
 const eventManagementService = require('../../services/eventManagementService');
 const { normalizeEventType } = require('../../constants/eventTypes');
+const { normalizeAccessMode, normalizeIds } = require('../../services/pveAccessRules');
+const { splitUsersByChannelAccess, buildRejectedUsersNotice, createMemberRoleResolver } = require('../../utils/pveAccessUi');
+const { sanitizeDisplayText } = require('../../utils/textSafety');
 const {
   buildPveAccessEditorPayload,
   buildPveSlotsEditorPayload,
@@ -77,28 +80,44 @@ async function handlePveToggleClose(interaction) {
   );
 }
 
+// Guarda el cambio de acceso; los fillers que ahora califican pasan a titulares (con cupo) y se informa.
+async function applyPveAccessChange(interaction, context, access, notice = '') {
+  const result = await eventManagementService.updatePveAccess(
+    context.war.id,
+    access,
+    { channelId: interaction.channelId },
+    { resolveMemberRoleIds: createMemberRoleResolver(interaction.guild) }
+  );
+  if (!result.ok) return await respondUpdate(interaction, { content: 'No se pudo actualizar el acceso PvE.', embeds: [], components: [] });
+  const updated = result.event;
+  await refreshIfPublished(interaction, updated);
+
+  const promoted = (result.promoted || []).map(entry =>
+    `${sanitizeDisplayText(entry.displayName, { maxLength: 64, fallback: 'Usuario' })} (${sanitizeDisplayText(entry.optionLabel, { maxLength: 60, fallback: 'Horario' })})`
+  );
+  const lines = [notice, promoted.length ? `Pasan a titulares: ${promoted.join(', ')}` : ''].filter(Boolean);
+  await updateWithContext(
+    interaction,
+    buildPveAccessEditorPayload(updated, { notice: lines.join('\n') }),
+    updated.id,
+    { currentView: 'pve_access' }
+  );
+}
+
 async function handlePveAccessModeSelect(interaction) {
   if (!interaction.isStringSelectMenu()) return;
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
-  const mode = interaction.values?.[0] === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-  const result = await eventManagementService.updatePveAllowedUsers(
-    context.war.id,
-    mode,
-    context.war.allowedUserIds || [],
-    { channelId: interaction.channelId }
-  );
-  if (!result.ok) return await respondUpdate(interaction, { content: 'No se pudo actualizar acceso PvE.', embeds: [], components: [] });
-  const updated = result.event;
-  await refreshIfPublished(interaction, updated);
+  await applyPveAccessChange(interaction, context, { accessMode: normalizeAccessMode(interaction.values?.[0]) }, 'Modo de acceso actualizado.');
+}
 
-  await updateWithContext(
-    interaction,
-    buildPveAccessEditorPayload(updated, { notice: `Modo actualizado: ${mode}` }),
-    updated.id,
-    { currentView: 'pve_access' }
-  );
+async function handlePveAccessRolesSelect(interaction) {
+  if (!interaction.isRoleSelectMenu()) return;
+  const context = getSelectedPveContext(interaction);
+  if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
+
+  await applyPveAccessChange(interaction, context, { allowedRoleIds: normalizeIds(interaction.values) }, 'Roles con acceso actualizados.');
 }
 
 async function handlePveAccessUsersSelect(interaction) {
@@ -106,23 +125,12 @@ async function handlePveAccessUsersSelect(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
-  const userIds = Array.from(new Set((interaction.values || []).map(String).filter(Boolean)));
-  const result = await eventManagementService.updatePveAllowedUsers(
-    context.war.id,
-    context.war.accessMode || 'OPEN',
-    userIds,
-    { channelId: interaction.channelId }
-  );
-  if (!result.ok) return await respondUpdate(interaction, { content: 'No se pudo actualizar usuarios permitidos PvE.', embeds: [], components: [] });
-  const updated = result.event;
-  await refreshIfPublished(interaction, updated);
-
-  await updateWithContext(
-    interaction,
-    buildPveAccessEditorPayload(updated, { notice: 'Usuarios permitidos actualizados.' }),
-    updated.id,
-    { currentView: 'pve_access', pendingAllowedUserIds: userIds }
-  );
+  const { allowed, rejected } = await splitUsersByChannelAccess({
+    guild: interaction.guild,
+    channelId: context.war.channelId || interaction.channelId,
+    userIds: interaction.values
+  });
+  await applyPveAccessChange(interaction, context, { allowedUserIds: allowed }, buildRejectedUsersNotice(rejected) || 'Personas con acceso actualizadas.');
 }
 
 async function handlePveAccessBack(interaction) {
@@ -133,7 +141,7 @@ async function handlePveAccessBack(interaction) {
     interaction,
     buildEventPanelPayload(context.war, { scope: context.context.scope || null }),
     context.war.id,
-    { currentView: 'panel', pendingAllowedUserIds: null }
+    { currentView: 'panel' }
   );
 }
 
@@ -446,6 +454,7 @@ const PVE_EVENT_ADMIN_PANEL_ACTIONS = {
   panel_pve_slots_back: handlePveSlotsBack,
   panel_pve_edit_access: handlePveEditAccess,
   panel_pve_access_mode_select: withDeferredUpdate(handlePveAccessModeSelect),
+  panel_pve_access_roles_select: withDeferredUpdate(handlePveAccessRolesSelect),
   panel_pve_access_users_select: withDeferredUpdate(handlePveAccessUsersSelect),
   panel_pve_access_back: handlePveAccessBack,
   panel_pve_manage_enrollments: handlePveManageEnrollments,

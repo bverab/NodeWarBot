@@ -74,9 +74,23 @@ function createFakeDiscord() {
     message.reactionUsers.get(emoji)?.delete(user.id);
   }
 
+  // DMs enviados por usuario; los de `dmBlocked` fallan como un usuario con los DMs cerrados.
+  const dms = new Map();
+  const dmBlocked = new Set();
   const client = {
     user: BOT_USER,
-    channels: { fetch: async id => channels.get(String(id)) || null }
+    channels: { fetch: async id => channels.get(String(id)) || null },
+    users: {
+      fetch: async id => ({
+        id: String(id),
+        send: async payload => {
+          if (dmBlocked.has(String(id))) throw Object.assign(new Error('Cannot send messages to this user'), { code: 50007 });
+          if (!dms.has(String(id))) dms.set(String(id), []);
+          dms.get(String(id)).push(payload);
+          return payload;
+        }
+      })
+    }
   };
 
   // Evento de reaccion como lo entrega discord.js (sin parciales).
@@ -84,7 +98,7 @@ function createFakeDiscord() {
     return { partial: false, emoji: { name: emoji }, message: { id: message.id, partial: false }, client };
   }
 
-  return { client, channels, createChannel, createMessage, addReaction, removeReaction, reactionEvent };
+  return { client, channels, dms, dmBlocked, createChannel, createMessage, addReaction, removeReaction, reactionEvent };
 }
 
 module.exports = {

@@ -1,5 +1,6 @@
 const {
   selectConfirmedOption,
+  selectFillerPromotion,
   listTitularIds,
   computeVoteTally,
   buildConfirmedMessage,
@@ -161,5 +162,60 @@ describe('core: PvE close review — mensajes', () => {
     const closesAt = Date.parse('2026-05-05T23:15:00.000Z');
     expect(buildExtensionApprovedMessage({ yes: 2, eligible: 3, closesAt }).content)
       .toBe(`✅ Prorroga aprobada (2 de 3). Inscripciones abiertas hasta <t:${closesAt / 1000}:t>.`);
+  });
+
+  it('confirmado por fillers dice quienes entran; randoms lista los fillers anotados sin mencionarlos', () => {
+    const chosen = option('a', '21:00', 3, ['u1', 'f1', 'f2'], ['f3']);
+    const message = buildConfirmedMessage({
+      customText: '',
+      option: chosen,
+      promoted: [enrollment('f1', { displayName: 'Filler Uno' }), enrollment('f2', { displayName: 'Filler Dos' })]
+    });
+    expect(message.content).toContain('✅ Horario confirmado: **21:00** (3/3)');
+    expect(message.content).toContain('Entran desde fillers: Filler Uno, Filler Dos');
+    expect(message.content).toContain('Suplentes: f3');
+    expect(message.allowedMentions).toEqual({ parse: [], users: ['u1', 'f1', 'f2'] });
+
+    const randoms = buildRandomsMessage({
+      customText: '',
+      titularIds: ['u1'],
+      afterExtension: false,
+      options: [option('a', '20:00', 5, ['u1'], ['f1']), option('b', '21:00', 5, [], ['f1', 'f2'])]
+    });
+    expect(randoms.content).toContain('Fillers anotados: f1, f2');
+    expect(randoms.allowedMentions).toEqual({ parse: [], users: ['u1'] });
+    expect(buildRandomsMessage({ customText: '', titularIds: [], afterExtension: false }).content).not.toContain('Fillers');
+  });
+});
+
+describe('core: PvE close review — avance de fillers', () => {
+  function filler(userId, joinedAt, extra = {}) {
+    return { userId, displayName: userId, isFake: Boolean(extra.isFake), joinedAt };
+  }
+
+  it('elige el horario mas temprano que se completa con sus fillers y toma los que faltan por orden de llegada', () => {
+    const early = option('early', '20:00', 4, ['a'], []);
+    early.fillers = [filler('x', 5), filler('y', 6)];
+    const late = option('late', '21:00', 3, ['b'], []);
+    late.fillers = [filler('late_2', 20), filler('late_1', 10), filler('late_3', 30)];
+    const later = option('later', '22:00', 2, [], []);
+    later.fillers = [filler('z1', 1), filler('z2', 2)];
+
+    const result = selectFillerPromotion([later, late, early]);
+
+    expect(result.option.id).toBe('late');
+    expect(result.fillers.map(entry => entry.userId)).toEqual(['late_1', 'late_2']);
+  });
+
+  it('cuenta a los fillers falsos, ignora horarios llenos o sin cupo y devuelve null si ninguno se completa', () => {
+    const fake = option('fake', '20:00', 2, ['a'], []);
+    fake.fillers = [filler('fake_1', 1, { isFake: true })];
+    expect(selectFillerPromotion([fake]).fillers.map(entry => entry.userId)).toEqual(['fake_1']);
+
+    const full = option('full', '19:00', 1, ['a'], ['f']);
+    const noCapacity = option('zero', '19:30', 0, [], ['g']);
+    const short = option('short', '20:00', 5, ['a'], ['f', 'g']);
+    expect(selectFillerPromotion([full, noCapacity, short])).toBeNull();
+    expect(selectFillerPromotion([])).toBeNull();
   });
 });
