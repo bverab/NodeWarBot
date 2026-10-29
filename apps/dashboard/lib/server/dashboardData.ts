@@ -5,7 +5,9 @@ import { calculateEventLifecycleDates, calculateScheduledPublishAt, normalizeTim
 import { fetchDiscordGuildMembers } from "@/lib/server/discordMembers";
 import { prisma } from "@/lib/server/prisma";
 import { InputError } from "./apiErrors";
+import { promoteQualifiedFillers } from "./nodeWarBotServices";
 import { MAX_SLOT_NAME_LENGTH } from "../slotLimits";
+import { normalizePveAccessMode, type PveAccessMode } from "../pveAccessModes";
 
 export type EventListItem = {
   id: string;
@@ -110,7 +112,19 @@ export type EventDetail = EventListItem & {
     isFake: boolean;
     joinedAt: string;
   }>;
+  // PvE: who joins as a main signup. Both lists are kept whatever the mode, so switching back restores them.
+  access: {
+    mode: PveAccessMode;
+    roleIds: string[];
+    users: Array<{ userId: string; displayName: string; avatarUrl: string | null }>;
+  };
   discordUrl: string | null;
+};
+
+export type PveAccessInput = {
+  accessMode: PveAccessMode;
+  roleIds: string[];
+  userIds: string[];
 };
 
 export type EventMutationInput = {
@@ -142,7 +156,9 @@ export type CreateGuildEventInput = {
   duration: number;
   closeBeforeMinutes: number;
   channelId?: string | null;
+  accessMode?: PveAccessMode;
   accessRoleIds?: string[];
+  accessUserIds?: string[];
   notifyRoleIds?: string[];
   recurrence?: "single" | "weekly";
   autoPublishEnabled?: boolean;
@@ -508,6 +524,12 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
       },
       fillers: {
         orderBy: { joinedAt: "asc" }
+      },
+      accessRoles: {
+        orderBy: { position: "asc" }
+      },
+      accessUsers: {
+        orderBy: { position: "asc" }
       }
     }
   });
@@ -521,7 +543,8 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
     ...event.roleSlots.flatMap((slot) => slot.users),
     ...event.enrollments,
     ...event.waitlist.map((entry) => ({ userId: entry.userId, userName: entry.userName })),
-    ...event.fillers
+    ...event.fillers,
+    ...event.accessUsers.map((entry) => ({ userId: entry.userId }))
   ]);
 
   return {
@@ -615,6 +638,14 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
         joinedAt: toIso(entry.joinedAt)
       };
     }),
+    access: {
+      mode: normalizePveAccessMode(event.accessMode),
+      roleIds: event.accessRoles.map((entry) => entry.roleId),
+      users: event.accessUsers.map((entry) => {
+        const enriched = enrichParticipant({ userId: entry.userId });
+        return { userId: entry.userId, displayName: enriched.displayName, avatarUrl: enriched.avatarUrl };
+      })
+    },
     discordUrl:
       event.guildId && event.channelId && event.messageId
         ? `https://discord.com/channels/${event.guildId}/${event.channelId}/${event.messageId}`
@@ -958,7 +989,8 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
         id: eventId,
         groupId,
         eventType: input.eventType,
-        accessMode: "OPEN",
+        // Access modes are a PvE rule; War events keep slot-level role permissions only.
+        accessMode: isPve ? normalizePveAccessMode(input.accessMode) : "OPEN",
         name: input.name,
         type: input.type,
         classIconSource: templateDefaults?.classIconSource ?? "bot",
@@ -1040,6 +1072,17 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
         data: {
           eventId: event.id,
           roleId: accessRoleIds[index],
+          position: index
+        }
+      });
+    }
+
+    const accessUserIds = isPve ? Array.from(new Set((input.accessUserIds ?? []).map(String).filter(Boolean))) : [];
+    for (let index = 0; index < accessUserIds.length; index += 1) {
+      await tx.eventAccessUser.create({
+        data: {
+          eventId: event.id,
+          userId: accessUserIds[index],
           position: index
         }
       });
@@ -1231,6 +1274,45 @@ export async function createGuildEventRoleSlot(guildId: string, eventId: string,
   });
 
   return getGuildEventDetail(guildId, event.id);
+}
+
+// Replaces the PvE access (mode and both lists) and then, like the bot, moves up fillers who now qualify while their
+// time option has room. Nobody is moved down. null when the event is not in this guild.
+export async function updatePveEventAccess(
+  guildId: string,
+  eventId: string,
+  input: PveAccessInput,
+  options: { resolveMemberRoleIds?: (userId: string) => Promise<string[]> } = {}
+) {
+  const event = await prisma.event.findFirst({ where: { id: eventId, guildId }, select: { id: true, eventType: true } });
+  if (!event) {
+    return null;
+  }
+  if (event.eventType !== "pve") {
+    throw new InputError("Access by roles or people applies to PvE events only.");
+  }
+
+  const accessMode = normalizePveAccessMode(input.accessMode);
+  const roleIds = Array.from(new Set(input.roleIds.map(String).filter(Boolean)));
+  const userIds = Array.from(new Set(input.userIds.map(String).filter(Boolean)));
+  await prisma.$transaction(async (tx) => {
+    await tx.eventAccessRole.deleteMany({ where: { eventId: event.id } });
+    await tx.eventAccessUser.deleteMany({ where: { eventId: event.id } });
+    for (let index = 0; index < roleIds.length; index += 1) {
+      await tx.eventAccessRole.create({ data: { eventId: event.id, roleId: roleIds[index], position: index } });
+    }
+    for (let index = 0; index < userIds.length; index += 1) {
+      await tx.eventAccessUser.create({ data: { eventId: event.id, userId: userIds[index], position: index } });
+    }
+    // Also bumps updatedAt, which is how the bot notices the change on its next tick.
+    await tx.event.update({ where: { id: event.id }, data: { accessMode } });
+  });
+
+  const promoted = await promoteQualifiedFillers(
+    { id: event.id, eventType: "pve", accessMode, allowedRoleIds: roleIds, allowedUserIds: userIds },
+    { resolveMemberRoleIds: options.resolveMemberRoleIds }
+  );
+  return { promoted };
 }
 
 export async function updateGuildEventRoleSlot(guildId: string, eventId: string, slotId: string, input: RoleSlotMutationInput) {

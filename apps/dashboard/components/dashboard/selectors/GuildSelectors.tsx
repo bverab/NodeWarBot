@@ -185,6 +185,159 @@ export function RoleMultiSelect({
   );
 }
 
+export type MemberOption = {
+  id: string;
+  displayName: string;
+};
+
+type MemberSearchResult = MemberOption & { username: string | null; canViewChannel: boolean };
+
+const MEMBER_SEARCH_DELAY_MS = 300;
+
+// People picker for PvE "By people" access. Discord only searches by the start of a username or nickname, and only
+// members who can see the event channel can be picked.
+export function MemberMultiSelect({
+  guildId,
+  channelId,
+  label,
+  selected,
+  onChange,
+  max,
+  disabledText
+}: {
+  guildId: string;
+  channelId: string | null;
+  label: string;
+  selected: MemberOption[];
+  onChange: (members: MemberOption[]) => void;
+  max: number;
+  disabledText: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<MemberSearchResult[]>([]);
+  const [searchState, setSearchState] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null });
+  const { containerRef, dropdownRef, dropdownStyle } = useFloatingDropdown(open);
+  const selectedIds = new Set(selected.map((member) => member.id));
+
+  const toggle = (member: MemberOption) => {
+    if (selectedIds.has(member.id)) {
+      onChange(selected.filter((entry) => entry.id !== member.id));
+    } else if (selected.length < max) {
+      onChange([...selected, { id: member.id, displayName: member.displayName }]);
+    }
+  };
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!open || !channelId || !trimmed) {
+      setResults([]);
+      setSearchState({ loading: false, error: null });
+      return;
+    }
+
+    let cancelled = false;
+    setSearchState({ loading: true, error: null });
+    const timer = window.setTimeout(async () => {
+      const params = new URLSearchParams({ query: trimmed, channelId });
+      const response = await fetch(`/api/guilds/${guildId}/members?${params.toString()}`).catch(() => null);
+      const json = (await response?.json().catch(() => null)) as { members?: MemberSearchResult[]; error?: string } | null;
+      if (cancelled) {
+        return;
+      }
+      if (!response?.ok || !Array.isArray(json?.members)) {
+        setResults([]);
+        setSearchState({ loading: false, error: json?.error ?? "Member search failed." });
+        return;
+      }
+      setResults(json.members);
+      setSearchState({ loading: false, error: null });
+    }, MEMBER_SEARCH_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [channelId, guildId, open, query]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!containerRef.current?.contains(target) && !dropdownRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [containerRef, dropdownRef, open]);
+
+  return (
+    <div className={selectorStyles.roleMultiSelect} ref={containerRef}>
+      <div className={selectorStyles.rolePickerHeader}>
+        <div>
+          <div className={selectorStyles.fieldHeading}>{label}</div>
+          <span>{selected.length === 1 ? "1 person selected" : `${selected.length} people selected`} (max {max})</span>
+        </div>
+        {selected.length ? <button onClick={() => onChange([])} type="button">Clear</button> : null}
+      </div>
+      <button className={`${selectorStyles.roleSelectTrigger} ${open ? selectorStyles.selectorOpen : ""}`} disabled={!channelId} onClick={() => setOpen((current) => !current)} type="button">
+        <span>{channelId ? "Search people" : disabledText}</span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </button>
+      {!channelId ? <p className={selectorStyles.inlineHelp}>{disabledText}</p> : null}
+      {selected.length ? (
+        <div className={selectorStyles.selectedRoleChips}>
+          {selected.map((member) => (
+            <button aria-label={`Remove ${member.displayName}`} key={member.id} onClick={() => toggle(member)} type="button">
+              {member.displayName}
+              <X size={12} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {open && channelId && typeof document !== "undefined" ? createPortal(
+        <div className={selectorStyles.roleDropdown} ref={dropdownRef} style={dropdownStyle}>
+          <label className={selectorStyles.roleSearch}>
+            <Search size={14} aria-hidden="true" />
+            <input autoFocus maxLength={32} onChange={(event) => setQuery(event.target.value)} placeholder="Start of a username or nickname" value={query} />
+          </label>
+          <div className={selectorStyles.roleOptionsList}>
+            {!query.trim() ? (
+              <p>Type to search members of this server.</p>
+            ) : searchState.loading ? (
+              <p>Searching...</p>
+            ) : searchState.error ? (
+              <p>{searchState.error}</p>
+            ) : results.length ? (
+              results.map((member) => (
+                <button
+                  aria-pressed={selectedIds.has(member.id)}
+                  disabled={!member.canViewChannel || (!selectedIds.has(member.id) && selected.length >= max)}
+                  key={member.id}
+                  onClick={() => toggle(member)}
+                  title={member.username ?? undefined}
+                  type="button"
+                >
+                  <span>{member.displayName}</span>
+                  {selectedIds.has(member.id) ? <Check size={14} aria-hidden="true" /> : !member.canViewChannel ? <small>Cannot see the channel</small> : null}
+                </button>
+              ))
+            ) : (
+              <p>No members match that search.</p>
+            )}
+          </div>
+        </div>,
+        document.body
+      ) : null}
+    </div>
+  );
+}
+
 export function ChannelSelect({
   channels,
   value,

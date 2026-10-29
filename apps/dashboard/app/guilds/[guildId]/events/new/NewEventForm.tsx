@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Hash, LayoutTemplate, Plus, Shield, Trash2 } from "lucide-react";
-import { ChannelSelect, RoleMultiSelect, type ChannelOption, type RoleOption } from "@/components/dashboard/selectors/GuildSelectors";
+import { ChannelSelect, MemberMultiSelect, RoleMultiSelect, type ChannelOption, type MemberOption, type RoleOption } from "@/components/dashboard/selectors/GuildSelectors";
 import selectorStyles from "@/components/dashboard/selectors/GuildSelectors.module.css";
 import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid";
 import { Button } from "@/components/ui/Button";
@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { buildEventDateTime, calculateScheduledPublishAt, formatDateTimeInTimezone, getTimezoneInputError, normalizeTimezone } from "@/lib/eventDateTime";
 import { suggestNextOptionTime } from "@/lib/pveOptionTimes";
+import { MAX_PVE_ACCESS_ENTRIES, PVE_ACCESS_MODES, PVE_ACCESS_MODE_TEXT, PVE_FILLER_RULE, type PveAccessMode } from "@/lib/pveAccessModes";
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
 import overviewStyles from "@/app/guilds/[guildId]/_styles/overview.module.css";
@@ -153,6 +154,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
   const [accessRestrictionsOpen, setAccessRestrictionsOpen] = useState(false);
   const [accessRestrictionEnabled, setAccessRestrictionEnabled] = useState(false);
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
+  const [pveAccessMode, setPveAccessMode] = useState<PveAccessMode>("OPEN");
+  const [accessUsers, setAccessUsers] = useState<MemberOption[]>([]);
   const [mentionMode, setMentionMode] = useState<"none" | "roles">("none");
   const [notifyRoleIds, setNotifyRoleIds] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<"single" | "weekly">("single");
@@ -195,6 +198,22 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
   const finalChannelId = channelMode === "select" ? channelId || null : manualChannelId.trim() || null;
   const selectedChannel = channels.find((channel) => channel.id === finalChannelId);
   const roleName = (roleId: string) => roles.find((role) => role.id === roleId)?.name ?? roleId;
+  // PvE by roles or by people mentions the access list on publish, like the bot: there are no extra roles to mention.
+  const pveAccessRestricted = isPve && pveAccessMode !== "OPEN";
+  const pveAccessError = !isPve
+    ? null
+    : pveAccessMode === "ROLES" && !accessRoleIds.length
+      ? "Select at least one role with access, or set PvE access to Open."
+      : pveAccessMode === "USERS" && !finalChannelId
+        ? "Select the target channel: only people who can see it can be given access."
+        : pveAccessMode === "USERS" && !accessUsers.length
+          ? "Select at least one person with access, or set PvE access to Open."
+          : null;
+  const pveAccessSummary = pveAccessMode === "ROLES"
+    ? accessRoleIds.map(roleName).join(", ")
+    : pveAccessMode === "USERS"
+      ? accessUsers.map((member) => member.displayName).join(", ")
+      : "Anyone joins as a main signup";
   const slotCount = isPve ? pveOptions.length : mode === "template" ? selectedTemplate?.slotCount ?? 0 : manualSlots.length;
   const totalCapacity = mode === "manual" ? manualSlots.reduce((total, slot) => total + slot.max, 0) : null;
   const pveCapacity = pveOptions.reduce((total, option) => total + option.capacity, 0);
@@ -298,6 +317,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
     !busy &&
     name.trim().length >= 2 &&
     !timezoneError &&
+    !pveAccessError &&
     (!autoPublishEnabled || Boolean(finalChannelId)) &&
     (isPve ? pveOptions.every((option) => option.label.trim() && option.time) : mode === "template" ? Boolean(templateId) : manualSlots.every((slot) => slot.name.trim()));
   const goNext = () => setStepIndex((current) => Math.min(steps.length - 1, current + 1));
@@ -308,7 +328,9 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
       setMessage(
         timezoneError
           ? timezoneError
-          : autoPublishEnabled && !finalChannelId
+          : pveAccessError
+            ? pveAccessError
+            : autoPublishEnabled && !finalChannelId
             ? "Select a Discord channel before enabling scheduled publish."
             : "Complete the required draft fields before creating the event."
       );
@@ -345,8 +367,10 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
         autoPublishEnabled,
         publishBeforeMinutes,
         channelId: finalChannelId,
-        accessRoleIds: accessRestrictionEnabled ? accessRoleIds : [],
-        notifyRoleIds: mentionMode === "roles" ? notifyRoleIds : [],
+        accessMode: isPve ? pveAccessMode : undefined,
+        accessRoleIds: isPve ? (pveAccessMode === "ROLES" ? accessRoleIds : []) : accessRestrictionEnabled ? accessRoleIds : [],
+        accessUserIds: isPve && pveAccessMode === "USERS" ? accessUsers.map((member) => member.id) : undefined,
+        notifyRoleIds: mentionMode === "roles" && !pveAccessRestricted ? notifyRoleIds : [],
         recurrence,
         recap: {
           enabled: recapEnabled,
@@ -678,6 +702,40 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                   ) : null}
                 </div>
 
+                {isPve ? (
+                <div className={`${styles.setupPanel} ${styles.advancedPanel}`}>
+                  <div className={styles.setupPanelHeader}>
+                    <Shield size={18} aria-hidden="true" />
+                    <div><h4>Signup access</h4><p>Who joins as a main signup. Everyone else can still pick a time and is added as a filler.</p></div>
+                  </div>
+                  <div className={styles.segmentControl}>
+                    {PVE_ACCESS_MODES.map((accessMode) => (
+                      <button aria-pressed={pveAccessMode === accessMode} key={accessMode} onClick={() => setPveAccessMode(accessMode)} type="button">
+                        {PVE_ACCESS_MODE_TEXT[accessMode].label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className={styles.inlineHelp}>
+                    {PVE_ACCESS_MODE_TEXT[pveAccessMode].help}
+                    {pveAccessRestricted ? ` ${PVE_FILLER_RULE}` : ""}
+                  </p>
+                  {pveAccessMode === "ROLES" ? (
+                    <RoleMultiSelect emptyText="No roles loaded. Access by roles cannot be set yet." label="Roles with access" loadError={roleLoadError} onChange={setAccessRoleIds} roles={roles} selected={accessRoleIds} />
+                  ) : null}
+                  {pveAccessMode === "USERS" ? (
+                    <MemberMultiSelect
+                      channelId={finalChannelId}
+                      disabledText="Select the target channel first: only people who can see it can be picked."
+                      guildId={guildId}
+                      label="People with access"
+                      max={MAX_PVE_ACCESS_ENTRIES}
+                      onChange={setAccessUsers}
+                      selected={accessUsers}
+                    />
+                  ) : null}
+                  {pveAccessError ? <p className={styles.fieldError} role="alert">{pveAccessError}</p> : null}
+                </div>
+                ) : (
                 <div className={`${styles.setupPanel} ${styles.advancedPanel}`}>
                   <div className={styles.setupPanelHeader}>
                     <Shield size={18} aria-hidden="true" />
@@ -712,12 +770,19 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                     </div>
                   ) : null}
                 </div>
+                )}
 
                 <div className={`${styles.setupPanel} ${styles.mentionPanel}`}>
                   <div className={styles.setupPanelHeader}>
                     <Check size={18} aria-hidden="true" />
                     <div><h4>Future publication mentions</h4><p>Stored as notify targets for later publish flows.</p></div>
                   </div>
+                  {pveAccessRestricted ? (
+                    <p className={styles.inlineHelp}>
+                      {pveAccessMode === "ROLES" ? "The roles with access are mentioned when the event is published." : "The people with access are mentioned when the event is published."}
+                    </p>
+                  ) : (
+                  <>
                   <div className={styles.segmentControl}>
                     <button aria-pressed={mentionMode === "none"} onClick={() => setMentionMode("none")} type="button">No mention</button>
                     <button aria-pressed={mentionMode === "roles"} onClick={() => setMentionMode("roles")} type="button">Selected roles</button>
@@ -726,6 +791,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                     <RoleMultiSelect emptyText="No roles loaded. Mentions will remain empty." label="Mention roles" loadError={roleLoadError} onChange={setNotifyRoleIds} roles={roles} selected={notifyRoleIds} />
                   ) : (
                     <p className={styles.inlineHelp}>No role pings will be stored for future publication.</p>
+                  )}
+                  </>
                   )}
                 </div>
 
@@ -773,7 +840,11 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                 </div>
                 <div className={styles.reviewTile}><CalendarClock size={18} aria-hidden="true" /><strong>{duration} min</strong><span>Duration</span></div>
                 <div className={styles.reviewTile}><LayoutTemplate size={18} aria-hidden="true" /><strong>{slotCount || "No"} {isPve ? "options" : "slots"}</strong><span>{isPve ? `${pveCapacity} total capacity` : mode === "template" ? selectedTemplate?.name ?? "Template missing" : `${totalCapacity ?? 0} capacity`}</span></div>
-                <div className={styles.reviewTile}><Shield size={18} aria-hidden="true" /><strong>{accessRestrictionEnabled && accessRoleIds.length ? accessRoleIds.length : "Open"}</strong><span>{accessRestrictionEnabled ? "Advanced access restriction" : "No event-level restriction"}</span></div>
+                {isPve ? (
+                  <div className={styles.reviewTile}><Shield size={18} aria-hidden="true" /><strong>{PVE_ACCESS_MODE_TEXT[pveAccessMode].label}</strong><span>{pveAccessRestricted ? "Others join as fillers" : "No signup restriction"}</span></div>
+                ) : (
+                  <div className={styles.reviewTile}><Shield size={18} aria-hidden="true" /><strong>{accessRestrictionEnabled && accessRoleIds.length ? accessRoleIds.length : "Open"}</strong><span>{accessRestrictionEnabled ? "Advanced access restriction" : "No event-level restriction"}</span></div>
+                )}
                 <div className={styles.reviewTile}><Hash size={18} aria-hidden="true" /><strong>{selectedChannel ? `#${selectedChannel.name}` : finalChannelId ? "Manual ID" : "Not set"}</strong><span>{channelMode === "manual" ? finalChannelId ?? "Manual entry" : finalChannelId ?? "Target channel"}</span></div>
                 <div className={styles.reviewTile}><Check size={18} aria-hidden="true" /><strong>{recurrence === "weekly" ? "Weekly" : "Single"}</strong><span>{mentionMode === "roles" ? `${notifyRoleIds.length} mention roles` : "No mention"}</span></div>
                 <div className={styles.reviewList}>
@@ -792,8 +863,17 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                 </div>
                 <div className={styles.reviewList}>
                   <h4>Roles</h4>
-                  <p><strong>Access</strong><span>{accessRestrictionEnabled && accessRoleIds.length ? accessRoleIds.map(roleName).join(", ") : "Open to current event flow rules"}</span></p>
-                  <p><strong>Mentions</strong><span>{mentionMode === "roles" && notifyRoleIds.length ? notifyRoleIds.map(roleName).join(", ") : "No role mentions"}</span></p>
+                  {isPve ? (
+                    <>
+                      <p><strong>Access: {PVE_ACCESS_MODE_TEXT[pveAccessMode].label}</strong><span>{pveAccessSummary || "Nobody selected yet"}</span></p>
+                      <p><strong>Mentions</strong><span>{pveAccessRestricted ? "The access list" : mentionMode === "roles" && notifyRoleIds.length ? notifyRoleIds.map(roleName).join(", ") : "No role mentions"}</span></p>
+                    </>
+                  ) : (
+                    <>
+                      <p><strong>Access</strong><span>{accessRestrictionEnabled && accessRoleIds.length ? accessRoleIds.map(roleName).join(", ") : "Open to current event flow rules"}</span></p>
+                      <p><strong>Mentions</strong><span>{mentionMode === "roles" && notifyRoleIds.length ? notifyRoleIds.map(roleName).join(", ") : "No role mentions"}</span></p>
+                    </>
+                  )}
                 </div>
               </div>
             </section>

@@ -7,10 +7,11 @@ type DiscordUserPayload = {
   avatar?: string | null;
 };
 
-type DiscordGuildMemberPayload = {
+export type DiscordGuildMemberPayload = {
   nick?: string | null;
   avatar?: string | null;
-  user?: DiscordUserPayload;
+  user?: DiscordUserPayload & { bot?: boolean };
+  roles?: string[];
 };
 
 export type DiscordMemberSummary = {
@@ -45,6 +46,16 @@ function buildUserAvatarUrl(userId: string, avatar: string | null | undefined) {
   }
 
   return `https://cdn.discordapp.com/avatars/${userId}/${avatar}.${getAvatarExtension(avatar)}?size=64`;
+}
+
+export function summarizeGuildMember(guildId: string, userId: string, member: DiscordGuildMemberPayload): DiscordMemberSummary {
+  const user = member.user;
+  return {
+    id: userId,
+    displayName: member.nick || user?.global_name || user?.username || userId,
+    username: user?.username ?? null,
+    avatarUrl: buildGuildMemberAvatarUrl(guildId, userId, member.avatar) ?? buildUserAvatarUrl(userId, user?.avatar)
+  };
 }
 
 function fallbackMember(userId: string): DiscordMemberSummary {
@@ -93,20 +104,8 @@ async function lookupDiscordGuildMember(guildId: string, userId: string, token: 
     }
 
     const member = (await response.json()) as DiscordGuildMemberPayload;
-    const user = member.user;
-    const displayName = member.nick || user?.global_name || user?.username || userId;
 
-    return {
-      member: {
-        id: userId,
-        displayName,
-        username: user?.username ?? null,
-        avatarUrl:
-          buildGuildMemberAvatarUrl(guildId, userId, member.avatar) ??
-          buildUserAvatarUrl(userId, user?.avatar)
-      },
-      ttlMs: MEMBER_CACHE_TTL_MS
-    };
+    return { member: summarizeGuildMember(guildId, userId, member), ttlMs: MEMBER_CACHE_TTL_MS };
   } catch {
     console.warn(`Discord member lookup failed for guild ${guildId}, user ${userId}.`);
     return { member: fallbackMember(userId), ttlMs: MEMBER_FAILURE_TTL_MS };

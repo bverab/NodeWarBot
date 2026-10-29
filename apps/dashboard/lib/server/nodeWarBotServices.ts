@@ -26,6 +26,25 @@ const discordEventSyncService = requireNodeWarBot("../../../../src/services/disc
   deleteEventDiscordMessage(args: PublishArgs): Promise<PublishResult>;
 };
 
+type PveAccessEvent = {
+  id: string;
+  eventType: string;
+  accessMode: string;
+  allowedUserIds: string[];
+  allowedRoleIds: string[];
+};
+
+export type PromotedPveFiller = { userId: string; displayName: string; isFake: boolean; optionId: string; optionLabel: string };
+
+const pveService = requireNodeWarBot("../../../../src/services/pveService.js") as {
+  promoteQualifiedFillers(
+    event: PveAccessEvent,
+    options: { resolveMemberRoleIds?: (userId: string) => Promise<string[]> }
+  ): Promise<PromotedPveFiller[]>;
+};
+
 export const publishEventToDiscord = discordEventSyncService.publishEventToDiscord;
 export const updateEventDiscordMessage = discordEventSyncService.updateEventDiscordMessage;
 export const deleteEventDiscordMessage = discordEventSyncService.deleteEventDiscordMessage;
+// After a PvE access change: fillers who now qualify move up while their option has room (the bot's own rule).
+export const promoteQualifiedFillers = pveService.promoteQualifiedFillers;

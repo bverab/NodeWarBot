@@ -6,6 +6,7 @@ import { createGuildEventDraft, getGuildEvents } from "@/lib/server/dashboardDat
 import { createVerifiedGuildsCookie } from "@/lib/server/dashboardGuildVerificationCookie";
 import { createEventSchema, formatCreateEventIssues } from "@/lib/server/createEventValidation";
 import { getGuildPostChannelById, getGuildPostChannels, getGuildRoles } from "@/lib/server/discordGuildConfig";
+import { validateAccessUsers } from "@/lib/server/discordMemberAccess";
 import { requireDashboardGuild, requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 
 type RouteContext = {
@@ -71,6 +72,15 @@ export async function POST(request: Request, context: RouteContext) {
       const issues = [{ path: "roles", message: "One or more selected roles are not available for this guild." }];
       logCreateFailure("role validation failed", { issues, inputRoleIds, roleCount: roles.length });
       return NextResponse.json({ ok: false, error: issues[0].message, issues }, { status: 400 });
+    }
+
+    if (parsed.data.eventType === "pve" && parsed.data.accessMode === "USERS") {
+      const { rejected } = await validateAccessUsers(guildId, parsed.data.accessUserIds ?? [], parsed.data.channelId);
+      if (rejected.length) {
+        const issues = [{ path: "accessUserIds", message: "Some selected people left the server, are bots or cannot see the target channel." }];
+        logCreateFailure("access user validation failed", { issues, rejected });
+        return NextResponse.json({ ok: false, error: issues[0].message, issues, rejectedUserIds: rejected }, { status: 400 });
+      }
     }
 
     if (parsed.data.channelId && !channelIds.has(parsed.data.channelId)) {

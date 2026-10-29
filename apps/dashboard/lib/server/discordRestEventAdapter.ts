@@ -3,7 +3,7 @@ import { isDiscordSnowflake } from "../discordSnowflake";
 
 const DISCORD_API_BASE_URL = "https://discord.com/api/v10";
 
-const PERMISSIONS = {
+export const PERMISSIONS = {
   Administrator: 0x8n,
   ViewChannel: 0x400n,
   SendMessages: 0x800n,
@@ -11,7 +11,7 @@ const PERMISSIONS = {
   ReadMessageHistory: 0x10000n
 };
 
-type DiscordChannelPayload = {
+export type DiscordChannelPayload = {
   id: string;
   guild_id?: string;
   type: number;
@@ -23,12 +23,12 @@ type DiscordChannelPayload = {
   }>;
 };
 
-type DiscordRolePayload = {
+export type DiscordRolePayload = {
   id: string;
   permissions: string;
 };
 
-type DiscordMemberPayload = {
+export type DiscordMemberPayload = {
   user?: { id: string };
   roles: string[];
 };
@@ -71,7 +71,7 @@ function getBotToken() {
   return (process.env.DISCORD_BOT_TOKEN || process.env.TOKEN)?.replace(/^Bot\s+/i, "");
 }
 
-async function discordFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function discordFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getBotToken();
   if (!token) {
     throw Object.assign(new Error("Missing Discord bot token."), { code: "MISSING_BOT_TOKEN" });
@@ -111,7 +111,7 @@ function toPermissionBits(value: string | number | bigint | null | undefined) {
   }
 }
 
-function hasAllPermissions(permissions: bigint, required: bigint[]) {
+export function hasAllPermissions(permissions: bigint, required: bigint[]) {
   if ((permissions & PERMISSIONS.Administrator) === PERMISSIONS.Administrator) {
     return true;
   }
@@ -122,7 +122,7 @@ function applyOverwrite(base: bigint, allow: bigint, deny: bigint) {
   return (base & ~deny) | allow;
 }
 
-function computeChannelPermissions(
+export function computeChannelPermissions(
   guildId: string,
   roles: DiscordRolePayload[],
   member: DiscordMemberPayload,

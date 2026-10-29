@@ -47,6 +47,29 @@ real. Esta guía reúne lo que hay que comprobar a mano después de desplegar la
       claro (H-9). Un icono con texto extra (`hola ✅`) se rechaza; `✅`, `❤️`, `🇨🇱`, `1️⃣` se aceptan
       (C-6, H8).
 
+### 2.1 Acceso PvE: abierto, por roles o por personas
+
+Necesitas una cuenta admin, una cuenta miembro con el rol de acceso y otra sin él.
+
+- [ ] En un borrador PvE, **Configurar Acceso** explica el modo elegido. **Por roles** muestra un
+      selector de roles, **Por personas** uno de personas y **Abierto** ninguno.
+- [ ] Por personas: elegir a alguien que **no ve** el canal (o un bot). Se descarta con un aviso que lo
+      nombra, y quienes sí lo ven quedan guardados.
+- [ ] Al publicar por roles o por personas no aparece el paso de "roles a mencionar". La vista previa
+      muestra a quién se mencionará y el mensaje publicado menciona **los roles o las personas con acceso**.
+- [ ] Miembro sin acceso marca un horario: aparece en "🧩 Fillers (lista de espera)" y recibe un aviso
+      privado que explica qué es un filler. Volver a marcar el horario lo saca.
+- [ ] En `/event edit` → **Editar acceso**: dar acceso a alguien que estaba de filler en un horario con
+      cupo lo pasa a titular, y el panel lo dice ("Pasan a titulares: …"). Quitarle el acceso a un
+      titular **no** lo baja a filler.
+- [ ] Cierre sin hilo de resumen: si ningún horario se llenó con titulares y un horario se completa con
+      sus fillers, entran por orden de llegada al horario **más temprano** que se complete. El mensaje del
+      evento se actualiza y cada uno recibe un DM (o una mención en el canal si tiene los DM cerrados).
+- [ ] Cierre con hilo de resumen y el mismo caso: el hilo confirma ese horario y dice "Entran desde
+      fillers: …", sin votación. Si ni con fillers se llena ninguno, sigue la votación de prórroga, y el
+      mensaje de "randoms" lista los fillers anotados.
+- [ ] Un evento antiguo en modo "Restricted" se sigue mostrando y comportando como **Por personas**.
+
 ## 3. Inscripciones (cuenta miembro)
 
 - [ ] Unirse y salir de un rol; el mensaje se actualiza.
@@ -108,6 +131,11 @@ real. Esta guía reúne lo que hay que comprobar a mano después de desplegar la
       que no es del bot responde 400 (S-3).
 - [ ] Un evento que el bot ya expiró **no** aparece como borrador ni se puede borrar como tal (H5).
 - [ ] Una URL inexistente muestra la página 404 de Spectre (U-4).
+- [ ] Crear un PvE en la web con **Signup access → By people**: sin canal elegido el buscador está
+      deshabilitado; con canal, quien no ve el canal aparece como "Cannot see the channel" y no se puede
+      elegir. **By roles** exige al menos un rol. Al publicar se menciona la lista de acceso.
+- [ ] En la página de un PvE, la tarjeta **Signup access** guarda el cambio, informa los fillers que
+      pasaron a titulares y, si el evento está publicado, el mensaje de Discord muestra el acceso nuevo.
 
 ## 8. Operación
 

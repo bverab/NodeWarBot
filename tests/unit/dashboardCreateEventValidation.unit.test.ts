@@ -112,3 +112,45 @@ describe("dashboard create event validation", () => {
     }
   });
 });
+
+describe("dashboard create event validation: PvE access", () => {
+  const ROLE_ID = "300000000000000003";
+  const USER_ID = "400000000000000004";
+  const CHANNEL_ID = "200000000000000002";
+
+  function pveInput(overrides: Record<string, unknown> = {}) {
+    return {
+      name: "Boss night",
+      eventType: "pve",
+      type: "Evento PvE",
+      date: "2026-05-05",
+      time: "20:00",
+      timezone: "America/Santiago",
+      duration: 60,
+      closeBeforeMinutes: 0,
+      channelId: CHANNEL_ID,
+      pveOptions: [{ label: "20:00", time: "20:00", capacity: 5, position: 0 }],
+      ...overrides
+    };
+  }
+
+  async function issuePaths(input: Record<string, unknown>) {
+    const { createEventSchema } = await import("../../apps/dashboard/lib/server/createEventValidation");
+    const result = createEventSchema.safeParse(input);
+    return result.success ? [] : result.error.issues.map((issue) => issue.path.join("."));
+  }
+
+  it("by roles needs at least one role and by people needs people and a channel", async () => {
+    expect(await issuePaths(pveInput({ accessMode: "ROLES", accessRoleIds: [] }))).toContain("accessRoleIds");
+    expect(await issuePaths(pveInput({ accessMode: "ROLES", accessRoleIds: [ROLE_ID] }))).toEqual([]);
+    expect(await issuePaths(pveInput({ accessMode: "USERS", accessUserIds: [] }))).toContain("accessUserIds");
+    expect(await issuePaths(pveInput({ accessMode: "USERS", accessUserIds: [USER_ID], channelId: null }))).toContain("channelId");
+    expect(await issuePaths(pveInput({ accessMode: "USERS", accessUserIds: [USER_ID] }))).toEqual([]);
+    expect(await issuePaths(pveInput({ accessMode: "OPEN" }))).toEqual([]);
+  });
+
+  it("access modes are only for PvE events", async () => {
+    const war = pveInput({ eventType: "war", pveOptions: undefined, slots: [{ name: "Flex", max: 5 }], accessMode: "USERS", accessUserIds: [USER_ID] });
+    expect(await issuePaths(war)).toContain("accessMode");
+  });
+});

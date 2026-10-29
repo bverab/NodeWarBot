@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
-import { mapDbEventToDiscordDomain } from "@/lib/server/eventDomainMapper";
-import { prisma } from "@/lib/server/prisma";
 import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
-import { createDiscordRestGuildAdapter, validateBotCanPublishToChannel } from "@/lib/server/discordRestEventAdapter";
-import { updateEventDiscordMessage } from "@/lib/server/nodeWarBotServices";
+import { syncPublishedEventMessage } from "@/lib/server/eventMessageSync";
 
 type RouteContext = {
   params: Promise<{ guildId: string; eventId: string }>;
@@ -59,57 +56,14 @@ export async function POST(_request: Request, context: RouteContext) {
     return access.error;
   }
 
-  const event = await prisma.event.findFirst({
-    where: { id: eventId, guildId },
-    include: {
-      roleSlots: {
-        orderBy: { position: "asc" },
-        include: {
-          users: { orderBy: { joinedAt: "asc" } },
-          permissions: true
-        }
-      },
-      options: {
-        orderBy: { position: "asc" },
-        include: {
-          enrollments: { orderBy: { joinedAt: "asc" } }
-        }
-      },
-      enrollments: { orderBy: { joinedAt: "asc" } },
-      waitlist: { orderBy: { position: "asc" } },
-      notifyTargets: { orderBy: { position: "asc" } },
-      accessUsers: { orderBy: { position: "asc" } },
-      accessRoles: { orderBy: { position: "asc" } },
-      fillers: { orderBy: { joinedAt: "asc" } },
-      schedule: true,
-      recap: true
-    }
-  });
-
-  if (!event) {
-    return NextResponse.json({ error: "Event not found for this guild." }, { status: 404 });
-  }
-
-  if (!event.messageId) {
-    return NextResponse.json({ error: "Event is not published to Discord yet." }, { status: 409 });
-  }
-
-  if (!event.channelId) {
-    return NextResponse.json({ error: "Published event is missing its Discord channel ID." }, { status: 400 });
-  }
-
-  const permissionCheck = await validateBotCanPublishToChannel(guildId, event.channelId);
-  if (!permissionCheck.ok) {
-    return NextResponse.json({ error: permissionCheck.error, errorCode: permissionCheck.errorCode }, { status: permissionCheck.status });
-  }
-
-  const result = await updateEventDiscordMessage({
-    guild: createDiscordRestGuildAdapter(guildId, { validatedChannel: permissionCheck.channel }),
-    event: mapDbEventToDiscordDomain(event)
-  });
+  const result = await syncPublishedEventMessage(guildId, eventId);
 
   if (!result.ok) {
-    return responseForSyncFailure(result);
+    // A failed Discord update carries the bot's sync status; earlier checks map straight to their HTTP status.
+    if (result.syncStatus) {
+      return responseForSyncFailure({ status: result.syncStatus, errorCode: result.errorCode ?? null, errorMessage: result.error });
+    }
+    return NextResponse.json({ error: result.error, errorCode: result.errorCode ?? undefined }, { status: result.status });
   }
 
   return NextResponse.json(

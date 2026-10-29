@@ -7,38 +7,31 @@ import { requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 import { createDiscordRestGuildAdapter, deleteDiscordMessageByRest, validateBotCanPublishToChannel } from "@/lib/server/discordRestEventAdapter";
 import { publishEventToDiscord } from "@/lib/server/nodeWarBotServices";
 import { getPublishBlockReason } from "@/lib/server/publishGuards";
+import { buildPublicationMentions } from "@/lib/server/pveAccess";
 
 type RouteContext = {
   params: Promise<{ guildId: string; eventId: string }>;
 };
 
+// Same rules as the bot: PvE by people mentions the people, PvE by roles the roles with access, the rest the notify roles.
 function buildPublishContent(event: {
   eventType: string;
   accessMode: string;
   notifyTargets: Array<{ targetId: string }>;
   accessUsers: Array<{ userId: string }>;
+  accessRoles?: Array<{ roleId: string }>;
 }) {
-  const isRestrictedPve = event.eventType === "pve" && event.accessMode.toUpperCase() === "RESTRICTED";
-  const targets = isRestrictedPve
-    ? Array.from(new Set(event.accessUsers.map((user) => user.userId).filter(Boolean)))
-    : Array.from(new Set(event.notifyTargets.map((target) => target.targetId).filter(Boolean)));
-
-  if (!targets.length) {
-    return {
-      content: "Evento publicado desde dashboard",
-      allowedMentions: { parse: [] }
-    };
-  }
-
-  return isRestrictedPve
-    ? {
-        content: targets.map((userId) => `<@${userId}>`).join(" "),
-        allowedMentions: { parse: [], users: targets }
-      }
-    : {
-        content: targets.map((roleId) => `<@&${roleId}>`).join(" "),
-        allowedMentions: { parse: [], roles: targets }
-      };
+  const { content, allowedMentions } = buildPublicationMentions(
+    {
+      eventType: event.eventType,
+      accessMode: event.accessMode,
+      allowedUserIds: event.accessUsers.map((user) => user.userId),
+      allowedRoleIds: (event.accessRoles ?? []).map((role) => role.roleId),
+      notifyRoles: event.notifyTargets.map((target) => target.targetId)
+    },
+    "Evento publicado desde dashboard"
+  );
+  return { content, allowedMentions };
 }
 
 export async function POST(_request: Request, context: RouteContext) {

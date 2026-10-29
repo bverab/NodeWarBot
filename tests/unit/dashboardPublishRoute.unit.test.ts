@@ -145,3 +145,51 @@ describe("POST /api/guilds/[guildId]/events/[eventId]/publish", () => {
     expect(deleteDiscordMessageByRest).toHaveBeenCalledWith(CHANNEL_ID, MESSAGE_ID);
   });
 });
+
+describe("POST /api/guilds/[guildId]/events/[eventId]/publish: PvE access mentions", () => {
+  const ROLE_ID = "500000000000000005";
+  const USER_ID = "600000000000000006";
+  const NOTIFY_ROLE_ID = "700000000000000007";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireManageableDashboardGuild.mockResolvedValue({ activeGuild: { id: GUILD_ID, manageable: true }, availableGuilds: [], session: {} });
+    markEventPublished.mockResolvedValue(true);
+    validateBotCanPublishToChannel.mockResolvedValue({ ok: true, channel: { id: CHANNEL_ID }, botUserId: "400000000000000004" });
+    createDiscordRestGuildAdapter.mockReturnValue({ channels: { fetch: vi.fn() } });
+    mapDbEventToDiscordDomain.mockReturnValue({ id: "event_1" });
+    publishEventToDiscord.mockResolvedValue({ ok: true, status: "published", messageId: MESSAGE_ID, channelId: CHANNEL_ID, errorCode: null, errorMessage: null });
+  });
+
+  async function mentionsFor(overrides: Record<string, unknown>) {
+    prisma.event.findFirst.mockResolvedValue(dbEvent({
+      eventType: "pve",
+      notifyTargets: [{ targetId: NOTIFY_ROLE_ID }],
+      accessRoles: [{ roleId: ROLE_ID }],
+      accessUsers: [{ userId: USER_ID }],
+      ...overrides
+    }));
+    const response = await publish();
+    expect(response.status).toBe(200);
+    return publishEventToDiscord.mock.calls[0][0].messageOptions;
+  }
+
+  it("by roles mentions the roles with access", async () => {
+    await expect(mentionsFor({ accessMode: "ROLES" })).resolves.toEqual({ content: `<@&${ROLE_ID}>`, allowedMentions: { parse: [], roles: [ROLE_ID] } });
+  });
+
+  it("by people (and the former RESTRICTED mode) mentions the people with access", async () => {
+    const expected = { content: `<@${USER_ID}>`, allowedMentions: { parse: [], users: [USER_ID] } };
+    await expect(mentionsFor({ accessMode: "USERS" })).resolves.toEqual(expected);
+    vi.clearAllMocks();
+    requireManageableDashboardGuild.mockResolvedValue({ activeGuild: { id: GUILD_ID, manageable: true }, availableGuilds: [], session: {} });
+    markEventPublished.mockResolvedValue(true);
+    validateBotCanPublishToChannel.mockResolvedValue({ ok: true, channel: { id: CHANNEL_ID }, botUserId: "400000000000000004" });
+    publishEventToDiscord.mockResolvedValue({ ok: true, status: "published", messageId: MESSAGE_ID, channelId: CHANNEL_ID, errorCode: null, errorMessage: null });
+    await expect(mentionsFor({ accessMode: "RESTRICTED" })).resolves.toEqual(expected);
+  });
+
+  it("open PvE events mention the notify roles", async () => {
+    await expect(mentionsFor({ accessMode: "OPEN" })).resolves.toEqual({ content: `<@&${NOTIFY_ROLE_ID}>`, allowedMentions: { parse: [], roles: [NOTIFY_ROLE_ID] } });
+  });
+});
