@@ -68,6 +68,12 @@ Necesitas una cuenta admin, una cuenta miembro con el rol de acceso y otra sin �
 - [ ] Cierre con hilo de resumen y el mismo caso: el hilo confirma ese horario y dice "Entran desde
       fillers: …", sin votación. Si ni con fillers se llena ninguno, sigue la votación de prórroga, y el
       mensaje de "randoms" lista los fillers anotados.
+- [ ] Reactivar un evento ya cerrado (`/event edit` → Editar datos → Cierre inscripciones → Activar) y
+      volver a cerrarlo decide de nuevo: si ahora sus fillers completan un horario, avanzan.
+- [ ] Cancelar un evento (`/event edit` → Cancelar evento) o archivarlo desde la web: al llegar el cierre
+      **no** se promueve a nadie, no hay DM ni votación. Si había una votación abierta, queda sin efecto.
+- [ ] Quitarle al bot el permiso de crear hilos en un evento con resumen: si sus fillers completan un
+      horario, avanzan igual y se avisa por DM.
 - [ ] Un evento antiguo en modo "Restricted" se sigue mostrando y comportando como **Por personas**.
 
 ## 3. Inscripciones (cuenta miembro)

@@ -62,14 +62,15 @@ export async function PUT(request: Request, context: RouteContext) {
       return badRequest("Access by roles or people applies to PvE events only.");
     }
 
-    if (parsed.data.roleIds.length) {
+    // Only the list in use is checked: the other one is kept for switching back, and an old entry must not block saving.
+    if (parsed.data.accessMode === "ROLES") {
       const guildRoleIds = new Set((await getGuildRoles(guildId)).map((role) => role.id));
       if (parsed.data.roleIds.some((roleId) => !guildRoleIds.has(roleId))) {
         return badRequest("One or more selected roles are not available for this guild.");
       }
     }
 
-    if (parsed.data.userIds.length) {
+    if (parsed.data.accessMode === "USERS") {
       const { rejected } = await validateAccessUsers(guildId, parsed.data.userIds, event.channelId);
       if (rejected.length) {
         return badRequest("Some selected people left the server, are bots or cannot see the event channel.", { rejectedUserIds: rejected });

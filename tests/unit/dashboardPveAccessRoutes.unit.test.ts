@@ -74,6 +74,15 @@ describe("PUT /api/guilds/[guildId]/events/[eventId]/access", () => {
     expect(updatePveEventAccess).not.toHaveBeenCalled();
   });
 
+  it("only checks the list of the chosen mode, so an old entry in the other list cannot block saving", async () => {
+    const response = await putAccess({ accessMode: "OPEN", roleIds: ["999999999999999999"], userIds: [USER_A] });
+
+    expect(response.status).toBe(200);
+    expect(getGuildRoles).not.toHaveBeenCalled();
+    expect(validateAccessUsers).not.toHaveBeenCalled();
+    expect(updatePveEventAccess).toHaveBeenCalledTimes(1);
+  });
+
   it("saves the access, re-checks fillers with each member's roles and reports who moved up", async () => {
     const response = await putAccess({ accessMode: "ROLES", roleIds: [ROLE_ID], userIds: [USER_A] });
 

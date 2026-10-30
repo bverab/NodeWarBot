@@ -372,7 +372,7 @@ además un test de regresión que falla antes del cambio y pasa después.
 
 - **1.5**: publicación tardía de la recurrencia semanal si se pierde el minuto exacto (decisión §5.13).
 - **H9**: escritores que todavía guardan copias completas con `updateWar` en vez de mutators:
-  `eventManagementService.updateEvent`, `eventPublicationService` (activación), `pveService.configureAccess`,
+  `eventManagementService.updateEvent`, `eventPublicationService` (activación),
   `recurrenceSeriesService.editSeriesDay` (mismo id) y los resultados de la autopublicación web en
   `schedulerService`. Ventanas de carrera cortas; siguiente paso natural.
 - El campo de icono del panel admin (`parseRoleIconInput`) no acepta keycaps escritos a mano

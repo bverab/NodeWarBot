@@ -2,6 +2,7 @@ const { setupIntegrationSuite } = require('../helpers/dbTestHarness');
 const { createFakeDiscord, BOT_USER } = require('../helpers/fakeDiscord');
 const warService = require('../../src/services/warService');
 const pveService = require('../../src/services/pveService');
+const pveCloseReviewService = require('../../src/services/pveCloseReviewService');
 const { prisma } = require('../../src/db/client');
 const { buildWar, buildWarRole } = require('../factories/warFactory');
 const { handleMessageReaction } = require('../../src/handlers/reactionHandler');
@@ -391,5 +392,187 @@ describe('core: revision de cierre PvE', () => {
     expect(thread.sent[1].content).toContain('Fillers anotados: Filler Uno');
     expect(thread.sent[1].payload.allowedMentions.users).toEqual(['u1', 'u2', 'u3']);
     expect(await optionRoster('pve_fillers_randoms', '21:00')).toEqual({ titulares: ['u3', 'fake_1'], fillers: ['filler_1'] });
+  });
+
+  async function reopen(eventId, closesAt, expiresAt) {
+    await warService.updateWarById(eventId, fresh => {
+      fresh.isClosed = false;
+      fresh.closesAt = closesAt;
+      fresh.expiresAt = expiresAt;
+    });
+  }
+
+  async function addFiller(eventId, time, userId) {
+    const option = (await pveService.getEventSlots(eventId)).find(entry => entry.time === time);
+    await prisma.eventEnrollment.create({
+      data: { eventId, optionId: option.id, userId, displayName: userId, enrollmentType: 'FILLER' }
+    });
+  }
+
+  async function cancel(eventId) {
+    await warService.updateWarById(eventId, fresh => {
+      fresh.isClosed = true;
+    });
+    await pveCloseReviewService.cancelCloseReview(warService.getWarById(eventId));
+  }
+
+  it('(14) sin recap, reactivar el evento y volver a cerrar decide de nuevo: los fillers avanzan', async () => {
+    await createPveEvent('pve_reopen', {
+      options: [{ time: '20:00', capacity: 2 }],
+      enrollments: [{ option: 0, userId: 'f1', filler: true }],
+      recapEnabled: false
+    });
+    const { discord } = setup('pve_reopen');
+    await checkAndExecuteEvents();
+    expect(await review('pve_reopen')).toMatchObject({ status: 'unfilled' });
+
+    await reopen('pve_reopen', NOW.getTime() + 30 * MIN, NOW.getTime() + 90 * MIN);
+    vi.setSystemTime(new Date(NOW.getTime() + MIN));
+    await checkAndExecuteEvents();
+    await addFiller('pve_reopen', '20:00', 'f2');
+
+    vi.setSystemTime(new Date(NOW.getTime() + 31 * MIN));
+    await checkAndExecuteEvents();
+
+    expect(await optionRoster('pve_reopen', '20:00')).toEqual({ titulares: ['f1', 'f2'], fillers: [] });
+    expect(await review('pve_reopen')).toMatchObject({ status: 'confirmed' });
+    expect(Array.from(discord.dms.keys()).sort()).toEqual(['f1', 'f2']);
+  });
+
+  it('(15) con recap, reactivar tras los randoms y volver a cerrar decide de nuevo', async () => {
+    await createPveEvent('pve_reopen_recap', {
+      options: [{ time: '20:00', capacity: 2 }],
+      enrollments: [{ option: 0, userId: 'u1' }]
+    });
+    const { discord, eventMessage } = setup('pve_reopen_recap');
+    await checkAndExecuteEvents();
+    const thread = threadOf(eventMessage);
+    await react(discord, thread.sent[0], '❌', 'u1');
+    expect(await review('pve_reopen_recap')).toMatchObject({ status: 'randoms' });
+
+    await reopen('pve_reopen_recap', NOW.getTime() + 30 * MIN, NOW.getTime() + 90 * MIN);
+    vi.setSystemTime(new Date(NOW.getTime() + MIN));
+    await checkAndExecuteEvents();
+    await addFiller('pve_reopen_recap', '20:00', 'f1');
+
+    vi.setSystemTime(new Date(NOW.getTime() + 31 * MIN));
+    await checkAndExecuteEvents();
+
+    expect(await optionRoster('pve_reopen_recap', '20:00')).toEqual({ titulares: ['u1', 'f1'], fillers: [] });
+    expect(await review('pve_reopen_recap')).toMatchObject({ status: 'confirmed' });
+    expect(thread.sent.some(message => message.content.includes('Entran desde fillers: f1'))).toBe(true);
+  });
+
+  it('(16) una decision no se repite si nadie reabrio el evento', async () => {
+    await createPveEvent('pve_no_reopen', {
+      options: [{ time: '20:00', capacity: 2 }],
+      enrollments: [{ option: 0, userId: 'f1', filler: true }],
+      recapEnabled: false
+    });
+    setup('pve_no_reopen');
+    await checkAndExecuteEvents();
+    await addFiller('pve_no_reopen', '20:00', 'f2');
+
+    await checkAndExecuteEvents();
+
+    expect(await optionRoster('pve_no_reopen', '20:00')).toEqual({ titulares: [], fillers: ['f1', 'f2'] });
+    expect(await review('pve_no_reopen')).toMatchObject({ status: 'unfilled' });
+  });
+
+  it('(17) con recap y sin poder crear el hilo, los fillers avanzan igual y se avisa por DM', async () => {
+    await createPveEvent('pve_no_thread', FILLERS_COMPLETE);
+    const { discord, eventMessage } = setup('pve_no_thread');
+    eventMessage.startThread = async () => {
+      throw new Error('Missing Permissions');
+    };
+
+    await checkAndExecuteEvents();
+    await checkAndExecuteEvents();
+
+    expect(await optionRoster('pve_no_thread', '21:00')).toEqual({ titulares: ['u2', 'filler_a', 'filler_fake'], fillers: ['filler_c'] });
+    expect(discord.dms.get('filler_a')).toHaveLength(1);
+    expect(await review('pve_no_thread')).toMatchObject({ status: 'confirmed', threadId: null });
+  });
+
+  it('(18) sin hilo y sin fillers que completen no decide: reintenta y vota cuando el hilo se puede crear', async () => {
+    await createPveEvent('pve_thread_later', NONE_FULL);
+    const { eventMessage } = setup('pve_thread_later');
+    const startThread = eventMessage.startThread;
+    eventMessage.startThread = async () => {
+      throw new Error('Missing Permissions');
+    };
+
+    await checkAndExecuteEvents();
+    expect((await review('pve_thread_later')).status).toBeNull();
+
+    eventMessage.startThread = startThread;
+    await checkAndExecuteEvents();
+    expect(await review('pve_thread_later')).toMatchObject({ status: 'pending' });
+  });
+
+  it('(19) un evento cancelado no promueve fillers, no avisa ni abre hilo al llegar el cierre', async () => {
+    await createPveEvent('pve_cancelled', {
+      ...FILLERS_COMPLETE,
+      recapEnabled: false,
+      closesAt: NOW.getTime() + 10 * MIN
+    });
+    const { discord, eventMessage } = setup('pve_cancelled');
+    await cancel('pve_cancelled');
+
+    vi.setSystemTime(new Date(NOW.getTime() + 11 * MIN));
+    await checkAndExecuteEvents();
+
+    expect(await optionRoster('pve_cancelled', '21:00')).toEqual({ titulares: ['u2'], fillers: ['filler_a', 'filler_fake', 'filler_c'] });
+    expect(discord.dms.size).toBe(0);
+    expect(eventMessage.thread).toBeNull();
+    expect(await review('pve_cancelled')).toMatchObject({ status: 'cancelled', messageId: 'pve_cancelled_msg' });
+  });
+
+  it('(20) cancelar con recap detiene la votacion: no reabre aunque luego haya mayoria', async () => {
+    await createPveEvent('pve_cancel_vote', NONE_FULL);
+    const { discord, eventMessage } = setup('pve_cancel_vote');
+    await checkAndExecuteEvents();
+    const vote = threadOf(eventMessage).sent[0];
+    await cancel('pve_cancel_vote');
+
+    await react(discord, vote, '✅', 'u1');
+    await react(discord, vote, '✅', 'u2');
+    await checkAndExecuteEvents();
+
+    expect(await review('pve_cancel_vote')).toMatchObject({ status: 'cancelled' });
+    expect((await prisma.event.findUnique({ where: { id: 'pve_cancel_vote' } })).isClosed).toBe(true);
+  });
+
+  it('(21) reactivar un evento cancelado vuelve a revisar el siguiente cierre', async () => {
+    await createPveEvent('pve_cancel_reopen', { ...FILLERS_COMPLETE, recapEnabled: false, closesAt: NOW.getTime() + 10 * MIN });
+    setup('pve_cancel_reopen');
+    await cancel('pve_cancel_reopen');
+
+    await reopen('pve_cancel_reopen', NOW.getTime() + 30 * MIN, NOW.getTime() + 90 * MIN);
+    vi.setSystemTime(new Date(NOW.getTime() + MIN));
+    await checkAndExecuteEvents();
+
+    vi.setSystemTime(new Date(NOW.getTime() + 31 * MIN));
+    await checkAndExecuteEvents();
+
+    expect(await optionRoster('pve_cancel_reopen', '21:00')).toEqual({ titulares: ['u2', 'filler_a', 'filler_fake'], fillers: ['filler_c'] });
+    expect(await review('pve_cancel_reopen')).toMatchObject({ status: 'confirmed' });
+  });
+
+  it('(22) apagar el recap durante la votacion no deja el evento detenido: la votacion vence y el mensaje expira', async () => {
+    await createPveEvent('pve_recap_off', { ...NONE_FULL, expiresAt: NOW.getTime() + 5 * MIN });
+    const { eventMessage } = setup('pve_recap_off');
+    await checkAndExecuteEvents();
+    expect(await review('pve_recap_off')).toMatchObject({ status: 'pending' });
+
+    await warService.updateWarById('pve_recap_off', fresh => {
+      fresh.recap.enabled = false;
+    });
+    vi.setSystemTime(new Date(NOW.getTime() + 16 * MIN));
+    await checkAndExecuteEvents();
+
+    expect(await review('pve_recap_off')).toMatchObject({ status: 'randoms' });
+    expect(eventMessage.deleted).toBe(true);
+    expect(warService.getWarById('pve_recap_off').messageId).toBeNull();
   });
 });

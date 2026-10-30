@@ -7,8 +7,8 @@ const {
 const pveService = require('../../services/pveService');
 const eventManagementService = require('../../services/eventManagementService');
 const { normalizeEventType } = require('../../constants/eventTypes');
-const { normalizeAccessMode, normalizeIds } = require('../../services/pveAccessRules');
-const { splitUsersByChannelAccess, buildRejectedUsersNotice, createMemberRoleResolver } = require('../../utils/pveAccessUi');
+const { normalizeAccessMode } = require('../../services/pveAccessRules');
+const { selectableRoleIds, splitUsersByChannelAccess, buildRejectedUsersNotice, createMemberRoleResolver } = require('../../utils/pveAccessUi');
 const { sanitizeDisplayText } = require('../../utils/textSafety');
 const {
   buildPveAccessEditorPayload,
@@ -117,7 +117,7 @@ async function handlePveAccessRolesSelect(interaction) {
   const context = getSelectedPveContext(interaction);
   if (!context.ok) return await respondUpdate(interaction, { content: context.message, embeds: [], components: [] });
 
-  await applyPveAccessChange(interaction, context, { allowedRoleIds: normalizeIds(interaction.values) }, 'Roles con acceso actualizados.');
+  await applyPveAccessChange(interaction, context, { allowedRoleIds: selectableRoleIds(interaction.guildId, interaction.values) }, 'Roles con acceso actualizados.');
 }
 
 async function handlePveAccessUsersSelect(interaction) {

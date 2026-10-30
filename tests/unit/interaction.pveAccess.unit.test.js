@@ -18,12 +18,14 @@ function withChannelMembers(interaction) {
   const channel = { id: 'channel_1', permissionsFor: member => ({ has: () => Boolean(member.canView) }) };
   interaction.guild.channels.fetch = vi.fn(async id => (String(id) === 'channel_1' ? channel : null));
   interaction.guild.members = {
-    fetch: vi.fn(async id => {
-      const member = MEMBERS[String(id)];
+    fetch: vi.fn(async ({ user, force }) => {
+      // Sin el intent GuildMembers la cache de miembros no se actualiza: siempre se pide fresco.
+      expect(force).toBe(true);
+      const member = MEMBERS[String(user)];
       if (!member) throw Object.assign(new Error('Unknown Member'), { code: 10007 });
       return {
-        id: String(id),
-        user: { id: String(id), bot: Boolean(member.bot) },
+        id: String(user),
+        user: { id: String(user), bot: Boolean(member.bot) },
         canView: member.canView,
         roles: { cache: createCollection((member.roles || []).map(roleId => [roleId, { id: roleId }])) }
       };
@@ -130,6 +132,15 @@ describe('acceso PvE en la creacion del borrador', () => {
     expect(embedText(lastPayload(interaction.editReply))).toContain('<@&role_a> <@&role_b>');
   });
 
+  it('@everyone no cuenta como rol con acceso', async () => {
+    const warData = draft({ accessMode: 'ROLES' });
+    const interaction = createInteraction({ customId: 'pve_access_roles_select', values: ['role_a', 'guild_1'], isRoleSelectMenu: () => true });
+
+    await interactionHandler(interaction);
+
+    expect(warData.allowedRoleIds).toEqual(['role_a']);
+  });
+
   it('las personas que no ven el canal del evento, los bots y quien no esta en el servidor se descartan con aviso', async () => {
     const warData = draft({ accessMode: 'USERS' });
     const interaction = withChannelMembers(createInteraction({
@@ -203,6 +214,50 @@ describe('acceso PvE en el panel /event edit', () => {
 
     expect(management.updatePveAccess.mock.calls[0][1]).toEqual({ allowedUserIds: ['ok_user'] });
     expect(embedText(lastPayload(interaction.editReply))).toContain('<@hidden_user>');
+  });
+
+  it('@everyone no cuenta como rol con acceso', async () => {
+    const interaction = withChannelMembers(asAdmin(createInteraction({
+      customId: 'panel_pve_access_roles_select',
+      values: ['role_ok', 'guild_1'],
+      isRoleSelectMenu: () => true
+    })));
+
+    await pveActions.panel_pve_access_roles_select(interaction);
+
+    expect(management.updatePveAccess.mock.calls[0][1]).toEqual({ allowedRoleIds: ['role_ok'] });
+  });
+});
+
+describe('cancelar un evento PvE desde el panel', () => {
+  beforeEach(() => {
+    resetSrcModules();
+    global.eventAdminSelections = {};
+  });
+
+  afterEach(() => {
+    delete global.eventAdminSelections;
+  });
+
+  it('registra la cancelacion para que el cierre no promueva fillers ni abra votacion', async () => {
+    const war = { ...buildWar({ id: 'pve_cancel', messageId: 'message_pve', channelId: 'channel_1' }), eventType: 'pve' };
+    const reviewService = requireSrc('src/services/pveCloseReviewService');
+    reviewService.cancelCloseReview = vi.fn(async () => undefined);
+    const warService = requireSrc('src/services/warService');
+    warService.getWarById = vi.fn(() => war);
+    warService.loadWars = vi.fn(() => [war]);
+    warService.updateWarById = vi.fn(async (id, mutator) => {
+      mutator(war);
+      return { war, result: undefined };
+    });
+    requireSrc('src/services/discordEventSyncService').updateEventDiscordMessage = vi.fn(async () => ({ ok: true }));
+    const { EVENT_ADMIN_PANEL_ACTIONS } = requireSrc('src/handlers/interaction/eventAdminPanelActions');
+    requireSrc('src/utils/eventAdminContextStore').setSelectedEventContext('user_1', 'guild_1', 'channel_1', war.id, {});
+
+    await EVENT_ADMIN_PANEL_ACTIONS.panel_event_cancel_confirm(asAdmin(createInteraction({ customId: 'panel_event_cancel_confirm' })));
+
+    expect(war.isClosed).toBe(true);
+    expect(reviewService.cancelCloseReview).toHaveBeenCalledWith(war);
   });
 });
 

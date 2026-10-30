@@ -59,6 +59,17 @@ async function startReview(eventId, messageId) {
   return toDomain(row);
 }
 
+// Evento cancelado: esta ocurrencia ya no se revisa, aunque su votacion siguiera abierta.
+async function cancelReview(eventId, messageId, nowMs = Date.now()) {
+  const cancelled = { messageId: String(messageId), status: 'cancelled', finalizedAt: new Date(nowMs) };
+  const row = await prisma.eventPveCloseReview.upsert({
+    where: { eventId: String(eventId) },
+    update: cancelled,
+    create: { eventId: String(eventId), ...cancelled }
+  });
+  return toDomain(row);
+}
+
 async function updateReview(eventId, patch) {
   return toDomain(await prisma.eventPveCloseReview.update({ where: { eventId: String(eventId) }, data: toData(patch) }));
 }
@@ -76,6 +87,7 @@ module.exports = {
   getReview,
   getReviewByVoteMessageId,
   startReview,
+  cancelReview,
   updateReview,
   transitionReview
 };

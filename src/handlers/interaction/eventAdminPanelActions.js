@@ -31,6 +31,7 @@ const { normalizeClassIconSource } = require('../../utils/participantDisplayForm
 const { formatTimeInEventZone } = require('../../utils/eventLifecycleTimes');
 const { listSeriesWars, removeSeriesDay } = require('../../services/recurrenceSeriesService');
 const { publishOrRefreshWarWithOptions } = require('../../services/eventPublicationService');
+const { cancelCloseReview } = require('../../services/pveCloseReviewService');
 const { moveRoleIndex } = require('../../services/roleOrderService');
 const { buildModalTitle, clampInputValue } = require('../../utils/modalLimits');
 const { respondUpdate, respondError, withDeferredUpdate } = require('../../utils/panelResponses');
@@ -293,6 +294,7 @@ async function handleEventCancelConfirm(interaction) {
   if (!updated) {
     return await respondUpdate(interaction, { content: 'No hay evento seleccionado. Usa `/event edit`.', embeds: [], components: [] });
   }
+  await cancelCloseReview(updated);
   if (updated.messageId) {
     await refreshWarMessage(interaction, updated);
   }

@@ -14,6 +14,8 @@ const { notifyFillerPromotions } = require('../utils/promotionNotifier');
 const { logInfo, logWarn, logError } = require('../utils/appLogger');
 
 const reviewLocks = new Map();
+// Decision tomada para este cierre: no se repite salvo que el evento se reabra.
+const DECIDED_STATUSES = new Set(['confirmed', 'randoms', 'unfilled', 'cancelled']);
 
 function withReviewLock(eventId, task) {
   const key = String(eventId);
@@ -142,7 +144,18 @@ async function advanceFillers(client, war, view) {
   return { option, view: fresh, promoted: candidate.fillers.filter(entry => promotedIds.has(String(entry.userId))) };
 }
 
-// Sin recap: solo el avance de fillers, con aviso por DM a quienes entran.
+// Avance de fillers sin hilo donde informarlo: confirma la decision y avisa por DM a quienes entran.
+// El estado se guarda antes de avisar: un fallo al avisar no repite la promocion ni los avisos.
+async function advanceFillersWithDirectNotice(client, war, view, nowMs) {
+  const advance = await advanceFillers(client, war, view);
+  if (!advance) return false;
+
+  await reviewRepository.updateReview(war.id, { status: 'confirmed', finalizedAt: nowMs });
+  await notifyFillerPromotions({ client, war, option: advance.option, promoted: advance.promoted });
+  return true;
+}
+
+// Sin recap: solo el avance de fillers.
 async function runFillerStep(client, war, nowMs) {
   const view = await pveService.getEventPveView(war);
   if (rules.selectConfirmedOption(view.options)) {
@@ -150,11 +163,8 @@ async function runFillerStep(client, war, nowMs) {
     return;
   }
 
-  const advance = await advanceFillers(client, war, view);
-  // El estado se guarda antes de avisar: un fallo al avisar no repite la promocion ni los avisos.
-  await reviewRepository.updateReview(war.id, { status: advance ? 'confirmed' : 'unfilled', finalizedAt: nowMs });
-  if (advance) {
-    await notifyFillerPromotions({ client, war, option: advance.option, promoted: advance.promoted });
+  if (!(await advanceFillersWithDirectNotice(client, war, view, nowMs))) {
+    await reviewRepository.updateReview(war.id, { status: 'unfilled', finalizedAt: nowMs });
   }
 }
 
@@ -176,9 +186,14 @@ async function finishWithRandoms(client, war, review, { afterExtension, thread =
 // Paso A: horario confirmado (lleno con titulares o completado con fillers), votacion de prorroga o randoms.
 async function runCloseStep(client, war, review, nowMs) {
   const thread = await ensureReviewThread(client, war, review);
-  if (!thread) return;
-
   let view = await pveService.getEventPveView(war);
+  if (!thread) {
+    // Sin hilo no se puede confirmar ni votar (se reintenta en el siguiente tick), pero los fillers
+    // avanzan igual: la regla es "siempre al cierre".
+    if (!rules.selectConfirmedOption(view.options)) await advanceFillersWithDirectNotice(client, war, view, nowMs);
+    return;
+  }
+
   const customText = war.recap?.messageText;
   let chosen = rules.selectConfirmedOption(view.options);
   let promoted = [];
@@ -286,10 +301,6 @@ async function evaluateVote(client, war, review, nowMs) {
 // mensaje no debe expirar).
 async function processCloseReview(client, war, nowMs = Date.now()) {
   if (!isPveEvent(war) || !war.messageId || !client) return { votePending: false };
-  // Sin recap no hay votacion: antes del cierre no hay nada que revisar (evita consultas en cada tick).
-  // Se mira la copia de la cache: el mismo tick pudo cerrar las inscripciones.
-  const cached = warService.getWarById(war.id) || war;
-  if (!isPveCloseReviewEvent(cached) && !isReadyForReview(cached, nowMs)) return { votePending: false };
 
   return await withReviewLock(war.id, async () => {
     const current = warService.getWarById(war.id) || war;
@@ -299,21 +310,24 @@ async function processCloseReview(client, war, nowMs = Date.now()) {
       let review = await reviewRepository.getReview(current.id);
       // Otra ocurrencia (republicacion semanal): se empieza de cero.
       if (review && review.messageId !== current.messageId) review = null;
+      // Reabierto tras decidir (desde Discord o la web): el proximo cierre se revisa de cero.
+      if (review && !current.isClosed && DECIDED_STATUSES.has(review.status)) {
+        review = await reviewRepository.startReview(current.id, current.messageId);
+      }
 
-      if (!isPveCloseReviewEvent(current)) {
-        // Sin recap: una sola decision por ocurrencia.
-        if (isReadyForReview(current, nowMs) && (!review || review.status === null)) {
-          if (!review) await reviewRepository.startReview(current.id, current.messageId);
-          await runFillerStep(client, current, nowMs);
-        }
-      } else if (review?.status === 'pending') {
+      // La votacion abierta se resuelve aunque hayan apagado el recap mientras tanto.
+      if (review?.status === 'pending') {
         await evaluateVote(client, current, review, nowMs);
       } else if (review?.status === 'rejected') {
         await finishWithRandoms(client, current, review, { afterExtension: false, nowMs });
       } else if (isReadyForReview(current, nowMs) && (!review || review.status === null || review.status === 'approved')) {
         // Sin revision aun, o prorroga aprobada y las inscripciones volvieron a cerrar.
         const started = review || await reviewRepository.startReview(current.id, current.messageId);
-        await runCloseStep(client, current, started, nowMs);
+        if (isPveCloseReviewEvent(current)) {
+          await runCloseStep(client, current, started, nowMs);
+        } else {
+          await runFillerStep(client, current, nowMs);
+        }
       }
     } catch (error) {
       // Se reintenta en el siguiente tick; un fallo aqui no corta el resto del scheduler.
@@ -323,6 +337,13 @@ async function processCloseReview(client, war, nowMs = Date.now()) {
     const latest = await reviewRepository.getReview(current.id);
     return { votePending: Boolean(latest && latest.messageId === current.messageId && latest.status === 'pending') };
   });
+}
+
+// Evento cancelado desde Discord: cancelar y cerrar dejan el evento igual, asi que se registra para
+// que su cierre no promueva fillers ni abra (o apruebe) una votacion. La web hace lo mismo al archivar.
+async function cancelCloseReview(war, nowMs = Date.now()) {
+  if (!isPveEvent(war) || !war.messageId) return;
+  await withReviewLock(war.id, () => reviewRepository.cancelReview(war.id, war.messageId, nowMs));
 }
 
 // Desde los listeners de reacciones: reevalua la votacion de ese mensaje en tiempo real.
@@ -345,5 +366,6 @@ module.exports = {
   isPveEvent,
   isPveCloseReviewEvent,
   processCloseReview,
+  cancelCloseReview,
   handleVoteReaction
 };

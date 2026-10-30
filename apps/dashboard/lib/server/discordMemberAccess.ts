@@ -22,33 +22,41 @@ export type ChannelMemberCandidate = {
   canViewChannel: boolean;
 };
 
-type ChannelAccessContext = { channel: DiscordChannelPayload; roles: DiscordRolePayload[] } | null;
+type ChannelAccessContext = { channel: DiscordChannelPayload; roles: DiscordRolePayload[]; ownerId: string | null } | null;
 
 async function loadChannelAccess(guildId: string, channelId: string | null | undefined): Promise<ChannelAccessContext> {
   if (!channelId || !isDiscordSnowflake(channelId)) {
     return null;
   }
 
-  const [channel, roles] = await Promise.all([
+  const [channel, roles, guild] = await Promise.all([
     discordFetch<DiscordChannelPayload>(`/channels/${channelId}`),
-    discordFetch<DiscordRolePayload[]>(`/guilds/${guildId}/roles`)
+    discordFetch<DiscordRolePayload[]>(`/guilds/${guildId}/roles`),
+    discordFetch<{ owner_id?: string }>(`/guilds/${guildId}`)
   ]);
-  return channel.guild_id === guildId ? { channel, roles } : null;
+  return channel.guild_id === guildId ? { channel, roles, ownerId: guild.owner_id ?? null } : null;
 }
 
 function canViewChannel(guildId: string, context: ChannelAccessContext, userId: string, member: DiscordGuildMemberPayload) {
-  if (!context) {
+  // The owner sees every channel, whatever the overwrites say.
+  if (!context || userId === context.ownerId) {
     return true;
   }
   const permissions = computeChannelPermissions(guildId, context.roles, { user: { id: userId }, roles: member.roles ?? [] }, context.channel);
   return hasAllPermissions(permissions, [PERMISSIONS.ViewChannel]);
 }
 
+// null only when the member really is not in the guild: a rate limit or outage must not read as "left the server".
 async function fetchMember(guildId: string, userId: string) {
   if (!isDiscordSnowflake(userId)) {
     return null;
   }
-  return await discordFetch<DiscordGuildMemberPayload>(`/guilds/${guildId}/members/${userId}`).catch(() => null);
+  return await discordFetch<DiscordGuildMemberPayload>(`/guilds/${guildId}/members/${userId}`).catch((error: { status?: number }) => {
+    if (error.status === 404) {
+      return null;
+    }
+    throw error;
+  });
 }
 
 export async function searchChannelMembers(guildId: string, query: string, channelId?: string | null): Promise<ChannelMemberCandidate[]> {

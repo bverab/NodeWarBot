@@ -91,6 +91,23 @@ describe("dashboard PvE access", () => {
     });
   });
 
+  it("archiving a published PvE event records it, so its close cannot promote fillers or open a vote", async () => {
+    const { archiveGuildEvent, createGuildEventDraft } = await import("../../apps/dashboard/lib/server/dashboardData");
+    const open = await createGuildEventDraft(GUILD_ID, "creator_1", { ...pveInput });
+    await prisma.event.update({ where: { id: open.id }, data: { messageId: "archive_open_msg" } });
+    const closed = await createGuildEventDraft(GUILD_ID, "creator_1", { ...pveInput });
+    await prisma.event.update({ where: { id: closed.id }, data: { messageId: "archive_closed_msg", isClosed: true } });
+    const draft = await createGuildEventDraft(GUILD_ID, "creator_1", { ...pveInput });
+
+    await archiveGuildEvent(GUILD_ID, open.id);
+    await archiveGuildEvent(GUILD_ID, closed.id);
+    await archiveGuildEvent(GUILD_ID, draft.id);
+
+    await expect(prisma.eventPveCloseReview.findUnique({ where: { eventId: open.id } })).resolves.toMatchObject({ status: "cancelled", messageId: "archive_open_msg" });
+    await expect(prisma.eventPveCloseReview.findUnique({ where: { eventId: closed.id } })).resolves.toMatchObject({ status: "cancelled", messageId: "archive_closed_msg" });
+    await expect(prisma.eventPveCloseReview.findUnique({ where: { eventId: draft.id } })).resolves.toBeNull();
+  });
+
   it("refuses to set an access mode on a War event and returns null for another guild", async () => {
     const { createGuildEventDraft, updatePveEventAccess } = await import("../../apps/dashboard/lib/server/dashboardData");
     const war = await createGuildEventDraft(GUILD_ID, "creator_1", {

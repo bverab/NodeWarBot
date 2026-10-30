@@ -767,18 +767,28 @@ export async function deleteGuildDraftEvent(guildId: string, eventId: string) {
 export async function archiveGuildEvent(guildId: string, eventId: string) {
   const event = await prisma.event.findFirst({
     where: { id: eventId, guildId },
-    select: { id: true, isClosed: true, channelId: true, messageId: true }
+    select: { id: true, eventType: true, isClosed: true, channelId: true, messageId: true }
   });
 
   if (!event) {
     return null;
   }
 
-  if (event.isClosed) {
-    return event;
+  const now = new Date();
+  // To the bot an archived event looks like a normal close, so it is recorded: no filler promotion or extension vote.
+  if (event.eventType === "pve" && event.messageId) {
+    const cancelled = { messageId: event.messageId, status: "cancelled", finalizedAt: now };
+    await prisma.eventPveCloseReview.upsert({
+      where: { eventId: event.id },
+      update: cancelled,
+      create: { eventId: event.id, ...cancelled }
+    });
   }
 
-  const now = new Date();
+  if (event.isClosed) {
+    return { id: event.id, isClosed: event.isClosed, channelId: event.channelId, messageId: event.messageId };
+  }
+
   return prisma.event.update({
     where: { id: event.id },
     data: {

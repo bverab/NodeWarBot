@@ -20,8 +20,8 @@ const { safeEphemeralReply } = require('../utils/interactionReply');
 const { consumeRateLimit, buildInteractionRateKey } = require('../utils/rateLimiter');
 const { buildModalTitle, clampInputValue } = require('../utils/modalLimits');
 const { logError } = require('../utils/appLogger');
-const { normalizeAccessMode, normalizeIds } = require('../services/pveAccessRules');
-const { buildPveAccessView, splitUsersByChannelAccess, buildRejectedUsersNotice } = require('../utils/pveAccessUi');
+const { normalizeAccessMode } = require('../services/pveAccessRules');
+const { buildPveAccessView, selectableRoleIds, splitUsersByChannelAccess, buildRejectedUsersNotice } = require('../utils/pveAccessUi');
 
 module.exports = async interaction => {
   const { customId } = interaction;
@@ -237,7 +237,7 @@ async function handlePveAccessRolesSelect(interaction) {
     return await interaction.update({ content: 'Sesion expirada', components: [] });
   }
   await interaction.deferUpdate();
-  warData.allowedRoleIds = normalizeIds(interaction.values);
+  warData.allowedRoleIds = selectableRoleIds(interaction.guildId, interaction.values);
   await showPveAccessEditor(interaction, warData, 'Roles con acceso actualizados.');
 }
 

@@ -76,6 +76,18 @@ function buildPveAccessView(event, { customIds, title, notice } = {}) {
   return { embed: buildPveAccessEmbed(event, { title, notice }), rows: buildPveAccessRows(event, customIds) };
 }
 
+// El bot no tiene el intent GuildMembers: su cache de miembros no se actualiza sola, asi que los roles
+// se piden siempre a Discord.
+async function fetchFreshMember(guild, userId) {
+  if (!guild?.members?.fetch) return null;
+  return await guild.members.fetch({ user: String(userId), force: true }).catch(() => null);
+}
+
+// @everyone es un rol con el id del servidor: no sirve como restriccion ni se debe mencionar.
+function selectableRoleIds(guildId, values) {
+  return normalizeIds(values).filter(roleId => roleId !== String(guildId));
+}
+
 // Separa a las personas elegidas que pueden ver el canal del evento de las que no (bots y quien no
 // esta en el servidor incluidos). Si el canal no se puede leer, no se descarta a nadie por permisos.
 async function splitUsersByChannelAccess({ guild, channelId, userIds }) {
@@ -85,7 +97,7 @@ async function splitUsersByChannelAccess({ guild, channelId, userIds }) {
   const allowed = [];
   const rejected = [];
   for (const userId of normalizeIds(userIds)) {
-    const member = guild?.members?.fetch ? await guild.members.fetch(userId).catch(() => null) : null;
+    const member = await fetchFreshMember(guild, userId);
     if (!member || member.user?.bot) {
       rejected.push(userId);
       continue;
@@ -108,16 +120,14 @@ function buildRejectedUsersNotice(rejected) {
 
 // Para reevaluar fillers en modo por roles: roles actuales de un miembro ([] si no se puede leer).
 function createMemberRoleResolver(guild) {
-  return async userId => {
-    const member = guild?.members?.fetch ? await guild.members.fetch(String(userId)).catch(() => null) : null;
-    return getMemberRoleIds(member);
-  };
+  return async userId => getMemberRoleIds(await fetchFreshMember(guild, userId));
 }
 
 module.exports = {
   buildPveAccessEmbed,
   buildPveAccessRows,
   buildPveAccessView,
+  selectableRoleIds,
   splitUsersByChannelAccess,
   buildRejectedUsersNotice,
   createMemberRoleResolver

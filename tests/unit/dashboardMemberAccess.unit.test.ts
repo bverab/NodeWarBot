@@ -9,12 +9,15 @@ const ALICE = "400000000000000004";
 const BOB = "400000000000000005";
 const BOTTY = "400000000000000006";
 const GHOST = "400000000000000007";
+const OWNER = "400000000000000008";
+const RATE_LIMITED = "400000000000000009";
 const VIEW_CHANNEL = String(0x400);
 
 const members: Record<string, { nick: string; roles: string[]; bot?: boolean }> = {
   [ALICE]: { nick: "Alice", roles: [ROLE_OK] },
   [BOB]: { nick: "Bob", roles: [] },
-  [BOTTY]: { nick: "Botty", roles: [], bot: true }
+  [BOTTY]: { nick: "Botty", roles: [], bot: true },
+  [OWNER]: { nick: "Owner", roles: [] }
 };
 
 function memberPayload(id: string) {
@@ -49,8 +52,14 @@ function mockDiscord() {
     if (path === `/guilds/${GUILD_ID}/roles`) {
       return json([{ id: GUILD_ID, permissions: VIEW_CHANNEL }, { id: ROLE_OK, permissions: "0" }]);
     }
+    if (path === `/guilds/${GUILD_ID}`) {
+      return json({ id: GUILD_ID, owner_id: OWNER });
+    }
     const memberMatch = path.match(new RegExp(`^/guilds/${GUILD_ID}/members/(\\d+)$`));
     if (memberMatch) {
+      if (memberMatch[1] === RATE_LIMITED) {
+        return json({ message: "You are being rate limited.", code: 0 }, 429);
+      }
       return members[memberMatch[1]] ? json(memberPayload(memberMatch[1])) : json({ message: "Unknown Member", code: 10007 }, 404);
     }
     return json({ message: "unexpected" }, 500);
@@ -96,5 +105,18 @@ describe("dashboard PvE member access", () => {
 
     await expect(fetchMemberRoleIds(GUILD_ID, ALICE)).resolves.toEqual([ROLE_OK]);
     await expect(fetchMemberRoleIds(GUILD_ID, GHOST)).resolves.toEqual([]);
+  });
+
+  it("treats the server owner as able to see every channel, as Discord does", async () => {
+    const { validateAccessUsers } = await import("../../apps/dashboard/lib/server/discordMemberAccess");
+
+    await expect(validateAccessUsers(GUILD_ID, [OWNER, BOB], CHANNEL_ID)).resolves.toEqual({ allowed: [OWNER], rejected: [BOB] });
+  });
+
+  it("does not report a Discord failure as a member who left", async () => {
+    const { validateAccessUsers, fetchMemberRoleIds } = await import("../../apps/dashboard/lib/server/discordMemberAccess");
+
+    await expect(validateAccessUsers(GUILD_ID, [ALICE, RATE_LIMITED], CHANNEL_ID)).rejects.toMatchObject({ status: 429 });
+    await expect(fetchMemberRoleIds(GUILD_ID, RATE_LIMITED)).rejects.toMatchObject({ status: 429 });
   });
 });

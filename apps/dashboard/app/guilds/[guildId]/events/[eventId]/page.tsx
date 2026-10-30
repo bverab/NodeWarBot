@@ -200,7 +200,6 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 initialMode={event.access.mode}
                 initialRoleIds={event.access.roleIds}
                 initialUsers={event.access.users.map((user) => ({ id: user.userId, displayName: user.displayName }))}
-                key={`${event.access.mode}:${event.access.roleIds.join(",")}:${event.access.users.map((user) => user.userId).join(",")}`}
                 manageable={activeGuild.manageable}
                 roleLoadError={roles.length ? null : "No Discord roles could be loaded."}
                 roles={roles}
