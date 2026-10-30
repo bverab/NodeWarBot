@@ -10,6 +10,7 @@ import { ConfirmResourceAction } from "@/app/guilds/[guildId]/_components/action
 import { PveEventSignupGrid } from "@/app/guilds/[guildId]/_components/signups/EventSignupSummary";
 import { EventActions } from "./EventActions";
 import { EventSlotGrid } from "./EventSlotGrid";
+import { PveAccessEditor } from "./PveAccessEditor";
 import { GuildNotFound } from "@/app/guilds/[guildId]/_components/shared/GuildNotFound";
 import { ParticipantChip } from "@/app/guilds/[guildId]/_components/shared/ParticipantChip";
 import { RememberGuild } from "@/app/guilds/[guildId]/_components/shared/RememberGuild";
@@ -117,6 +118,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           initialTimezone={event.timezone}
           initialType={event.type}
           isClosed={event.status === "closed"}
+          isEnded={!event.published && !event.canDelete}
           manageable={activeGuild.manageable}
         />
 
@@ -138,7 +140,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 resourceName={event.name}
                 title="Archive event?"
               />
-            ) : (
+            ) : event.canDelete ? (
               <ConfirmResourceAction
                 actionLabel="Delete permanently"
                 body={`This will permanently delete "${event.name}" from Spectre. It is not currently linked to a Discord message. This action cannot be undone.`}
@@ -148,7 +150,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 resourceName={event.name}
                 title="Delete event permanently?"
               />
-            )
+            ) : null
           ) : null}
         </div>
 
@@ -189,6 +191,21 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           </section>
 
           <aside className={styles.editorAside}>
+            {isPve ? (
+              // PvE fillers are per time option (shown in the grid); this card sets who is not a filler.
+              <PveAccessEditor
+                channelId={event.channelId}
+                eventId={event.id}
+                guildId={activeGuild.id}
+                initialMode={event.access.mode}
+                initialRoleIds={event.access.roleIds}
+                initialUsers={event.access.users.map((user) => ({ id: user.userId, displayName: user.displayName }))}
+                manageable={activeGuild.manageable}
+                roleLoadError={roles.length ? null : "No Discord roles could be loaded."}
+                roles={roles}
+              />
+            ) : (
+            <>
             <Card>
               <h3>Waitlist</h3>
               {event.waitlist.length ? (
@@ -224,6 +241,8 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 <p>No filler entries.</p>
               )}
             </Card>
+            </>
+            )}
             <Card>
               <h3>Metadata</h3>
               <p>Inscritos: {totalRegistered}/{totalCapacity || "?"}</p>
@@ -239,9 +258,11 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               <p>
                 {event.published
                   ? `Published. Discord message ${event.messageId ?? "not recorded"}`
-                  : event.autoPublishEnabled && event.scheduledPublishAt
-                    ? `Scheduled publish: ${formatDateTime(event.scheduledPublishAt, event.timezone)} ${event.timezone}`
-                    : "Draft / Not published. Manual publish."}
+                  : !event.canDelete
+                    ? "Ended. The Discord message was removed when the event expired."
+                    : event.autoPublishEnabled && event.scheduledPublishAt
+                      ? `Scheduled publish: ${formatDateTime(event.scheduledPublishAt, event.timezone)} ${event.timezone}`
+                      : "Draft / Not published. Manual publish."}
               </p>
               {event.publishError ? <p>Auto publish failed: {event.publishError}</p> : null}
               {event.discordUrl ? (

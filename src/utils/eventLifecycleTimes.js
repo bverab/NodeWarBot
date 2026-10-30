@@ -34,13 +34,23 @@ function getNextZonedDateKeyForDay(dayOfWeek, time, timezone, now = new Date()) 
   return null;
 }
 
+// Un cierre "antes" de la publicacion se interpreta como del dia siguiente solo si queda a
+// este margen o menos de la publicacion (ej. 23:30 -> 00:15); fuera de el sigue siendo error.
+const MAX_OVERNIGHT_SIGNUP_WINDOW_MS = 6 * 60 * 60 * 1000;
+
 function buildLifecycleForLocalDate({ dateKey, publishTime, signupCloseTime, eventEndTime, timezone }) {
   const publishAt = zonedDateTimeFromParts(dateKey, publishTime, timezone);
-  const signupCloseAt = zonedDateTimeFromParts(dateKey, signupCloseTime, timezone);
+  let signupCloseAt = zonedDateTimeFromParts(dateKey, signupCloseTime, timezone);
   let eventEndAt = zonedDateTimeFromParts(dateKey, eventEndTime, timezone);
 
   if (!publishAt || !signupCloseAt || !eventEndAt) return null;
-  if (eventEndAt.getTime() <= signupCloseAt.getTime()) {
+  if (signupCloseAt.getTime() <= publishAt.getTime()) {
+    const nextDayClose = new Date(signupCloseAt.getTime() + 24 * 60 * 60 * 1000);
+    if (nextDayClose.getTime() - publishAt.getTime() <= MAX_OVERNIGHT_SIGNUP_WINDOW_MS) {
+      signupCloseAt = nextDayClose;
+    }
+  }
+  while (eventEndAt.getTime() <= signupCloseAt.getTime()) {
     eventEndAt = new Date(eventEndAt.getTime() + 24 * 60 * 60 * 1000);
   }
   if (signupCloseAt.getTime() <= publishAt.getTime() && eventEndAt.getTime() > publishAt.getTime() + 24 * 60 * 60 * 1000) {
@@ -58,6 +68,26 @@ function deriveLifecycleForScheduledEvent({ dayOfWeek, publishTime, signupCloseT
   const dateKey = getNextZonedDateKeyForDay(dayOfWeek, publishTime, timezone, now);
   if (!dateKey) return null;
   return buildLifecycleForLocalDate({ dateKey, publishTime, signupCloseTime, eventEndTime, timezone });
+}
+
+// Primera ocurrencia de un evento recien creado: el fin es la publicacion + duracion y el cierre
+// ocurre closeBeforeMinutes antes del fin (lo que pide el modal de /event create).
+function deriveLifecycleFromDuration({ dayOfWeek, publishTime, durationMinutes, closeBeforeMinutes, timezone, now = new Date() }) {
+  const dateKey = getNextZonedDateKeyForDay(dayOfWeek, publishTime, timezone, now);
+  if (!dateKey) return null;
+  const publishAt = zonedDateTimeFromParts(dateKey, publishTime, timezone);
+  if (!publishAt) return null;
+
+  const duration = Number.isInteger(durationMinutes) && durationMinutes > 0 ? durationMinutes : 70;
+  const closeBefore = Number.isInteger(closeBeforeMinutes) && closeBeforeMinutes >= 0 && closeBeforeMinutes < duration
+    ? closeBeforeMinutes
+    : 0;
+  const eventEndAt = new Date(publishAt.getTime() + duration * 60 * 1000);
+  return {
+    publishAt,
+    signupCloseAt: new Date(eventEndAt.getTime() - closeBefore * 60 * 1000),
+    eventEndAt
+  };
 }
 
 function deriveLifecycleForExistingEvent({ event, publishTime, signupCloseTime, eventEndTime, timezone, now = new Date() }) {
@@ -118,6 +148,7 @@ function applyLifecycleToWar(war, lifecycle) {
 
 module.exports = {
   applyLifecycleToWar,
+  deriveLifecycleFromDuration,
   deriveLifecycleForExistingEvent,
   deriveLifecycleForScheduledEvent,
   formatTimeInEventZone,

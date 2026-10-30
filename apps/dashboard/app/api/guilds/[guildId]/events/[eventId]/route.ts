@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { calculateEventLifecycleDates, calculateScheduledPublishAt, formatDateTimeInTimezone, normalizeTimezoneInfo } from "@/lib/eventDateTime";
+import { mapPrismaError } from "@/lib/server/apiErrors";
 import { getGuildEventDetail, updateGuildEvent } from "@/lib/server/dashboardData";
+import { validateDraftEventLinks } from "@/lib/server/draftEventLinks";
 import { requireDashboardGuild, requireManageableDashboardGuild } from "@/lib/server/guildAccess";
 import { prisma } from "@/lib/server/prisma";
 import { getLockedPublishedEventPatchFields, parseEventPatch, readNumber } from "@/lib/server/mutationValidation";
@@ -197,6 +199,20 @@ export async function PATCH(request: Request, context: RouteContext) {
       return validationResponse(validationError, [{ path: "payload", message: validationError }]);
     }
     const { patch } = result;
+
+    if (!current.messageId) {
+      if (applyToSeries && patch.messageId) {
+        return validationResponse("A Discord message can only be linked to a single occurrence.", [
+          { path: "messageId", message: "A Discord message can only be linked to a single occurrence, not to a whole series." }
+        ]);
+      }
+
+      const linkCheck = await validateDraftEventLinks({ guildId, currentChannelId: current.channelId, patch });
+      if (!linkCheck.ok) {
+        return validationResponse(linkCheck.error, [{ path: linkCheck.path, message: linkCheck.error }], linkCheck.status);
+      }
+    }
+
     const currentTimezoneInfo = normalizeTimezoneInfo(current.timezone);
     if (currentTimezoneInfo.source === "alias") {
       logEventEdit("normalized stored timezone alias", {
@@ -391,6 +407,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       meta: typeof error === "object" && error && "meta" in error ? (error as { meta?: unknown }).meta : undefined
     });
 
+    const mapped = mapPrismaError(error, "That Discord message is already linked to another event.");
+    if (mapped) {
+      return validationResponse(mapped.message, [{ path: "server", message: mapped.message }], mapped.status);
+    }
+
+    console.error("[dashboard:api] Failed to update event.", error);
     return NextResponse.json(
       { ok: false, error: "Failed to update event.", issues: [{ path: "server", message: "The event update could not be completed." }] },
       { status: 500 }

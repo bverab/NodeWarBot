@@ -1,4 +1,5 @@
 const { normalizeEventType } = require('../../constants/eventTypes');
+const { buildLimitedList } = require('../../utils/listFormatting');
 
 function buildTemplateTypeChoices() {
   return [
@@ -222,7 +223,10 @@ async function handleEventTemplate(interaction, subcommand, deps) {
         const status = template.isArchived ? 'archivada' : 'activa';
         return `• \`${template.id}\` | **${template.name}** | ${template.eventType} | roles:${template.roleSlots.length} | ${status}`;
       });
-    return await safeEphemeralReply(interaction, `Plantillas (${templates.length}):\n${lines.join('\n')}`);
+    return await safeEphemeralReply(
+      interaction,
+      buildLimitedList(`Plantillas (${templates.length}):`, lines, { total: templates.length })
+    );
   }
 
   if (subcommand === 'archive' || subcommand === 'restore') {

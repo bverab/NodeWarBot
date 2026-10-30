@@ -8,7 +8,9 @@ const {
 const warService = require('./warService');
 const { shouldExecute } = require('../utils/cronHelper');
 const pveService = require('./pveService');
+const pveCloseReviewService = require('./pveCloseReviewService');
 const { safeMessageContent, neutralizeMassMentions } = require('../utils/textSafety');
+const { buildPublicationMentions } = require('./pveAccessRules');
 const { logInfo, logWarn, logError } = require('../utils/appLogger');
 const {
   applyLifecycleToWar,
@@ -20,6 +22,7 @@ let schedulerInstance = null;
 let checkInterval = null;
 let scheduledPublishRunning = false;
 let scheduledPublishPromise = null;
+let tickPromise = null;
 
 /**
  * Inicializa el scheduler - debe llamarse una sola vez en index.js
@@ -68,22 +71,64 @@ function stopScheduler() {
 }
 
 /**
- * Verifica y ejecuta eventos que deben publicarse
+ * Resuelve cuando termina el tick en curso (o de inmediato si no hay ninguno).
  */
-async function checkAndExecuteEvents() {
-  if (!schedulerInstance) return;
+function waitForSchedulerIdle() {
+  return tickPromise ? tickPromise.catch(() => null) : Promise.resolve();
+}
 
+/**
+ * Verifica y ejecuta eventos que deben publicarse.
+ * Si ya hay un tick en curso devuelve esa misma promesa (no se solapan).
+ */
+function checkAndExecuteEvents() {
+  if (!schedulerInstance) return Promise.resolve();
+  if (tickPromise) return tickPromise;
+
+  tickPromise = runSchedulerTick().finally(() => {
+    tickPromise = null;
+  });
+  return tickPromise;
+}
+
+async function runSchedulerTick() {
   try {
     schedulerInstance.lastCheck = Date.now();
-    const wars = warService.loadWars();
+    // Trae a la cache lo que el dashboard creo, publico, edito o borro desde el ultimo tick.
+    try {
+      await warService.syncWarsFromDatabase();
+    } catch (error) {
+      logError('Error sincronizando cache de eventos con la base', error, { action: 'scheduler_cache_sync' });
+    }
+    if (!schedulerInstance) return;
     const nowMs = Date.now();
     const now = new Date(nowMs);
 
-    await processScheduledWebPublishes(now);
+    try {
+      await processScheduledWebPublishes(now);
+    } catch (error) {
+      logError('Error en auto publish web programado', error, { action: 'scheduler_web_auto_publish' });
+    }
 
-    for (const war of wars) {
+    // Despues de autopublicar: un evento publicado en este tick ya tiene messageId y lastCreatedAt, y la
+    // recurrencia semanal del mismo minuto no lo vuelve a publicar.
+    const wars = warService.loadWars();
+
+    for (const snapshot of wars) {
+      // stopScheduler durante el tick: termina el evento en curso y no sigue con el resto.
+      if (!schedulerInstance) break;
+      let war = snapshot;
+
       if (war.messageId && !war.isClosed && Number.isFinite(war.closesAt) && nowMs >= war.closesAt) {
         await closeWarSignups(war);
+      }
+
+      // PvE: revision de cierre (avance de fillers y, con recap, horario confirmado, votacion o randoms).
+      let votePending = false;
+      if (war.messageId && pveCloseReviewService.isPveEvent(war) && schedulerInstance) {
+        ({ votePending } = await pveCloseReviewService.processCloseReview(schedulerInstance.client, war, nowMs));
+        // Una prorroga aprobada reabre el evento y mueve cierre y fin.
+        war = warService.getWarById(war.id) || war;
       }
 
       if (war.messageId && shouldPublishRecapThread(war, nowMs)) {
@@ -91,12 +136,17 @@ async function checkAndExecuteEvents() {
       }
 
       if (isWarExpired(war, nowMs)) {
+        // Con la votacion de prorroga abierta el mensaje no se borra aunque haya pasado expiresAt.
+        if (votePending) continue;
         await expireWarMessage(war);
         continue;
       }
 
       if (!war.schedule || !war.schedule.enabled) continue;
       if ((war.dayOfWeek === null || war.dayOfWeek === undefined) || !war.time) continue;
+      // Nunca se republica sobre un mensaje vigente (p. ej. una serie web publicada a mano ese dia):
+      // las ocurrencias del bot ya expiraron (messageId null) cuando llega su siguiente slot.
+      if (war.messageId && Number.isFinite(war.expiresAt) && nowMs < war.expiresAt) continue;
 
       if (!shouldExecute(war.dayOfWeek, war.time, now, war.timezone)) continue;
 
@@ -139,7 +189,16 @@ async function processScheduledWebPublishes(now = new Date()) {
       }))
     });
     for (const event of candidates) {
-      await publishScheduledWebEvent(event, now);
+      try {
+        await publishScheduledWebEvent(event, now);
+      } catch (error) {
+        logError('Error en auto publish web programado', error, {
+          action: 'scheduler_web_auto_publish',
+          eventId: event.id,
+          guildId: event.guildId,
+          channelId: event.channelId
+        });
+      }
     }
   })();
 
@@ -222,7 +281,9 @@ async function publishScheduledWebEvent(event, now = new Date()) {
       messageId: publishResult.messageId,
       autoPublishEnabled: false,
       publishError: null,
-      lastPublishAttemptAt: attemptedAt.getTime()
+      lastPublishAttemptAt: attemptedAt.getTime(),
+      // Como las publicaciones del bot: evita que la recurrencia semanal la vuelva a publicar ese dia.
+      schedule: { ...(event.schedule || {}), lastCreatedAt: attemptedAt.getTime() }
     });
 
     logInfo('[scheduler:auto-publish] published event', {
@@ -245,24 +306,9 @@ async function publishScheduledWebEvent(event, now = new Date()) {
   }
 }
 
-function buildScheduledPublicationMentions(event) {
-  const isRestrictedPve = normalizeEventType(event.eventType) === 'pve'
-    && String(event.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
-  const notifyTargets = isRestrictedPve
-    ? Array.from(new Set((Array.isArray(event.allowedUserIds) ? event.allowedUserIds : []).map(String).filter(Boolean)))
-    : Array.from(new Set((Array.isArray(event.notifyRoles) ? event.notifyRoles : []).map(String).filter(Boolean)));
-  const content = notifyTargets.length > 0
-    ? (isRestrictedPve
-      ? notifyTargets.map(userId => `<@${userId}>`).join(' ')
-      : notifyTargets.map(roleId => `<@&${roleId}>`).join(' '))
-    : 'Evento publicado automaticamente';
-
-  return {
-    content: safeMessageContent(content, 'Evento publicado automaticamente'),
-    allowedMentions: notifyTargets.length > 0
-      ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
-      : { parse: [] }
-  };
+function buildScheduledPublicationMentions(event, fallbackContent = 'Evento publicado automaticamente') {
+  const { content, allowedMentions } = buildPublicationMentions(event, fallbackContent);
+  return { content: safeMessageContent(content, fallbackContent), allowedMentions };
 }
 
 /**
@@ -279,7 +325,8 @@ function getDateString(date) {
  * Ejecuta la publicacion de un evento
  */
 async function executeWarPublication(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     if (war.messageId) {
@@ -299,16 +346,6 @@ async function executeWarPublication(war) {
     }
 
     const publicationTimestamp = Date.now();
-    const isRestrictedPve = normalizeEventType(war.eventType) === 'pve'
-      && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
-    const notifyTargets = isRestrictedPve
-      ? Array.from(new Set((Array.isArray(war.allowedUserIds) ? war.allowedUserIds : []).map(String).filter(Boolean)))
-      : (Array.isArray(war.notifyRoles) ? war.notifyRoles.map(String).filter(Boolean) : []);
-    const publishContent = notifyTargets.length > 0
-      ? (isRestrictedPve
-        ? notifyTargets.map(userId => `<@${userId}>`).join(' ')
-        : notifyTargets.map(roleId => `<@&${roleId}>`).join(' '))
-      : 'Evento creado automaticamente';
 
     const lifecycle = deriveLifecycleForScheduledEvent({
       dayOfWeek: war.dayOfWeek,
@@ -352,12 +389,7 @@ async function executeWarPublication(war) {
     const publishResult = await publishEventToDiscord({
       client,
       event: warForPublication,
-      messageOptions: {
-        content: safeMessageContent(publishContent, 'Evento creado automaticamente'),
-        allowedMentions: notifyTargets.length > 0
-          ? (isRestrictedPve ? { parse: [], users: notifyTargets } : { parse: [], roles: notifyTargets })
-          : { parse: [] }
-      }
+      messageOptions: buildScheduledPublicationMentions(war, 'Evento creado automaticamente')
     });
     if (!publishResult.ok) {
       logWarn('No se encontro canal para evento programado', {
@@ -406,6 +438,8 @@ function isWarExpired(war, nowMs) {
 function shouldPublishRecapThread(war, nowMs) {
   if (!war.messageId) return false;
   if (!war.recap?.enabled) return false;
+  // En PvE la revision de cierre reemplaza al hilo de recap por tiempo.
+  if (pveCloseReviewService.isPveCloseReviewEvent(war)) return false;
   if (war.recap.lastPostedAt) return false;
   if (!Number.isFinite(war.expiresAt) || war.expiresAt <= 0) return false;
 
@@ -415,7 +449,8 @@ function shouldPublishRecapThread(war, nowMs) {
 }
 
 async function publishRecapThread(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     const channel = await client.channels.fetch(war.channelId).catch(() => null);
@@ -445,9 +480,14 @@ async function publishRecapThread(war) {
 
     await thread.send(await buildEventReadOnlyPayload({ ...war, isClosed: true }));
 
+    // Solo se tocan los campos del recap, sobre la copia fresca (no pisa inscripciones del tick).
+    const postedAt = Date.now();
+    await warService.updateWarById(war.id, fresh => {
+      fresh.recap.threadId = thread.id;
+      fresh.recap.lastPostedAt = postedAt;
+    });
     war.recap.threadId = thread.id;
-    war.recap.lastPostedAt = Date.now();
-    await warService.updateWar(war);
+    war.recap.lastPostedAt = postedAt;
   } catch (error) {
     logError('Error publicando hilo de resumen', error, {
       action: 'scheduler_recap',
@@ -460,9 +500,19 @@ async function publishRecapThread(war) {
 }
 
 async function closeWarSignups(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
+    // Cierra sobre la copia fresca: conserva inscripciones que entraron despues de la foto del tick y
+    // respeta un evento reabierto o republicado mientras tanto.
+    const nowMs = Date.now();
+    const { war: closed } = await warService.updateWarById(war.id, fresh => {
+      if (fresh.isClosed || fresh.messageId !== war.messageId) return false;
+      if (!Number.isFinite(fresh.closesAt) || nowMs < fresh.closesAt) return false;
+      fresh.isClosed = true;
+    });
+    if (!closed) return;
     war.isClosed = true;
 
     if (war.messageId) {
@@ -478,8 +528,6 @@ async function closeWarSignups(war) {
         });
       }
     }
-
-    await warService.updateWar(war);
   } catch (error) {
     logError('Error al cerrar inscripciones', error, {
       action: 'scheduler_close_signups',
@@ -492,7 +540,8 @@ async function closeWarSignups(war) {
 }
 
 async function expireWarMessage(war) {
-  const { client } = schedulerInstance;
+  const { client } = schedulerInstance || {};
+  if (!client) return;
 
   try {
     const deleteResult = await deleteEventDiscordMessage({ client, event: war });
@@ -507,10 +556,17 @@ async function expireWarMessage(war) {
       });
     }
 
+    const deletedAt = Date.now();
+    await warService.updateWarById(war.id, fresh => {
+      // Si se republico mientras tanto, el mensaje nuevo no se toca.
+      if (fresh.messageId !== war.messageId) return false;
+      fresh.messageId = null;
+      fresh.isClosed = true;
+      fresh.schedule.lastMessageIdDeleted = deletedAt;
+    });
     war.messageId = null;
     war.isClosed = true;
-    war.schedule.lastMessageIdDeleted = Date.now();
-    await warService.updateWar(war);
+    war.schedule.lastMessageIdDeleted = deletedAt;
     logInfo('Evento expirado y eliminado', {
       action: 'scheduler_expire_event',
       eventId: war.id,
@@ -543,6 +599,7 @@ function getSchedulerStatus() {
 module.exports = {
   initScheduler,
   stopScheduler,
+  waitForSchedulerIdle,
   checkAndExecuteEvents,
   processScheduledWebPublishes,
   getSchedulerStatus

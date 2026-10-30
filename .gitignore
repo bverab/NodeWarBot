@@ -18,6 +18,9 @@ wars.json
 data/wars.json
 data/nodewarbot.db
 data/nodewarbot.db-*
+# Cualquier base SQLite (incluye -wal, -shm y -journal) y sus copias
+*.db
+*.db-*
 data/backups/
 data/exports/
 data/test/

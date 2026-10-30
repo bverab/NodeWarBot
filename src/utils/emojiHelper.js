@@ -1,3 +1,19 @@
+// Banderas: exactamente un par de indicadores regionales. Keycaps: [0-9#*] + VS16 opcional + U+20E3.
+// Ninguno es Extended_Pictographic, por eso se reconocen aparte.
+const FLAG_PATTERN = /^\p{Regional_Indicator}{2}$/u;
+const KEYCAP_PATTERN = /^[0-9#*]️?⃣$/;
+
+// Un emoji unicode valido para un boton es un unico grafema (incluye ZWJ, tonos de piel, VS16,
+// banderas y keycaps); cualquier texto adicional lo invalida.
+function isSingleUnicodeEmoji(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  const segments = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value));
+  if (segments.length !== 1) return false;
+  const grapheme = segments[0].segment;
+  return /\p{Extended_Pictographic}/u.test(grapheme) || FLAG_PATTERN.test(grapheme) || KEYCAP_PATTERN.test(grapheme);
+}
+
 function parseEmojiInput(text, guild) {
   const value = String(text || '').trim();
   if (!value) return null;
@@ -12,7 +28,7 @@ function parseEmojiInput(text, guild) {
     };
   }
 
-  if (/\p{Extended_Pictographic}/u.test(value)) {
+  if (isSingleUnicodeEmoji(value)) {
     return {
       emoji: value,
       emojiSource: 'unicode'
@@ -49,6 +65,7 @@ function extractEmojiAndName(text, guild) {
 }
 
 module.exports = {
+  isSingleUnicodeEmoji,
   parseEmojiInput,
   extractEmojiAndName
 };

@@ -47,7 +47,14 @@ describe('pveEventAdminPanelActions', () => {
       guildId: 'guild_1',
       channelId: 'channel_1',
       message: { id: 'panel_msg_1' },
-      update: vi.fn(async () => null)
+      deferred: false,
+      replied: false,
+      // H-6: el handler difiere la interaccion antes del trabajo lento y responde con editReply.
+      deferUpdate: vi.fn(async () => {
+        interaction.deferred = true;
+      }),
+      update: vi.fn(async () => null),
+      editReply: vi.fn(async () => null)
     };
 
     await action(interaction);
@@ -55,8 +62,10 @@ describe('pveEventAdminPanelActions', () => {
     expect(warService.updateWar).toHaveBeenCalledTimes(1);
     expect(shared.refreshWarMessage).toHaveBeenCalledTimes(1);
     expect(state.wars[0].isClosed).toBe(true);
-    expect(interaction.update).toHaveBeenCalledTimes(1);
-    const updatePayload = interaction.update.mock.calls[0][0];
+    expect(interaction.deferUpdate).toHaveBeenCalledTimes(1);
+    expect(interaction.update).not.toHaveBeenCalled();
+    expect(interaction.editReply).toHaveBeenCalledTimes(1);
+    const updatePayload = interaction.editReply.mock.calls[0][0];
     expect(updatePayload.content).toContain('cerradas');
     expect(updatePayload.components.flatMap(row => row.components).some(component => component.data.custom_id === 'panel_pve_toggle_close')).toBe(true);
   });

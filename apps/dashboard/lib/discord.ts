@@ -99,43 +99,122 @@ export async function fetchUserGuilds(accessToken: string): Promise<DiscordGuild
   }));
 }
 
-export async function fetchBotGuildIds(): Promise<Set<string>> {
+const BOT_GUILDS_PAGE_SIZE = 200;
+const BOT_GUILDS_MAX_PAGES = 100;
+const BOT_GUILD_IDS_CACHE_TTL_MS = 60_000;
+
+// The bot's guild list is the same for every dashboard user: one short-lived cache and one in-flight lookup are shared.
+type BotGuildsSnapshot = { guilds: DiscordGuild[]; ids: Set<string>; expiresAt: number };
+
+let botGuildsCache: BotGuildsSnapshot | null = null;
+let botGuildsInFlight: Promise<BotGuildsSnapshot> | null = null;
+
+function getLastGuildId(guilds: Array<Pick<DiscordGuild, "id">>) {
+  try {
+    return guilds.reduce((max, guild) => (BigInt(guild.id) > BigInt(max) ? guild.id : max), guilds[0].id);
+  } catch {
+    return guilds[guilds.length - 1].id;
+  }
+}
+
+async function fetchBotGuildsFromDiscord(botToken: string): Promise<DiscordGuild[]> {
+  const guildsById = new Map<string, DiscordGuild>();
+  let after: string | null = null;
+
+  for (let pageIndex = 0; pageIndex < BOT_GUILDS_MAX_PAGES; pageIndex += 1) {
+    const url = new URL(`${DISCORD_API_BASE_URL}/users/@me/guilds`);
+    url.searchParams.set("limit", String(BOT_GUILDS_PAGE_SIZE));
+    if (after) {
+      url.searchParams.set("after", after);
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bot ${botToken}`
+      },
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new DiscordGuildFetchError(
+          "rate_limited",
+          "Discord bot guild API request was rate limited.",
+          response.status,
+          await getRetryAfterMs(response)
+        );
+      }
+
+      throw new DiscordGuildFetchError(
+        "bot_guilds_failed",
+        `Discord bot guild API request failed with status ${response.status}.`,
+        response.status
+      );
+    }
+
+    const guilds = (await response.json()) as unknown;
+    if (!Array.isArray(guilds)) {
+      throw new DiscordGuildFetchError("unexpected_response", "Discord bot guild API returned an unexpected shape.");
+    }
+
+    const page = guilds as Array<Partial<DiscordGuild> & Pick<DiscordGuild, "id">>;
+    for (const guild of page) {
+      guildsById.set(guild.id, {
+        id: guild.id,
+        name: guild.name ?? guild.id,
+        icon: guild.icon ?? null,
+        owner: Boolean(guild.owner),
+        permissions: guild.permissions ?? "0"
+      });
+    }
+
+    if (page.length < BOT_GUILDS_PAGE_SIZE) {
+      break;
+    }
+
+    const lastId = getLastGuildId(page);
+    if (lastId === after) {
+      break;
+    }
+    after = lastId;
+  }
+
+  return Array.from(guildsById.values());
+}
+
+async function fetchBotGuilds(): Promise<BotGuildsSnapshot> {
   const botToken = getBotToken();
 
   if (!botToken) {
     throw new DiscordGuildFetchError("missing_bot_token", "Missing DISCORD_BOT_TOKEN.");
   }
 
-  const response = await fetch(`${DISCORD_API_BASE_URL}/users/@me/guilds`, {
-    headers: {
-      Authorization: `Bot ${botToken}`
-    },
-    cache: "no-store"
-  });
-
-  if (!response.ok) {
-    if (response.status === 429) {
-      throw new DiscordGuildFetchError(
-        "rate_limited",
-        "Discord bot guild API request was rate limited.",
-        response.status,
-        await getRetryAfterMs(response)
-      );
-    }
-
-    throw new DiscordGuildFetchError(
-      "bot_guilds_failed",
-      `Discord bot guild API request failed with status ${response.status}.`,
-      response.status
-    );
+  if (botGuildsCache && botGuildsCache.expiresAt > Date.now()) {
+    return botGuildsCache;
   }
 
-  const guilds = (await response.json()) as unknown;
-  if (!Array.isArray(guilds)) {
-    throw new DiscordGuildFetchError("unexpected_response", "Discord bot guild API returned an unexpected shape.");
+  if (!botGuildsInFlight) {
+    botGuildsInFlight = fetchBotGuildsFromDiscord(botToken)
+      .then((guilds) => {
+        botGuildsCache = { guilds, ids: new Set(guilds.map((guild) => guild.id)), expiresAt: Date.now() + BOT_GUILD_IDS_CACHE_TTL_MS };
+        return botGuildsCache;
+      })
+      .finally(() => {
+        botGuildsInFlight = null;
+      });
   }
 
-  return new Set((guilds as Array<Pick<DiscordGuild, "id">>).map((guild) => guild.id));
+  return botGuildsInFlight;
+}
+
+export async function fetchBotGuildIds(): Promise<Set<string>> {
+  return (await fetchBotGuilds()).ids;
+}
+
+// Every guild the bot is in, as manageable. Only for the local admin (lib/server/localAdmin.ts), which has no Discord user.
+export async function fetchBotDashboardGuilds(): Promise<DashboardGuild[]> {
+  const { guilds } = await fetchBotGuilds();
+  return guilds.map((guild) => ({ ...guild, owner: false, manageable: true }));
 }
 
 export async function fetchAvailableDashboardGuilds(accessToken: string): Promise<DashboardGuild[]> {

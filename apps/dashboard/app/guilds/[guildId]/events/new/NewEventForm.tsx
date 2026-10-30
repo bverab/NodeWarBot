@@ -1,20 +1,23 @@
 "use client";
 
-import { type CSSProperties, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Hash, LayoutTemplate, Plus, Search, Shield, Trash2, X } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, Clock, Hash, LayoutTemplate, Plus, Shield, Trash2 } from "lucide-react";
+import { ChannelSelect, MemberMultiSelect, RoleMultiSelect, type ChannelOption, type MemberOption, type RoleOption } from "@/components/dashboard/selectors/GuildSelectors";
+import selectorStyles from "@/components/dashboard/selectors/GuildSelectors.module.css";
 import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid";
 import { Button } from "@/components/ui/Button";
+import { MAX_SLOT_NAME_LENGTH } from "@/lib/slotLimits";
 import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
-import { filterChannelsBySearch } from "@/lib/channelSearch";
-import { buildEventDateTime, calculateScheduledPublishAt, formatDateTimeInTimezone, normalizeTimezone } from "@/lib/eventDateTime";
+import { buildEventDateTime, calculateScheduledPublishAt, formatDateTimeInTimezone, getTimezoneInputError, normalizeTimezone } from "@/lib/eventDateTime";
+import { suggestNextOptionTime } from "@/lib/pveOptionTimes";
+import { MAX_PVE_ACCESS_ENTRIES, PVE_ACCESS_MODES, PVE_ACCESS_MODE_TEXT, PVE_FILLER_RULE, type PveAccessMode } from "@/lib/pveAccessModes";
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
 import overviewStyles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 import styles from "./EventCreate.module.css";
-import selectorStyles from "./RoleMultiSelect.module.css";
 
 type TemplateOption = {
   id: string;
@@ -26,21 +29,6 @@ type TemplateOption = {
   duration: number;
   closeBeforeMinutes: number;
   slotCount: number;
-};
-
-export type RoleOption = {
-  id: string;
-  name: string;
-  color: number | null;
-  managed: boolean;
-};
-
-type ChannelOption = {
-  displayName?: string | null;
-  id: string;
-  label?: string | null;
-  name: string;
-  type: number;
 };
 
 type ManualSlot = {
@@ -138,246 +126,6 @@ async function loadGuildConfig<T>(url: string, key: string): Promise<{ values: T
   return { values: values as T[], error: null };
 }
 
-function useFloatingDropdown(open: boolean) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const dropdownRef = useRef<HTMLDivElement | null>(null);
-  const [dropdownStyle, setDropdownStyle] = useState<CSSProperties>({});
-
-  const updatePosition = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-
-    const rect = container.getBoundingClientRect();
-    const viewportPadding = 12;
-    const gap = 4;
-    const preferredHeight = 260;
-    const minUsableHeight = 140;
-    const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2);
-    const left = Math.min(Math.max(rect.left, viewportPadding), window.innerWidth - width - viewportPadding);
-    const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
-    const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
-    const measuredHeight = dropdownRef.current?.offsetHeight ?? preferredHeight;
-    const desiredHeight = Math.min(measuredHeight, preferredHeight);
-    const shouldOpenAbove = availableBelow < Math.min(desiredHeight, minUsableHeight) && availableAbove > availableBelow;
-    const availableHeight = shouldOpenAbove ? availableAbove : availableBelow;
-    const maxHeight = Math.max(Math.min(preferredHeight, availableHeight), Math.min(minUsableHeight, Math.max(availableAbove, availableBelow)));
-    const panelHeight = Math.min(desiredHeight, maxHeight);
-
-    setDropdownStyle({
-      left,
-      maxHeight,
-      top: shouldOpenAbove ? rect.top - gap - panelHeight : rect.bottom + gap,
-      width
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    updatePosition();
-  }, [open, updatePosition]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open, updatePosition]);
-
-  return { containerRef, dropdownRef, dropdownStyle };
-}
-
-export function RoleMultiSelect({
-  label,
-  roles,
-  selected,
-  onChange,
-  emptyText,
-  loadError
-}: {
-  label: string;
-  roles: RoleOption[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-  emptyText: string;
-  loadError?: string | null;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const { containerRef, dropdownRef, dropdownStyle } = useFloatingDropdown(open);
-  const selectedRoles = selected
-    .map((roleId) => roles.find((role) => role.id === roleId))
-    .filter((role): role is RoleOption => Boolean(role));
-  const unresolvedSelectedRoleIds = selected.filter((roleId) => !roles.some((role) => role.id === roleId));
-  const filteredRoles = roles
-    .filter((role) => role.name.toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 80);
-
-  const toggle = (roleId: string) => {
-    onChange(selected.includes(roleId) ? selected.filter((id) => id !== roleId) : [...selected, roleId]);
-  };
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!containerRef.current?.contains(target) && !dropdownRef.current?.contains(target)) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  return (
-    <div className={selectorStyles.roleMultiSelect} ref={containerRef}>
-      <div className={selectorStyles.rolePickerHeader}>
-        <div>
-          <div className={selectorStyles.fieldHeading}>{label}</div>
-          <span>{selected.length === 1 ? "1 role selected" : `${selected.length} roles selected`}</span>
-        </div>
-        {selected.length && roles.length ? <button onClick={() => onChange([])} type="button">Clear</button> : null}
-      </div>
-      <button className={`${selectorStyles.roleSelectTrigger} ${open ? selectorStyles.selectorOpen : ""}`} disabled={!roles.length} onClick={() => setOpen((current) => !current)} type="button">
-        <span>{roles.length ? (selected.length ? `${selected.length} roles selected` : "Select roles") : loadError ?? emptyText}</span>
-        <ChevronDown size={15} aria-hidden="true" />
-      </button>
-      {!roles.length ? <p className={selectorStyles.inlineHelp}>{loadError ?? emptyText}</p> : null}
-      {selectedRoles.length ? (
-        <div className={selectorStyles.selectedRoleChips}>
-          {selectedRoles.slice(0, 10).map((role) => (
-            <button aria-label={`Remove ${role.name}`} key={role.id} onClick={() => toggle(role.id)} type="button">
-              {role.name}
-              <X size={12} aria-hidden="true" />
-            </button>
-          ))}
-          {selectedRoles.length > 10 ? <span>+{selectedRoles.length - 10}</span> : null}
-        </div>
-      ) : null}
-      {!selectedRoles.length && unresolvedSelectedRoleIds.length ? (
-        <div className={selectorStyles.selectedRoleChips}>
-          {unresolvedSelectedRoleIds.slice(0, 6).map((roleId) => (
-            <span key={roleId}>{roleId}</span>
-          ))}
-          {unresolvedSelectedRoleIds.length > 6 ? <span>+{unresolvedSelectedRoleIds.length - 6}</span> : null}
-        </div>
-      ) : null}
-      {open && roles.length && typeof document !== "undefined" ? createPortal(
-        <div className={selectorStyles.roleDropdown} ref={dropdownRef} style={dropdownStyle}>
-          <label className={selectorStyles.roleSearch}>
-            <Search size={14} aria-hidden="true" />
-            <input onChange={(event) => setQuery(event.target.value)} placeholder="Search roles" value={query} />
-          </label>
-          <div className={selectorStyles.roleOptionsList}>
-            {filteredRoles.length ? (
-              filteredRoles.map((role) => (
-                <button aria-pressed={selected.includes(role.id)} key={role.id} onClick={() => toggle(role.id)} type="button">
-                  <span>{role.name}</span>
-                  {selected.includes(role.id) ? <Check size={14} aria-hidden="true" /> : null}
-                </button>
-              ))
-            ) : (
-              <p>No roles match that search.</p>
-            )}
-          </div>
-        </div>,
-        document.body
-      ) : null}
-    </div>
-  );
-}
-
-function ChannelSelect({
-  channels,
-  value,
-  onChange,
-  emptyText
-}: {
-  channels: ChannelOption[];
-  value: string;
-  onChange: (channelId: string) => void;
-  emptyText: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const { containerRef, dropdownRef, dropdownStyle } = useFloatingDropdown(open);
-  const selected = channels.find((channel) => channel.id === value);
-  const filtered = useMemo(() => filterChannelsBySearch(channels, query), [channels, query]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!containerRef.current?.contains(target) && !dropdownRef.current?.contains(target)) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  return (
-    <div className={selectorStyles.channelSelect} ref={containerRef}>
-      <button className={`${selectorStyles.roleSelectTrigger} ${open ? selectorStyles.selectorOpen : ""}`} disabled={!channels.length} onClick={() => setOpen((current) => !current)} type="button">
-        <span>{selected ? `#${selected.name}` : channels.length ? "No channel selected" : emptyText}</span>
-        <ChevronDown size={15} aria-hidden="true" />
-      </button>
-      {open && channels.length && typeof document !== "undefined" ? createPortal(
-        <div className={selectorStyles.roleDropdown} ref={dropdownRef} style={dropdownStyle}>
-          <label className={selectorStyles.roleSearch}>
-            <Search size={14} aria-hidden="true" />
-            <input onChange={(event) => setQuery(event.target.value)} placeholder="Search channels" value={query} />
-          </label>
-          <div className={selectorStyles.roleOptionsList}>
-            <button aria-pressed={!value} onClick={() => {
-              onChange("");
-              setOpen(false);
-            }} type="button">
-              <span>No channel selected</span>
-              {!value ? <Check size={14} aria-hidden="true" /> : null}
-            </button>
-            {filtered.length ? (
-              filtered.map((channel) => (
-                <button aria-pressed={channel.id === value} key={channel.id} onClick={() => {
-                  onChange(channel.id);
-                  setOpen(false);
-                }} type="button">
-                  <span>#{channel.name}</span>
-                  {channel.id === value ? <Check size={14} aria-hidden="true" /> : null}
-                </button>
-              ))
-            ) : query.trim() ? (
-              <p>No postable channels match that search.</p>
-            ) : (
-              <p>No postable channels could be loaded.</p>
-            )}
-          </div>
-        </div>,
-        document.body
-      ) : null}
-    </div>
-  );
-}
-
 export function NewEventForm({ guildId, manageable, templates, roles: initialRoles, channels: initialChannels }: NewEventFormProps) {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
@@ -406,6 +154,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
   const [accessRestrictionsOpen, setAccessRestrictionsOpen] = useState(false);
   const [accessRestrictionEnabled, setAccessRestrictionEnabled] = useState(false);
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
+  const [pveAccessMode, setPveAccessMode] = useState<PveAccessMode>("OPEN");
+  const [accessUsers, setAccessUsers] = useState<MemberOption[]>([]);
   const [mentionMode, setMentionMode] = useState<"none" | "roles">("none");
   const [notifyRoleIds, setNotifyRoleIds] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<"single" | "weekly">("single");
@@ -448,14 +198,31 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
   const finalChannelId = channelMode === "select" ? channelId || null : manualChannelId.trim() || null;
   const selectedChannel = channels.find((channel) => channel.id === finalChannelId);
   const roleName = (roleId: string) => roles.find((role) => role.id === roleId)?.name ?? roleId;
+  // PvE by roles or by people mentions the access list on publish, like the bot: there are no extra roles to mention.
+  const pveAccessRestricted = isPve && pveAccessMode !== "OPEN";
+  const pveAccessError = !isPve
+    ? null
+    : pveAccessMode === "ROLES" && !accessRoleIds.length
+      ? "Select at least one role with access, or set PvE access to Open."
+      : pveAccessMode === "USERS" && !finalChannelId
+        ? "Select the target channel: only people who can see it can be given access."
+        : pveAccessMode === "USERS" && !accessUsers.length
+          ? "Select at least one person with access, or set PvE access to Open."
+          : null;
+  const pveAccessSummary = pveAccessMode === "ROLES"
+    ? accessRoleIds.map(roleName).join(", ")
+    : pveAccessMode === "USERS"
+      ? accessUsers.map((member) => member.displayName).join(", ")
+      : "Anyone joins as a main signup";
   const slotCount = isPve ? pveOptions.length : mode === "template" ? selectedTemplate?.slotCount ?? 0 : manualSlots.length;
   const totalCapacity = mode === "manual" ? manualSlots.reduce((total, slot) => total + slot.max, 0) : null;
   const pveCapacity = pveOptions.reduce((total, option) => total + option.capacity, 0);
+  const timezoneError = getTimezoneInputError(timezone);
   const scheduledPublishAt = useMemo(() => {
     if (!autoPublishEnabled) {
       return null;
     }
-    const startsAt = buildEventDateTime({ date, time, timezone: normalizeTimezone(timezone) });
+    const startsAt = buildEventDateTime({ date, time, timezone: timezone.trim() });
     return startsAt ? calculateScheduledPublishAt({ startsAt, publishBeforeMinutes }) : null;
   }, [autoPublishEnabled, date, publishBeforeMinutes, time, timezone]);
 
@@ -523,7 +290,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
       return next.map((item, itemIndex) => ({ ...item, position: itemIndex + 1 }));
     });
   };
-  const addPveOption = () => setPveOptions((current) => [...current, makePveOption(current.length + 1, time)]);
+  const addPveOption = () =>
+    setPveOptions((current) => [...current, makePveOption(current.length + 1, suggestNextOptionTime(current.map((option) => option.time), time))]);
   const removePveOption = (optionId: string) => {
     setPveOptions((current) => current.filter((option) => option.id !== optionId).map((option, index) => ({ ...option, position: index + 1 })));
   };
@@ -548,6 +316,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
     manageable &&
     !busy &&
     name.trim().length >= 2 &&
+    !timezoneError &&
+    !pveAccessError &&
     (!autoPublishEnabled || Boolean(finalChannelId)) &&
     (isPve ? pveOptions.every((option) => option.label.trim() && option.time) : mode === "template" ? Boolean(templateId) : manualSlots.every((slot) => slot.name.trim()));
   const goNext = () => setStepIndex((current) => Math.min(steps.length - 1, current + 1));
@@ -555,7 +325,15 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
 
   const openCreateConfirm = () => {
     if (!canSubmit) {
-      setMessage(autoPublishEnabled && !finalChannelId ? "Select a Discord channel before enabling scheduled publish." : "Complete the required draft fields before creating the event.");
+      setMessage(
+        timezoneError
+          ? timezoneError
+          : pveAccessError
+            ? pveAccessError
+            : autoPublishEnabled && !finalChannelId
+            ? "Select a Discord channel before enabling scheduled publish."
+            : "Complete the required draft fields before creating the event."
+      );
       return;
     }
     setMessage(null);
@@ -574,6 +352,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
     submittingRef.current = true;
     setBusy(true);
     setMessage(null);
+    let created = false;
     try {
       const eventId = await createDraft(guildId, {
         name,
@@ -581,14 +360,17 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
         type,
         date,
         time,
-        timezone: normalizeTimezone(timezone),
+        // Sent as typed (already checked above): the server validates it and rejects a zone it does not know.
+        timezone: timezone.trim(),
         duration,
         closeBeforeMinutes,
         autoPublishEnabled,
         publishBeforeMinutes,
         channelId: finalChannelId,
-        accessRoleIds: accessRestrictionEnabled ? accessRoleIds : [],
-        notifyRoleIds: mentionMode === "roles" ? notifyRoleIds : [],
+        accessMode: isPve ? pveAccessMode : undefined,
+        accessRoleIds: isPve ? (pveAccessMode === "ROLES" ? accessRoleIds : []) : accessRestrictionEnabled ? accessRoleIds : [],
+        accessUserIds: isPve && pveAccessMode === "USERS" ? accessUsers.map((member) => member.id) : undefined,
+        notifyRoleIds: mentionMode === "roles" && !pveAccessRestricted ? notifyRoleIds : [],
         recurrence,
         recap: {
           enabled: recapEnabled,
@@ -617,14 +399,19 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
             : undefined
       });
 
+      // The draft exists now. The form stays locked while the router navigates away: re-enabling the button here would
+      // let a second click create a duplicate draft.
+      created = true;
       setCreateConfirmOpen(false);
       router.push(guildRoutes.eventDetail(guildId, eventId));
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Draft event creation failed.");
     } finally {
-      submittingRef.current = false;
-      setBusy(false);
+      if (!created) {
+        submittingRef.current = false;
+        setBusy(false);
+      }
     }
   };
 
@@ -707,7 +494,11 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
               <div className={styles.scheduleGrid}>
                 <label>Event start date<input onChange={(event) => updateDate(event.target.value)} required type="date" value={date} /></label>
                 <label>Event start time<input onChange={(event) => updateTime(event.target.value)} required step={60} type="time" value={time} /></label>
-                <label>Timezone<input maxLength={64} onChange={(event) => updateTimezone(event.target.value)} required value={timezone} /></label>
+                <label>
+                  Timezone
+                  <input aria-describedby={timezoneError ? "event-timezone-error" : undefined} aria-invalid={timezoneError ? true : undefined} maxLength={64} onChange={(event) => updateTimezone(event.target.value)} required value={timezone} />
+                  {timezoneError ? <small className={styles.fieldError} id="event-timezone-error" role="alert">{timezoneError}</small> : null}
+                </label>
                 <label>Event duration (minutes)<input max={1440} min={1} onChange={(event) => updateDuration(Number(event.target.value))} required type="number" value={duration} /></label>
                 <label>Close signups before end (minutes)<input max={duration} min={0} onChange={(event) => updateCloseBeforeMinutes(Number(event.target.value))} type="number" value={closeBeforeMinutes} /></label>
                 <div className={styles.segmentBlock}>
@@ -841,7 +632,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                         </div>
                       </div>
                       <div className={styles.slotConfigGrid}>
-                        <label>Name<input maxLength={80} onChange={(event) => updateSlot(slot.id, { name: event.target.value })} required value={slot.name} /></label>
+                        <label>Name<input maxLength={MAX_SLOT_NAME_LENGTH} onChange={(event) => updateSlot(slot.id, { name: event.target.value })} required value={slot.name} /></label>
                         <label>Capacity<input max={100} min={1} onChange={(event) => updateSlot(slot.id, { max: Number(event.target.value) })} required type="number" value={slot.max} /></label>
                         <label className={styles.fieldLarge}>
                           Icon
@@ -911,6 +702,40 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                   ) : null}
                 </div>
 
+                {isPve ? (
+                <div className={`${styles.setupPanel} ${styles.advancedPanel}`}>
+                  <div className={styles.setupPanelHeader}>
+                    <Shield size={18} aria-hidden="true" />
+                    <div><h4>Signup access</h4><p>Who joins as a main signup. Everyone else can still pick a time and is added as a filler.</p></div>
+                  </div>
+                  <div className={styles.segmentControl}>
+                    {PVE_ACCESS_MODES.map((accessMode) => (
+                      <button aria-pressed={pveAccessMode === accessMode} key={accessMode} onClick={() => setPveAccessMode(accessMode)} type="button">
+                        {PVE_ACCESS_MODE_TEXT[accessMode].label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className={styles.inlineHelp}>
+                    {PVE_ACCESS_MODE_TEXT[pveAccessMode].help}
+                    {pveAccessRestricted ? ` ${PVE_FILLER_RULE}` : ""}
+                  </p>
+                  {pveAccessMode === "ROLES" ? (
+                    <RoleMultiSelect emptyText="No roles loaded. Access by roles cannot be set yet." label="Roles with access" loadError={roleLoadError} onChange={setAccessRoleIds} roles={roles} selected={accessRoleIds} />
+                  ) : null}
+                  {pveAccessMode === "USERS" ? (
+                    <MemberMultiSelect
+                      channelId={finalChannelId}
+                      disabledText="Select the target channel first: only people who can see it can be picked."
+                      guildId={guildId}
+                      label="People with access"
+                      max={MAX_PVE_ACCESS_ENTRIES}
+                      onChange={setAccessUsers}
+                      selected={accessUsers}
+                    />
+                  ) : null}
+                  {pveAccessError ? <p className={styles.fieldError} role="alert">{pveAccessError}</p> : null}
+                </div>
+                ) : (
                 <div className={`${styles.setupPanel} ${styles.advancedPanel}`}>
                   <div className={styles.setupPanelHeader}>
                     <Shield size={18} aria-hidden="true" />
@@ -945,12 +770,19 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                     </div>
                   ) : null}
                 </div>
+                )}
 
                 <div className={`${styles.setupPanel} ${styles.mentionPanel}`}>
                   <div className={styles.setupPanelHeader}>
                     <Check size={18} aria-hidden="true" />
                     <div><h4>Future publication mentions</h4><p>Stored as notify targets for later publish flows.</p></div>
                   </div>
+                  {pveAccessRestricted ? (
+                    <p className={styles.inlineHelp}>
+                      {pveAccessMode === "ROLES" ? "The roles with access are mentioned when the event is published." : "The people with access are mentioned when the event is published."}
+                    </p>
+                  ) : (
+                  <>
                   <div className={styles.segmentControl}>
                     <button aria-pressed={mentionMode === "none"} onClick={() => setMentionMode("none")} type="button">No mention</button>
                     <button aria-pressed={mentionMode === "roles"} onClick={() => setMentionMode("roles")} type="button">Selected roles</button>
@@ -959,6 +791,8 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                     <RoleMultiSelect emptyText="No roles loaded. Mentions will remain empty." label="Mention roles" loadError={roleLoadError} onChange={setNotifyRoleIds} roles={roles} selected={notifyRoleIds} />
                   ) : (
                     <p className={styles.inlineHelp}>No role pings will be stored for future publication.</p>
+                  )}
+                  </>
                   )}
                 </div>
 
@@ -988,6 +822,7 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                 <span className={overviewStyles.eyebrow}>Review</span>
                 <h3>Draft summary</h3>
                 <p>This creates a draft. It will not be posted to Discord until you publish it manually.</p>
+                {timezoneError ? <p className={styles.fieldError} role="alert">{timezoneError} Fix it in the Schedule step.</p> : null}
               </div>
               <div className={styles.reviewGrid}>
                 <div className={styles.reviewHero}>
@@ -1005,7 +840,11 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                 </div>
                 <div className={styles.reviewTile}><CalendarClock size={18} aria-hidden="true" /><strong>{duration} min</strong><span>Duration</span></div>
                 <div className={styles.reviewTile}><LayoutTemplate size={18} aria-hidden="true" /><strong>{slotCount || "No"} {isPve ? "options" : "slots"}</strong><span>{isPve ? `${pveCapacity} total capacity` : mode === "template" ? selectedTemplate?.name ?? "Template missing" : `${totalCapacity ?? 0} capacity`}</span></div>
-                <div className={styles.reviewTile}><Shield size={18} aria-hidden="true" /><strong>{accessRestrictionEnabled && accessRoleIds.length ? accessRoleIds.length : "Open"}</strong><span>{accessRestrictionEnabled ? "Advanced access restriction" : "No event-level restriction"}</span></div>
+                {isPve ? (
+                  <div className={styles.reviewTile}><Shield size={18} aria-hidden="true" /><strong>{PVE_ACCESS_MODE_TEXT[pveAccessMode].label}</strong><span>{pveAccessRestricted ? "Others join as fillers" : "No signup restriction"}</span></div>
+                ) : (
+                  <div className={styles.reviewTile}><Shield size={18} aria-hidden="true" /><strong>{accessRestrictionEnabled && accessRoleIds.length ? accessRoleIds.length : "Open"}</strong><span>{accessRestrictionEnabled ? "Advanced access restriction" : "No event-level restriction"}</span></div>
+                )}
                 <div className={styles.reviewTile}><Hash size={18} aria-hidden="true" /><strong>{selectedChannel ? `#${selectedChannel.name}` : finalChannelId ? "Manual ID" : "Not set"}</strong><span>{channelMode === "manual" ? finalChannelId ?? "Manual entry" : finalChannelId ?? "Target channel"}</span></div>
                 <div className={styles.reviewTile}><Check size={18} aria-hidden="true" /><strong>{recurrence === "weekly" ? "Weekly" : "Single"}</strong><span>{mentionMode === "roles" ? `${notifyRoleIds.length} mention roles` : "No mention"}</span></div>
                 <div className={styles.reviewList}>
@@ -1024,8 +863,17 @@ export function NewEventForm({ guildId, manageable, templates, roles: initialRol
                 </div>
                 <div className={styles.reviewList}>
                   <h4>Roles</h4>
-                  <p><strong>Access</strong><span>{accessRestrictionEnabled && accessRoleIds.length ? accessRoleIds.map(roleName).join(", ") : "Open to current event flow rules"}</span></p>
-                  <p><strong>Mentions</strong><span>{mentionMode === "roles" && notifyRoleIds.length ? notifyRoleIds.map(roleName).join(", ") : "No role mentions"}</span></p>
+                  {isPve ? (
+                    <>
+                      <p><strong>Access: {PVE_ACCESS_MODE_TEXT[pveAccessMode].label}</strong><span>{pveAccessSummary || "Nobody selected yet"}</span></p>
+                      <p><strong>Mentions</strong><span>{pveAccessRestricted ? "The access list" : mentionMode === "roles" && notifyRoleIds.length ? notifyRoleIds.map(roleName).join(", ") : "No role mentions"}</span></p>
+                    </>
+                  ) : (
+                    <>
+                      <p><strong>Access</strong><span>{accessRestrictionEnabled && accessRoleIds.length ? accessRoleIds.map(roleName).join(", ") : "Open to current event flow rules"}</span></p>
+                      <p><strong>Mentions</strong><span>{mentionMode === "roles" && notifyRoleIds.length ? notifyRoleIds.map(roleName).join(", ") : "No role mentions"}</span></p>
+                    </>
+                  )}
                 </div>
               </div>
             </section>

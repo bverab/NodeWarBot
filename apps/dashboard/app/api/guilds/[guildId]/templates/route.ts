@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getGuildTemplates } from "@/lib/server/dashboardData";
 import { z } from "zod";
 import { normalizeTimezoneInfo } from "@/lib/eventDateTime";
+import { MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE } from "@/lib/slotLimits";
+import { errorResponse } from "@/lib/server/apiErrors";
 import { createGuildTemplate } from "@/lib/server/dashboardData";
 import { getGuildRoles } from "@/lib/server/discordGuildConfig";
 import { requireDashboardGuild, requireManageableDashboardGuild } from "@/lib/server/guildAccess";
@@ -31,7 +33,7 @@ const createTemplateSchema = z.object({
   slots: z
     .array(
       z.object({
-        name: z.string().trim().min(1).max(80),
+        name: z.string().trim().min(1).max(MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE),
         max: z.coerce.number().int().min(1).max(100),
         position: z.coerce.number().int().min(0).max(999).optional(),
         emoji: z.string().trim().max(128).nullable().optional(),
@@ -73,7 +75,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const body = (await request.json()) as unknown;
+    const body: unknown = await request.json().catch(() => null);
     const parsed = createTemplateSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -91,8 +93,8 @@ export async function POST(request: Request, context: RouteContext) {
     const template = await createGuildTemplate(guildId, parsed.data);
     return NextResponse.json({ templateId: template.id }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create template.";
-    const status = message.includes("Unique constraint") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return errorResponse(error, "Failed to create template.", {
+      conflictMessage: "A template with that name already exists for this event type."
+    });
   }
 }

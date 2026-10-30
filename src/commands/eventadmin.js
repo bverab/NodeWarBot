@@ -2,7 +2,7 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const {
   loadWars,
   updateWarByMessageId,
-  updateWar
+  updateWarById
 } = require('../services/warService');
 const {
   getRoleByName,
@@ -16,10 +16,13 @@ const { notifyPromotion } = require('../utils/promotionNotifier');
 const { parseEmojiInput } = require('../utils/emojiHelper');
 const { sanitizeUserInput, sanitizeDisplayText, safeMessageContent } = require('../utils/textSafety');
 const { logError, logWarn } = require('../utils/appLogger');
+const { replyOrEdit } = require('../utils/interactionReply');
+const { MAX_ROLES } = require('../constants/eventLimits');
 const {
   resolveTargetWar,
   refreshWarMessage,
   promoteFromWaitlist,
+  promoteAllFromWaitlist,
   isAdminExecutor
 } = require('./eventadminShared');
 
@@ -279,9 +282,7 @@ module.exports = {
       if (subcommand === 'recap') return await handleRecapConfig(interaction);
     } catch (error) {
       logError('Error en eventadmin', error, { userId: interaction.user?.id, command: 'eventadmin' });
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: 'Error ejecutando eventadmin', flags: 64 });
-      }
+      await replyOrEdit(interaction, 'Error ejecutando eventadmin');
     }
   }
 };
@@ -533,6 +534,9 @@ async function handleRoleAdd(interaction) {
   const slots = interaction.options.getInteger('slots', true);
   const iconRaw = getSanitizedOption(interaction, 'icono', { maxLength: 80, allowEmpty: true }) || '';
 
+  if (war.roles.length >= MAX_ROLES) {
+    return await interaction.editReply({ content: `Un evento admite como maximo ${MAX_ROLES} roles.` });
+  }
   if (war.roles.some(role => role.name.toLowerCase() === roleName.toLowerCase())) {
     return await interaction.editReply({ content: `Ya existe un rol llamado **${roleName}**.` });
   }
@@ -542,17 +546,21 @@ async function handleRoleAdd(interaction) {
     return await interaction.editReply({ content: 'Icono invalido. Usa emoji unicode o formato <:nombre:id>.' });
   }
 
-  war.roles.push({
-    name: roleName,
-    max: slots,
-    emoji: parsedIcon?.emoji || null,
-    emojiSource: parsedIcon?.emojiSource || null,
-    users: [],
-    allowedRoleIds: [],
-    allowedRoles: []
+  // Las validaciones se repiten sobre la copia fresca: otro admin pudo cambiar los roles mientras tanto.
+  const { war: updatedWar } = await updateWarById(war.id, fresh => {
+    if (fresh.roles.length >= MAX_ROLES) return false;
+    if (fresh.roles.some(role => role.name.toLowerCase() === roleName.toLowerCase())) return false;
+    fresh.roles.push({
+      name: roleName,
+      max: slots,
+      emoji: parsedIcon?.emoji || null,
+      emojiSource: parsedIcon?.emojiSource || null,
+      users: [],
+      allowedRoleIds: [],
+      allowedRoles: []
+    });
   });
-
-  const updatedWar = await updateWar(war);
+  if (!updatedWar) return await interaction.editReply({ content: 'No se pudo agregar el rol: el evento cambio. Intenta de nuevo.' });
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Rol agregado: **${roleName}** (${slots})` });
 }
@@ -571,12 +579,14 @@ async function handleRoleRename(interaction) {
   }
 
   const previousName = role.name;
-  role.name = newName;
-  war.waitlist = war.waitlist.map(entry => (
-    entry.roleName === previousName ? { ...entry, roleName: newName } : entry
-  ));
-
-  const updatedWar = await updateWar(war);
+  const updatedWar = await updateEventRole(war, previousName, (freshRole, fresh) => {
+    if (fresh.roles.some(entry => entry !== freshRole && entry.name.toLowerCase() === newName.toLowerCase())) return false;
+    freshRole.name = newName;
+    fresh.waitlist = fresh.waitlist.map(entry => (
+      entry.roleName === previousName ? { ...entry, roleName: newName } : entry
+    ));
+  });
+  if (!updatedWar) return await interaction.editReply({ content: `No se pudo renombrar **${previousName}**: el evento cambio. Intenta de nuevo.` });
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Rol renombrado: **${previousName}** -> **${newName}**` });
 }
@@ -590,12 +600,13 @@ async function handleRoleRemove(interaction) {
   const roleIndex = war.roles.findIndex(role => role.name === roleName);
   if (roleIndex < 0) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
-  const [removed] = war.roles.splice(roleIndex, 1);
-  war.waitlist = war.waitlist.filter(entry => entry.roleName !== removed.name);
-
-  const updatedWar = await updateWar(war);
+  const updatedWar = await updateEventRole(war, roleName, (freshRole, fresh) => {
+    fresh.roles.splice(fresh.roles.indexOf(freshRole), 1);
+    fresh.waitlist = fresh.waitlist.filter(entry => entry.roleName !== freshRole.name);
+  });
+  if (!updatedWar) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
   await refreshWarMessage(interaction, updatedWar);
-  await interaction.editReply({ content: `Rol eliminado: **${removed.name}**` });
+  await interaction.editReply({ content: `Rol eliminado: **${roleName}**` });
 }
 
 async function handleRoleSlots(interaction) {
@@ -611,10 +622,27 @@ async function handleRoleSlots(interaction) {
     return await interaction.editReply({ content: `No puedes bajar a ${slots}; hay ${role.users.length} inscritos.` });
   }
 
-  role.max = slots;
-  const updatedWar = await updateWar(war);
+  let promotedUsers = [];
+  let signedCount = role.users.length;
+  const updatedWar = await updateEventRole(war, roleName, (freshRole, fresh) => {
+    signedCount = freshRole.users.length;
+    if (signedCount > slots) return false;
+    freshRole.max = slots;
+    promotedUsers = promoteAllFromWaitlist(fresh, freshRole.name);
+  });
+  if (!updatedWar) {
+    return await interaction.editReply({
+      content: signedCount > slots
+        ? `No puedes bajar a ${slots}; hay ${signedCount} inscritos.`
+        : `No existe el rol **${roleName}**.`
+    });
+  }
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Slots actualizados para **${roleName}**: ${slots}` });
+
+  for (const promotedUser of promotedUsers) {
+    await notifyPromotion(interaction, updatedWar, promotedUser);
+  }
 }
 
 async function handleRoleIcon(interaction) {
@@ -630,10 +658,11 @@ async function handleRoleIcon(interaction) {
   const parsed = parseEmojiInput(iconRaw, interaction.guild);
   if (!parsed) return await interaction.editReply({ content: 'Icono invalido. Usa emoji unicode o <:nombre:id>.' });
 
-  role.emoji = parsed.emoji;
-  role.emojiSource = parsed.emojiSource;
-
-  const updatedWar = await updateWar(war);
+  const updatedWar = await updateEventRole(war, roleName, freshRole => {
+    freshRole.emoji = parsed.emoji;
+    freshRole.emojiSource = parsed.emojiSource;
+  });
+  if (!updatedWar) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Icono actualizado para **${roleName}**: ${parsed.emoji}` });
 }
@@ -647,9 +676,11 @@ async function handleRoleIconClear(interaction) {
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
-  role.emoji = null;
-  role.emojiSource = null;
-  const updatedWar = await updateWar(war);
+  const updatedWar = await updateEventRole(war, roleName, freshRole => {
+    freshRole.emoji = null;
+    freshRole.emojiSource = null;
+  });
+  if (!updatedWar) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Icono removido para **${roleName}**` });
 }
@@ -664,12 +695,13 @@ async function handleRolePermAdd(interaction) {
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
-  if (!Array.isArray(role.allowedRoleIds)) role.allowedRoleIds = [];
-  if (!Array.isArray(role.allowedRoles)) role.allowedRoles = [];
-  if (!role.allowedRoleIds.includes(allowedRole.id)) role.allowedRoleIds.push(allowedRole.id);
-  if (!role.allowedRoles.includes(allowedRole.name)) role.allowedRoles.push(allowedRole.name);
-
-  const updatedWar = await updateWar(war);
+  const updatedWar = await updateEventRole(war, roleName, freshRole => {
+    if (!Array.isArray(freshRole.allowedRoleIds)) freshRole.allowedRoleIds = [];
+    if (!Array.isArray(freshRole.allowedRoles)) freshRole.allowedRoles = [];
+    if (!freshRole.allowedRoleIds.includes(allowedRole.id)) freshRole.allowedRoleIds.push(allowedRole.id);
+    if (!freshRole.allowedRoles.includes(allowedRole.name)) freshRole.allowedRoles.push(allowedRole.name);
+  });
+  if (!updatedWar) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Permiso agregado en **${roleName}**: <@&${allowedRole.id}>` });
 }
@@ -684,10 +716,11 @@ async function handleRolePermRemove(interaction) {
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
-  role.allowedRoleIds = (role.allowedRoleIds || []).filter(id => id !== allowedRole.id);
-  role.allowedRoles = (role.allowedRoles || []).filter(name => name !== allowedRole.name);
-
-  const updatedWar = await updateWar(war);
+  const updatedWar = await updateEventRole(war, roleName, freshRole => {
+    freshRole.allowedRoleIds = (freshRole.allowedRoleIds || []).filter(id => id !== allowedRole.id);
+    freshRole.allowedRoles = (freshRole.allowedRoles || []).filter(name => name !== allowedRole.name);
+  });
+  if (!updatedWar) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Permiso removido en **${roleName}**: <@&${allowedRole.id}>` });
 }
@@ -701,9 +734,11 @@ async function handleRolePermClear(interaction) {
   const role = war.roles.find(entry => entry.name === roleName);
   if (!role) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
 
-  role.allowedRoleIds = [];
-  role.allowedRoles = [];
-  const updatedWar = await updateWar(war);
+  const updatedWar = await updateEventRole(war, roleName, freshRole => {
+    freshRole.allowedRoleIds = [];
+    freshRole.allowedRoles = [];
+  });
+  if (!updatedWar) return await interaction.editReply({ content: `No existe el rol **${roleName}**.` });
   await refreshWarMessage(interaction, updatedWar);
   await interaction.editReply({ content: `Permisos limpiados para **${roleName}**` });
 }
@@ -715,12 +750,13 @@ async function handleRecapConfig(interaction) {
 
   const minutes = interaction.options.getInteger('minutos', true);
   const text = getSanitizedOption(interaction, 'texto', { maxLength: 250, allowEmpty: true }) || '';
-  if (!war.recap) war.recap = {};
-  war.recap.enabled = minutes > 0 || text.length > 0;
-  war.recap.minutesBeforeExpire = minutes;
-  war.recap.messageText = text;
-
-  const updatedWar = await updateWar(war);
+  const { war: updatedWar } = await updateWarById(war.id, fresh => {
+    if (!fresh.recap) fresh.recap = {};
+    fresh.recap.enabled = minutes > 0 || text.length > 0;
+    fresh.recap.minutesBeforeExpire = minutes;
+    fresh.recap.messageText = text;
+  });
+  if (!updatedWar) return await interaction.editReply({ content: 'No se encontro evento activo. Usa la opcion `id`.' });
   await interaction.editReply({
     content: `Hilo final ${updatedWar.recap.enabled ? 'configurado' : 'desactivado'}: ${minutes} min antes de borrar.`
   });
@@ -745,8 +781,12 @@ async function handleToggleLock(interaction, shouldLock) {
     });
   }
 
-  war.isClosed = shouldLock;
-  const updatedWar = await updateWar(war);
+  const { war: updatedWar } = await updateWarById(war.id, fresh => {
+    fresh.isClosed = shouldLock;
+  });
+  if (!updatedWar) {
+    return await interaction.editReply({ content: `No se encontro evento con id \`${eventId}\` en este canal.` });
+  }
   const refreshed = await refreshWarMessage(interaction, updatedWar);
 
   if (!refreshed) {
@@ -763,6 +803,17 @@ async function handleToggleLock(interaction, shouldLock) {
       : `Inscripciones desbloqueadas para **${updatedWar.name}** (\`${updatedWar.id}\`)`
     )
   });
+}
+
+// Aplica un cambio de rol sobre la copia fresca del evento dentro de su lock (no pisa inscripciones
+// concurrentes). Devuelve null si el rol ya no existe en esa copia o el mutator aborta.
+async function updateEventRole(war, roleName, mutateRole) {
+  const { war: updated } = await updateWarById(war.id, fresh => {
+    const role = fresh.roles.find(entry => entry.name === roleName);
+    if (!role) return false;
+    return mutateRole(role, fresh);
+  });
+  return updated;
 }
 
 function getSanitizedOption(interaction, name, options = {}) {

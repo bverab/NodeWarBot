@@ -45,14 +45,13 @@ describe('eventManagementService dashboard-ready operations', () => {
     expect(closed.ok).toBe(true);
     expect(closed.event.isClosed).toBe(true);
 
-    const access = await eventManagementService.updatePveAllowedUsers(
+    const access = await eventManagementService.updatePveAccess(
       event.id,
-      'RESTRICTED',
-      ['user_a', 'user_b'],
+      { accessMode: 'USERS', allowedUserIds: ['user_a', 'user_b'] },
       { channelId: event.channelId }
     );
     expect(access.ok).toBe(true);
-    expect(access.event.accessMode).toBe('RESTRICTED');
+    expect(access.event.accessMode).toBe('USERS');
     expect(access.event.allowedUserIds).toEqual(['user_a', 'user_b']);
   });
 

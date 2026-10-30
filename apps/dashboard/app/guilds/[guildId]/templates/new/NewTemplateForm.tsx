@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, ChevronsUpDown, LayoutTemplate, Plus, Shield, Trash2 } from "lucide-react";
 import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid";
 import { Button } from "@/components/ui/Button";
+import { MAX_SLOT_NAME_LENGTH } from "@/lib/slotLimits";
 import { Card } from "@/components/ui/Card";
 import { guildRoutes } from "@/constants/routes";
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
 import overviewStyles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 import createStyles from "../../events/new/EventCreate.module.css";
-import { RoleMultiSelect, type RoleOption } from "../../events/new/NewEventForm";
+import { RoleMultiSelect, type RoleOption } from "@/components/dashboard/selectors/GuildSelectors";
 
 type TemplateSlot = {
   id: string;
@@ -207,7 +208,7 @@ export function NewTemplateForm({ guildId, roles }: NewTemplateFormProps) {
                       </div>
                     </div>
                     <div className={createStyles.slotConfigGrid}>
-                      <label>Name<input maxLength={80} onChange={(event) => updateSlot(slot.id, { name: event.target.value })} required value={slot.name} /></label>
+                      <label>Name<input maxLength={MAX_SLOT_NAME_LENGTH} onChange={(event) => updateSlot(slot.id, { name: event.target.value })} required value={slot.name} /></label>
                       <label>Capacity<input max={100} min={1} onChange={(event) => updateSlot(slot.id, { max: Number(event.target.value) })} required type="number" value={slot.max} /></label>
                       <label className={createStyles.fieldLarge}>Icon<EmojiPicker guildId={guildId} name={`template-slot-${slot.id}-emoji`} onChange={(value, source) => updateSlot(slot.id, { emoji: value, emojiSource: source })} source={slot.emojiSource} value={slot.emoji} /></label>
                     </div>

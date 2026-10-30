@@ -16,6 +16,9 @@ async function initializePersistence() {
   if (initialized) return;
   try {
     await prisma.$connect();
+    // WAL: el bot y el dashboard escriben la misma SQLite. Persistente en el archivo.
+    // Un PRAGMA devuelve filas, por eso $queryRawUnsafe y no $executeRaw.
+    await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL');
     await prisma.$queryRaw`SELECT 1`;
     await logDatabaseConnectionInfo();
     await initializeWarRepository();

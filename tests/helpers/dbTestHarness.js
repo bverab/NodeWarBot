@@ -30,6 +30,12 @@ function splitSqlStatements(sqlText) {
   return statements;
 }
 
+// PRAGMA foreign_keys es por conexion y aqui cada sentencia va por el pool de Prisma: OFF y ON pueden caer
+// en conexiones distintas y dejar una sin cascadas. La base de tests esta vacia al migrar: no hacen falta.
+function readMigrationStatements(sqlText) {
+  return splitSqlStatements(sqlText).filter(statement => !/^PRAGMA\s+(defer_)?foreign_keys/i.test(statement));
+}
+
 async function runMigrationsForTestDb() {
   const migrationsDir = path.resolve(process.cwd(), 'prisma', 'migrations');
   const migrationFolders = fs.readdirSync(migrationsDir)
@@ -41,7 +47,7 @@ async function runMigrationsForTestDb() {
     const migrationPath = path.join(migrationsDir, folder, 'migration.sql');
     if (!fs.existsSync(migrationPath)) continue;
     const sqlText = fs.readFileSync(migrationPath, 'utf8');
-    const statements = splitSqlStatements(sqlText);
+    const statements = readMigrationStatements(sqlText);
     for (const statement of statements) {
       await prisma.$executeRawUnsafe(statement);
     }
@@ -57,8 +63,10 @@ async function clearDatabase() {
 function setupIntegrationSuite() {
   beforeAll(async () => {
     fs.mkdirSync(testDataDir, { recursive: true });
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
+    for (const file of [testDbPath, `${testDbPath}-wal`, `${testDbPath}-shm`]) {
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+      }
     }
 
     __resetWarRepositoryForTests();
@@ -82,5 +90,6 @@ function setupIntegrationSuite() {
 
 module.exports = {
   setupIntegrationSuite,
-  clearDatabase
+  clearDatabase,
+  readMigrationStatements
 };

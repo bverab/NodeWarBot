@@ -3,8 +3,6 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ModalBuilder,
-  UserSelectMenuBuilder,
-  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle
 } = require('discord.js');
@@ -17,8 +15,13 @@ const {
 const { ROLE_PANEL_ACTIONS } = require('./interaction/rolePanelActions');
 const { EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/eventAdminPanelActions');
 const { PVE_EVENT_ADMIN_PANEL_ACTIONS } = require('./interaction/pveEventAdminPanelActions');
+const { isAdminExecutor } = require('../commands/eventadminShared');
+const { safeEphemeralReply } = require('../utils/interactionReply');
 const { consumeRateLimit, buildInteractionRateKey } = require('../utils/rateLimiter');
+const { buildModalTitle, clampInputValue } = require('../utils/modalLimits');
 const { logError } = require('../utils/appLogger');
+const { normalizeAccessMode } = require('../services/pveAccessRules');
+const { buildPveAccessView, selectableRoleIds, splitUsersByChannelAccess, buildRejectedUsersNotice } = require('../utils/pveAccessUi');
 
 module.exports = async interaction => {
   const { customId } = interaction;
@@ -51,7 +54,8 @@ module.exports = async interaction => {
     if (customId === 'configure_pve_slots') return await handleConfigurePveSlots(interaction);
     if (customId === 'configure_pve_access') return await handleConfigurePveAccess(interaction);
     if (customId === 'pve_access_mode_select') return await handlePveAccessModeSelect(interaction);
-    if (customId === 'pve_access_users_select' || customId === 'pve_access_roles_select') return await handlePveAccessUsersSelect(interaction);
+    if (customId === 'pve_access_users_select') return await handlePveAccessUsersSelect(interaction);
+    if (customId === 'pve_access_roles_select') return await handlePveAccessRolesSelect(interaction);
     if (customId === 'pve_access_save') return await handlePveAccessSave(interaction);
     if (customId === 'pve_access_back') return await handlePveAccessBack(interaction);
 
@@ -60,15 +64,17 @@ module.exports = async interaction => {
       return await rolePanelHandler(interaction);
     }
 
-    const eventPanelHandler = EVENT_ADMIN_PANEL_ACTIONS[customId];
-    if (eventPanelHandler) {
-      return await eventPanelHandler(interaction);
+    // Paneles de administracion de eventos: el permiso se comprueba en cada accion, no solo al abrir el panel.
+    const adminPanelHandler = EVENT_ADMIN_PANEL_ACTIONS[customId] || PVE_EVENT_ADMIN_PANEL_ACTIONS[customId];
+    if (adminPanelHandler) {
+      if (!isAdminExecutor(interaction)) {
+        return await safeEphemeralReply(interaction, 'Solo Admin puede gestionar eventos.');
+      }
+      return await adminPanelHandler(interaction);
     }
 
-    const pveEventPanelHandler = PVE_EVENT_ADMIN_PANEL_ACTIONS[customId];
-    if (pveEventPanelHandler) {
-      return await pveEventPanelHandler(interaction);
-    }
+    // customId sin handler (p. ej. un boton de un mensaje antiguo): se responde en vez de dejar la interaccion colgada.
+    return await safeEphemeralReply(interaction, 'Accion no disponible.');
   } catch (error) {
     logError('Error en interactionHandler', error, {
       action: 'panel_interaction',
@@ -139,7 +145,7 @@ async function handleConfigurePveSlots(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('configure_pve_slots_modal')
-    .setTitle(`Configurar horarios PvE: ${warData.name}`);
+    .setTitle(buildModalTitle('Configurar horarios PvE', warData.name));
 
   const timesInput = new TextInputBuilder()
     .setCustomId('pve_slots_times_input')
@@ -153,7 +159,7 @@ async function handleConfigurePveSlots(interaction) {
     ? warData.timeSlots.map(slot => slot.time).filter(Boolean).join(';')
     : '';
   if (currentTimes) {
-    timesInput.setValue(currentTimes.slice(0, 300));
+    timesInput.setValue(clampInputValue(currentTimes, 300));
   }
 
   const capacityInput = new TextInputBuilder()
@@ -163,7 +169,7 @@ async function handleConfigurePveSlots(interaction) {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(3)
-    .setValue(String(Number.isInteger(warData.slotCapacity) ? warData.slotCapacity : 5));
+    .setValue(clampInputValue(Number.isInteger(warData.slotCapacity) ? warData.slotCapacity : 5, 3));
 
   modal.addComponents(
     new ActionRowBuilder().addComponents(timesInput),
@@ -182,34 +188,21 @@ async function handleConfigurePveAccess(interaction) {
     return await interaction.reply({ content: 'Esta accion solo aplica a eventos PvE.', flags: 64 });
   }
 
-  const accessMode = String(warData.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-  const allowedUserIds = Array.isArray(warData.allowedUserIds) ? warData.allowedUserIds : [];
-  const selectedText = allowedUserIds.length
-    ? allowedUserIds.map(id => `<@${id}>`).join(', ')
-    : 'Sin usuarios seleccionados';
+  await showPveAccessEditor(interaction, warData);
+}
 
-  const modeMenu = new StringSelectMenuBuilder()
-    .setCustomId('pve_access_mode_select')
-    .setPlaceholder('Selecciona el modo de acceso')
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions([
-      { label: 'Open', value: 'OPEN', default: accessMode === 'OPEN' },
-      { label: 'Restricted', value: 'RESTRICTED', default: accessMode === 'RESTRICTED' }
-    ]);
-
-  const userPicker = new UserSelectMenuBuilder()
-    .setCustomId('pve_access_users_select')
-    .setPlaceholder('Usuarios permitidos (solo para Restricted)')
-    .setMinValues(0)
-    .setMaxValues(25);
-
-  await interaction.update({
-    content: `Configurar acceso PvE\nModo actual: **${accessMode}**\nUsuarios permitidos: ${selectedText}`,
-    embeds: [],
+// El borrador se publica en el canal donde se creo: ahi se valida a las personas elegidas.
+async function showPveAccessEditor(interaction, warData, notice = '') {
+  const { embed, rows } = buildPveAccessView(warData, {
+    customIds: { mode: 'pve_access_mode_select', roles: 'pve_access_roles_select', users: 'pve_access_users_select' },
+    title: `🔐 Acceso PvE: ${warData.name || 'Evento'}`,
+    notice
+  });
+  const payload = {
+    content: '',
+    embeds: [embed],
     components: [
-      new ActionRowBuilder().addComponents(modeMenu),
-      new ActionRowBuilder().addComponents(userPicker),
+      ...rows,
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('pve_access_save')
@@ -221,7 +214,12 @@ async function handleConfigurePveAccess(interaction) {
           .setStyle(ButtonStyle.Secondary)
       )
     ]
-  });
+  };
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+  } else {
+    await interaction.update(payload);
+  }
 }
 
 async function handlePveAccessModeSelect(interaction) {
@@ -229,8 +227,18 @@ async function handlePveAccessModeSelect(interaction) {
   if (!warData) {
     return await interaction.update({ content: 'Sesion expirada', components: [] });
   }
-  warData.accessMode = interaction.values?.[0] === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-  await handleConfigurePveAccess(interaction);
+  warData.accessMode = normalizeAccessMode(interaction.values?.[0]);
+  await showPveAccessEditor(interaction, warData);
+}
+
+async function handlePveAccessRolesSelect(interaction) {
+  const warData = getDraftWar(interaction.user.id);
+  if (!warData) {
+    return await interaction.update({ content: 'Sesion expirada', components: [] });
+  }
+  await interaction.deferUpdate();
+  warData.allowedRoleIds = selectableRoleIds(interaction.guildId, interaction.values);
+  await showPveAccessEditor(interaction, warData, 'Roles con acceso actualizados.');
 }
 
 async function handlePveAccessUsersSelect(interaction) {
@@ -238,8 +246,15 @@ async function handlePveAccessUsersSelect(interaction) {
   if (!warData) {
     return await interaction.update({ content: 'Sesion expirada', components: [] });
   }
-  warData.allowedUserIds = (interaction.values || []).map(String);
-  await handleConfigurePveAccess(interaction);
+  // Consultar a cada miembro puede tardar: se reconoce la interaccion antes.
+  await interaction.deferUpdate();
+  const { allowed, rejected } = await splitUsersByChannelAccess({
+    guild: interaction.guild,
+    channelId: warData.channelId || interaction.channelId,
+    userIds: interaction.values
+  });
+  warData.allowedUserIds = allowed;
+  await showPveAccessEditor(interaction, warData, buildRejectedUsersNotice(rejected) || 'Personas con acceso actualizadas.');
 }
 
 async function handlePveAccessSave(interaction) {
@@ -339,7 +354,7 @@ async function handleConfigureRecap(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId('schedule_recap_modal')
-    .setTitle(`Configurar hilo final: ${warData.name}`);
+    .setTitle(buildModalTitle('Configurar hilo final', warData.name));
 
   const minutesInput = new TextInputBuilder()
     .setCustomId('recap_minutes_before_expire_input')
@@ -348,7 +363,7 @@ async function handleConfigureRecap(interaction) {
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(4)
-    .setValue(String(Number.isFinite(warData.recap?.minutesBeforeExpire) ? warData.recap.minutesBeforeExpire : 0));
+    .setValue(clampInputValue(Number.isFinite(warData.recap?.minutesBeforeExpire) ? warData.recap.minutesBeforeExpire : 0, 4));
 
   const textInput = new TextInputBuilder()
     .setCustomId('recap_message_text_input')
@@ -359,7 +374,7 @@ async function handleConfigureRecap(interaction) {
     .setMaxLength(250);
 
   if (warData.recap?.messageText) {
-    textInput.setValue(String(warData.recap.messageText).slice(0, 250));
+    textInput.setValue(clampInputValue(warData.recap.messageText, 250));
   }
 
   modal.addComponents(

@@ -50,6 +50,17 @@ describe('pveMessageBuilder render', () => {
     expect(String(fillersField.value)).toContain('Bob');
   });
 
+  it('en modo por roles muestra los roles con acceso y explica que el resto queda como filler', () => {
+    const payload = buildPveMessagePayload(
+      { eventType: 'pve', name: 'Boss', createdAt: Date.now(), expiresAt: Date.now() + 3600000, closesAt: Date.now() + 1800000, isClosed: false },
+      { accessMode: 'ROLES', allowedRoleIds: ['role_1'], options: [] }
+    );
+
+    const description = String(payload.embeds[0].data.description);
+    expect(description).toContain('Por roles: <@&role_1>');
+    expect(description).toContain('quedas como filler');
+  });
+
   it('usa bloques inline y corta cada 3 horarios por fila', () => {
     const options = ['20:00', '21:00', '22:00', '23:00'].map((time, index) => ({
       id: `opt_${index}`,

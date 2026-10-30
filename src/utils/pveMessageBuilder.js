@@ -9,14 +9,8 @@ const {
   safeEmbedFieldValue,
   safeMessageContent
 } = require('./textSafety');
+const { normalizeAccessMode, normalizeIds, describePveAccess } = require('../services/pveAccessRules');
 
-function normalizeAccessMode(value) {
-  return String(value || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-}
-
-function normalizeAllowedUsers(value) {
-  return Array.from(new Set((Array.isArray(value) ? value : []).map(String).filter(Boolean)));
-}
 
 const ICONS = {
   adventure: '🧭',
@@ -40,7 +34,8 @@ function buildPveEmbed(event, view = {}) {
   const eventMeta = getEventTypeMeta(event.eventType);
   const options = Array.isArray(view.options) ? view.options : [];
   const accessMode = normalizeAccessMode(view.accessMode || event.accessMode);
-  const allowedUserIds = normalizeAllowedUsers(view.allowedUserIds || event.allowedUserIds);
+  const allowedUserIds = normalizeIds(view.allowedUserIds || event.allowedUserIds);
+  const allowedRoleIds = normalizeIds(view.allowedRoleIds || event.allowedRoleIds);
   const formatParticipantDisplay = createParticipantDisplayFormatter({
     guildId: event.guildId,
     classIconSource: event.classIconSource,
@@ -53,9 +48,10 @@ function buildPveEmbed(event, view = {}) {
   const totalPrimary = options.reduce((acc, option) => acc + ((option.enrollments || []).length), 0);
   const totalFillers = options.reduce((acc, option) => acc + ((option.fillers || []).length), 0);
 
-  const accessText = accessMode === 'RESTRICTED'
-    ? (allowedUserIds.length ? allowedUserIds.map(userId => `<@${userId}>`).join(' ') : 'Restringido (sin usuarios configurados)')
-    : 'Open (sin restriccion)';
+  const access = describePveAccess({ accessMode, allowedUserIds, allowedRoleIds });
+  const accessText = access.mode === 'OPEN'
+    ? 'Abierto (sin restriccion)'
+    : `${access.title}: ${access.targets}\nSin acceso igual puedes marcar un horario: quedas como filler (lista de espera).`;
 
   const description = [
     `${ICONS.calendar} **Horario**`,
@@ -104,7 +100,7 @@ function buildPveEmbed(event, view = {}) {
       });
 
       embed.addFields({
-        name: '🧩 Fillers',
+        name: '🧩 Fillers (lista de espera)',
         value: safeEmbedFieldValue(fillerLines.join('\n')),
         inline: false
       });

@@ -4,11 +4,12 @@
   ButtonStyle,
   EmbedBuilder,
   RoleSelectMenuBuilder,
-  StringSelectMenuBuilder,
-  UserSelectMenuBuilder
+  StringSelectMenuBuilder
 } = require('discord.js');
 const { normalizeEventType } = require('../constants/eventTypes');
 const { neutralizeMassMentions } = require('./textSafety');
+const { describePveAccess } = require('../services/pveAccessRules');
+const { buildPveAccessView } = require('./pveAccessUi');
 
 const DAY_NAMES_SHORT = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
 
@@ -116,7 +117,7 @@ function buildPveEventPanelPayload(war, options = {}) {
   if (options.details) {
     embed.addFields(
       { name: 'Horarios', value: String(Array.isArray(war.timeSlots) ? war.timeSlots.length : 0), inline: true },
-      { name: 'Acceso', value: String(war.accessMode || 'OPEN'), inline: true },
+      { name: 'Acceso', value: describePveAccess(war).title, inline: true },
       { name: 'ID interno', value: `\`${war.id}\``, inline: true }
     );
   }
@@ -148,40 +149,16 @@ function buildPveEventPanelPayload(war, options = {}) {
 }
 
 function buildPveAccessEditorPayload(war, options = {}) {
-  const notice = String(options.notice || '');
-  const accessMode = String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-  const allowedUserIds = Array.isArray(war.allowedUserIds) ? war.allowedUserIds : [];
-  const allowedText = allowedUserIds.length > 0 ? allowedUserIds.map(id => `<@${id}>`).join(', ') : 'Sin usuarios permitidos';
-
-  const embed = new EmbedBuilder()
-    .setTitle(`Acceso PvE: ${war.name}`)
-    .setDescription(`Modo actual: **${accessMode}**`)
-    .setColor(0x2ecc71)
-    .addFields({ name: 'Usuarios permitidos/priorizados', value: truncate(allowedText, 1024), inline: false });
-
-  if (notice) embed.addFields({ name: 'Info', value: truncate(notice, 1024), inline: false });
-
-  const modeMenu = new StringSelectMenuBuilder()
-    .setCustomId('panel_pve_access_mode_select')
-    .setPlaceholder('Selecciona modo de acceso')
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions([
-      { label: 'Open', value: 'OPEN', default: accessMode === 'OPEN' },
-      { label: 'Restricted', value: 'RESTRICTED', default: accessMode === 'RESTRICTED' }
-    ]);
-
-  const usersPicker = new UserSelectMenuBuilder()
-    .setCustomId('panel_pve_access_users_select')
-    .setPlaceholder('Selecciona usuarios permitidos')
-    .setMinValues(0)
-    .setMaxValues(25);
+  const { embed, rows } = buildPveAccessView(war, {
+    customIds: { mode: 'panel_pve_access_mode_select', roles: 'panel_pve_access_roles_select', users: 'panel_pve_access_users_select' },
+    title: `🔐 Acceso PvE: ${war.name || 'Evento'}`,
+    notice: String(options.notice || '')
+  });
 
   return {
     embeds: [embed],
     components: [
-      new ActionRowBuilder().addComponents(modeMenu),
-      new ActionRowBuilder().addComponents(usersPicker),
+      ...rows,
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('panel_pve_access_back').setLabel('Volver').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('panel_event_exit').setLabel('Salir').setStyle(ButtonStyle.Danger)
@@ -913,7 +890,7 @@ function buildPanelDescription(war, scope) {
 
 function truncate(text, max) {
   const value = neutralizeMassMentions(String(text || ''));
-  return value.length <= max ? value : `${value.slice(0, max - 1)}...`;
+  return value.length <= max ? value : `${value.slice(0, max - 3)}...`;
 }
 
 module.exports = {

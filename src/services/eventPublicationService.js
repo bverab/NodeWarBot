@@ -7,6 +7,7 @@ const {
 const warService = require('./warService');
 const pveService = require('./pveService');
 const { safeMessageContent } = require('../utils/textSafety');
+const { buildPublicationMentions: buildAccessPublicationMentions } = require('./pveAccessRules');
 const { logWarn, logInfo } = require('../utils/appLogger');
 const {
   applyLifecycleToWar,
@@ -16,48 +17,9 @@ const {
   validateFutureLifecycle
 } = require('../utils/eventLifecycleTimes');
 
-function normalizeNotifyRoles(war) {
-  if (normalizeEventType(war.eventType) === 'pve' && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED') {
-    return Array.from(new Set((Array.isArray(war.allowedUserIds) ? war.allowedUserIds : []).map(String).filter(Boolean)));
-  }
-  return Array.from(new Set((Array.isArray(war.notifyRoles) ? war.notifyRoles : []).map(String).filter(Boolean)));
-}
-
-function buildPublicationContent(notifyTargets, targetType = 'roles') {
-  if (notifyTargets.length <= 0) {
-    return 'Evento publicado manualmente';
-  }
-  if (targetType === 'users') {
-    return safeMessageContent(notifyTargets.map(userId => `<@${userId}>`).join(' '), 'Evento publicado manualmente');
-  }
-  return safeMessageContent(notifyTargets.map(roleId => `<@&${roleId}>`).join(' '), 'Evento publicado manualmente');
-}
-
-function buildAllowedMentions(notifyTargets, targetType = 'roles') {
-  if (notifyTargets.length <= 0) {
-    return { parse: [] };
-  }
-  if (targetType === 'users') {
-    return { parse: [], users: notifyTargets };
-  }
-  return { parse: [], roles: notifyTargets };
-}
-
-function getNotifyTargetType(war) {
-  const isRestrictedPve = normalizeEventType(war.eventType) === 'pve'
-    && String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED';
-  return isRestrictedPve ? 'users' : 'roles';
-}
-
 function buildPublicationMentions(war) {
-  const notifyTargets = normalizeNotifyRoles(war);
-  const targetType = getNotifyTargetType(war);
-  return {
-    notifyTargets,
-    targetType,
-    content: buildPublicationContent(notifyTargets, targetType),
-    allowedMentions: buildAllowedMentions(notifyTargets, targetType)
-  };
+  const mentions = buildAccessPublicationMentions(war, 'Evento publicado manualmente');
+  return { ...mentions, content: safeMessageContent(mentions.content, 'Evento publicado manualmente') };
 }
 
 async function publishOrRefreshWar(interaction, war) {
@@ -114,6 +76,8 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
   }
 
   if (normalizedWar.messageId && !mustRepublish) {
+    // El render lee la cache: al activar se persiste antes de editar el mensaje.
+    const persisted = shouldActivate ? await warService.updateWar(normalizedWar) : normalizedWar;
     const updateResult = await updateEventDiscordMessage({
       guild: discordContext.guild,
       client: discordContext.client,
@@ -124,7 +88,6 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
       }
     });
     if (updateResult.ok) {
-      const persisted = shouldActivate ? await warService.updateWar(normalizedWar) : normalizedWar;
       logInfo('Evento actualizado en mensaje existente', {
         action: 'publish_or_refresh',
         guildId: discordContext.guildId,
@@ -144,6 +107,27 @@ async function publishOrRefreshEventWithContext(discordContext, war, options = {
       messageId: normalizedWar.messageId,
       reason: updateResult.errorMessage || updateResult.status
     });
+
+    // Solo se republica si el mensaje ya no existe; con otros errores se evita duplicarlo.
+    if (updateResult.status !== 'missing_message' && shouldActivate) {
+      // La activacion ya quedo guardada: se informa aparte de un fallo real.
+      return {
+        ok: false,
+        saved: true,
+        status: 'saved_message_not_updated',
+        reason: `Cambios guardados, pero no se pudo actualizar el mensaje de Discord: ${updateResult.errorMessage || updateResult.status}`,
+        errorCode: updateResult.errorCode,
+        war: persisted
+      };
+    }
+    if (updateResult.status !== 'missing_message') {
+      return {
+        ok: false,
+        status: updateResult.status,
+        reason: updateResult.errorMessage || updateResult.status,
+        errorCode: updateResult.errorCode
+      };
+    }
   }
 
   if (mustRepublish && normalizedWar.messageId) {

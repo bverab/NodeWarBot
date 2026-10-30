@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { CalendarClock, CheckCircle2, ShieldCheck, UsersRound } from "lucide-react";
 import { getServerAuthSession } from "@/lib/auth";
 import { getDiscordEnvStatus, getGoogleEnvStatus } from "@/lib/env";
+import { isLocalAdminEnabled } from "@/lib/server/localAdmin";
 import { routes } from "@/constants/routes";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { ShootingStars } from "@/components/effects/ShootingStars";
@@ -23,7 +24,9 @@ const authErrorMessages: Record<string, string> = {
   OAuthAccountNotLinked:
     "This Discord account is linked to a different sign-in method.",
   Configuration:
-    "Discord OAuth is not configured correctly for this environment."
+    "Discord OAuth is not configured correctly for this environment.",
+  CredentialsSignin:
+    "Invalid local admin username or password."
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
@@ -95,6 +98,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           discordConfigured={discordEnv.configured}
           discordMissing={discordEnv.missing}
           googleConfigured={googleEnv.configured}
+          localAdminEnabled={isLocalAdminEnabled()}
           showDevWarning={showDevWarning}
         />
       </section>

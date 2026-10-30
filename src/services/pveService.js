@@ -2,6 +2,7 @@ const { normalizeEventType } = require('../constants/eventTypes');
 const eventOptionRepository = require('../db/eventOptionRepository');
 const warService = require('./warService');
 const { sanitizeDisplayText } = require('../utils/textSafety');
+const { normalizeAccessMode, normalizeIds, hasPveAccess } = require('./pveAccessRules');
 
 function parsePveSlotsInput(rawTimes, rawCapacity) {
   const timesText = String(rawTimes || '').trim();
@@ -53,12 +54,8 @@ function ensurePveEventType(event) {
   return normalizeEventType(event?.eventType) === 'pve';
 }
 
-function normalizeAccessMode(value) {
-  return String(value || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN';
-}
-
-function normalizeAllowedUserIds(value) {
-  return Array.from(new Set((Array.isArray(value) ? value : []).map(String).filter(Boolean)));
+function isFillerEntry(entry) {
+  return String(entry?.enrollmentType || 'PRIMARY').toUpperCase() === 'FILLER';
 }
 
 async function saveEventSlots(eventId, timeSlots) {
@@ -70,7 +67,7 @@ async function getEventSlots(eventId) {
 }
 
 async function joinSlot(eventId, optionId, participant) {
-  const event = warService.loadWars().find(entry => entry.id === String(eventId));
+  const event = warService.getWarById(eventId);
   if (!event) return { ok: false, reason: 'event_missing' };
 
   const options = await getEventSlots(eventId);
@@ -90,19 +87,17 @@ async function joinSlot(eventId, optionId, participant) {
     return { ok: removed, reason: removed ? 'left' : 'leave_failed' };
   }
 
-  const accessMode = normalizeAccessMode(event.accessMode);
-  const allowedUserIds = normalizeAllowedUserIds(event.allowedUserIds);
-  const hasAccess = accessMode === 'OPEN' || allowedUserIds.includes(String(participant.userId));
-  const enrollmentType = hasAccess ? 'PRIMARY' : 'FILLER';
-
-  return await eventOptionRepository.joinEventOption({
+  // El acceso se evalua al inscribirse (roles del miembro en ese momento); quien no lo tiene queda como filler.
+  const hasAccess = hasPveAccess(event, { userId: participant.userId, userRoleIds: participant.userRoleIds });
+  const result = await eventOptionRepository.joinEventOption({
     eventId,
     optionId,
     userId: participant.userId,
     displayName: sanitizeDisplayText(participant.displayName, { maxLength: 64, fallback: 'Usuario' }),
     isFake: Boolean(participant.isFake),
-    enrollmentType
+    enrollmentType: hasAccess ? 'PRIMARY' : 'FILLER'
   });
+  return result.ok ? { ...result, optionLabel: targetOption.label || targetOption.time } : result;
 }
 
 async function leaveSlot(eventId, userId, optionId = null) {
@@ -158,36 +153,69 @@ async function moveSlot(eventId, optionId, direction) {
   return await eventOptionRepository.moveEventOption(eventId, optionId, direction);
 }
 
-async function configureAccess(eventId, accessMode, allowedUserIds = []) {
-  await eventOptionRepository.replaceAccessUsers(eventId, allowedUserIds);
-  const event = warService.loadWars().find(entry => entry.id === String(eventId));
-  if (!event) return null;
+// Los fillers que con el acceso actual califican pasan a titulares por orden de llegada mientras haya
+// cupo. Nadie baja a filler: quien ya era titular lo sigue siendo aunque pierda el acceso.
+async function promoteQualifiedFillers(event, { resolveMemberRoleIds = null } = {}) {
+  const byRoles = normalizeAccessMode(event.accessMode) === 'ROLES';
+  const promoted = [];
+  for (const option of await getEventSlots(event.id)) {
+    const enrollments = Array.isArray(option.enrollments) ? option.enrollments : [];
+    const room = option.capacity - enrollments.filter(entry => !isFillerEntry(entry)).length;
+    const qualified = [];
+    for (const filler of enrollments.filter(isFillerEntry)) {
+      if (qualified.length >= room) break;
+      const userRoleIds = byRoles && resolveMemberRoleIds && !filler.isFake
+        ? await Promise.resolve(resolveMemberRoleIds(filler.userId)).catch(() => [])
+        : [];
+      if (hasPveAccess(event, { userId: filler.userId, userRoleIds })) qualified.push(filler);
+    }
+    if (qualified.length === 0) continue;
 
-  event.accessMode = normalizeAccessMode(accessMode);
-  event.allowedUserIds = normalizeAllowedUserIds(allowedUserIds);
-  await warService.updateWar(event);
-  return event;
+    const result = await eventOptionRepository.promoteFillersToPrimary(event.id, option.id, qualified.map(entry => entry.userId));
+    for (const userId of result.promoted || []) {
+      const entry = qualified.find(candidate => candidate.userId === userId);
+      promoted.push({ ...entry, enrollmentType: 'PRIMARY', optionId: option.id, optionLabel: option.label || option.time });
+    }
+  }
+  return promoted;
+}
+
+// access: { accessMode, allowedUserIds?, allowedRoleIds? }. Una lista omitida se conserva (cambiar de
+// modo no borra la lista del otro modo).
+async function configureAccess(eventId, access = {}, options = {}) {
+  const { war: updated } = await warService.updateWarById(String(eventId), fresh => {
+    if (Object.prototype.hasOwnProperty.call(access, 'accessMode')) fresh.accessMode = normalizeAccessMode(access.accessMode);
+    if (Array.isArray(access.allowedUserIds)) fresh.allowedUserIds = normalizeIds(access.allowedUserIds);
+    if (Array.isArray(access.allowedRoleIds)) fresh.allowedRoleIds = normalizeIds(access.allowedRoleIds);
+  });
+  if (!updated) return { event: null, promoted: [] };
+
+  const promoted = await promoteQualifiedFillers(updated, options);
+  return { event: warService.getWarById(updated.id) || updated, promoted };
 }
 
 async function getEventPveView(event) {
   const optionsRaw = await getEventSlots(event.id);
   const options = optionsRaw.map(option => {
     const enrollments = Array.isArray(option.enrollments) ? option.enrollments : [];
-    const primary = enrollments.filter(entry => String(entry.enrollmentType || 'PRIMARY').toUpperCase() !== 'FILLER');
-    const fillers = enrollments.filter(entry => String(entry.enrollmentType || 'PRIMARY').toUpperCase() === 'FILLER');
     return {
       ...option,
-      enrollments: primary,
-      fillers
+      enrollments: enrollments.filter(entry => !isFillerEntry(entry)),
+      fillers: enrollments.filter(isFillerEntry)
     };
   });
   const allowedUserIds = Array.isArray(event.allowedUserIds) && event.allowedUserIds.length > 0
     ? event.allowedUserIds
     : await eventOptionRepository.listAccessUsers(event.id);
+  // El agregado del evento ya trae la lista (vacia si no hay roles); solo se consulta si falta.
+  const allowedRoleIds = Array.isArray(event.allowedRoleIds)
+    ? event.allowedRoleIds
+    : await eventOptionRepository.listAccessRoles(event.id);
 
   return {
     accessMode: normalizeAccessMode(event.accessMode),
-    allowedUserIds: normalizeAllowedUserIds(allowedUserIds),
+    allowedUserIds: normalizeIds(allowedUserIds),
+    allowedRoleIds: normalizeIds(allowedRoleIds),
     options,
     fillers: []
   };
@@ -203,6 +231,10 @@ async function moveEnrollment(eventId, fromOptionId, toOptionId, userId) {
 
 async function promoteFiller(eventId, optionId, userId) {
   return await eventOptionRepository.promoteFillerToPrimary(eventId, optionId, userId);
+}
+
+async function promoteFillers(eventId, optionId, userIds) {
+  return await eventOptionRepository.promoteFillersToPrimary(eventId, optionId, userIds);
 }
 
 async function adminAddEnrollment(eventId, optionId, participant, enrollmentType = 'PRIMARY') {
@@ -231,9 +263,11 @@ module.exports = {
   deleteSlot,
   moveSlot,
   configureAccess,
+  promoteQualifiedFillers,
   getEventPveView,
   removeEnrollment,
   moveEnrollment,
   promoteFiller,
+  promoteFillers,
   adminAddEnrollment
 };

@@ -2,6 +2,7 @@
  * Validaciones y helpers para scheduling
  */
 const DEFAULT_TIMEZONE = 'America/Bogota';
+const TIMEZONE_CACHE_MAX_ENTRIES = 200;
 const timezoneCache = new Map();
 const timezoneAliases = {
   'america/brasil': 'America/Sao_Paulo',
@@ -19,27 +20,6 @@ const timezoneAliases = {
 function isValidTime(timeStr) {
   const regex = /^([01]\d|2[0-3]):[0-5]\d$/;
   return regex.test(timeStr);
-}
-
-/**
- * Convierte hora en minutos desde medianoche
- * @param {string} timeStr - "HH:mm"
- * @returns {number} - Minutos
- */
-function timeToMinutes(timeStr) {
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
-/**
- * Convierte minutos a formato HH:mm
- * @param {number} minutes
- * @returns {string}
- */
-function minutesToTime(minutes) {
-  const hours = Math.floor(minutes / 60).toString().padStart(2, '0');
-  const mins = (minutes % 60).toString().padStart(2, '0');
-  return `${hours}:${mins}`;
 }
 
 /**
@@ -71,7 +51,7 @@ function shouldExecute(dayOfWeek, time, currentDate = new Date(), timezone = 'Am
 function getZonedDateParts(date, timezone) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
-    hour12: false,
+    hourCycle: 'h23',
     weekday: 'short',
     hour: '2-digit',
     minute: '2-digit'
@@ -109,8 +89,7 @@ function normalizeTimeZoneInfo(timezone) {
 
   const cacheKey = raw.toLowerCase();
   if (timezoneCache.has(cacheKey)) {
-    const cached = timezoneCache.get(cacheKey);
-    return { timezone: cached, source: cached === DEFAULT_TIMEZONE ? 'fallback' : 'cache' };
+    return { ...timezoneCache.get(cacheKey) };
   }
 
   const hasAlias = Boolean(timezoneAliases[cacheKey]);
@@ -131,13 +110,19 @@ function normalizeTimeZoneInfo(timezone) {
 
   for (const candidate of candidates) {
     if (isValidIanaTimezone(candidate)) {
-      timezoneCache.set(cacheKey, candidate);
-      return { timezone: candidate, source: hasAlias ? 'alias' : 'exact' };
+      return cacheTimezoneInfo(cacheKey, { timezone: candidate, source: hasAlias ? 'alias' : 'exact' });
     }
   }
 
-  timezoneCache.set(cacheKey, DEFAULT_TIMEZONE);
-  return { timezone: DEFAULT_TIMEZONE, source: 'fallback' };
+  return cacheTimezoneInfo(cacheKey, { timezone: DEFAULT_TIMEZONE, source: 'fallback' });
+}
+
+function cacheTimezoneInfo(cacheKey, info) {
+  if (timezoneCache.size >= TIMEZONE_CACHE_MAX_ENTRIES) {
+    timezoneCache.delete(timezoneCache.keys().next().value);
+  }
+  timezoneCache.set(cacheKey, info);
+  return { ...info };
 }
 
 function isValidIanaTimezone(timezone) {
@@ -149,48 +134,9 @@ function isValidIanaTimezone(timezone) {
   }
 }
 
-/**
- * Calcula tiempo hasta próxima ejecución (en milisegundos)
- * @param {number} dayOfWeek - 0-6
- * @param {string} time - "HH:mm"
- * @returns {number} - Milisegundos
- */
-function msUntilNextExecution(dayOfWeek, time) {
-  const now = new Date();
-  const [hours, minutes] = time.split(':').map(Number);
-
-  const today = new Date(now);
-  today.setHours(hours, minutes, 0, 0);
-
-  let daysUntil = dayOfWeek - now.getDay();
-  if (daysUntil < 0 || (daysUntil === 0 && now > today)) {
-    daysUntil += 7;
-  }
-
-  const nextRun = new Date(today);
-  nextRun.setDate(nextRun.getDate() + daysUntil);
-
-  return Math.max(0, nextRun - now);
-}
-
-/**
- * Obtiene label amigable para día + hora
- * @param {number} dayOfWeek
- * @param {string} time
- * @returns {string}
- */
-function getScheduleLabel(dayOfWeek, time) {
-  const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  return `${days[dayOfWeek]} ${time}`;
-}
-
 module.exports = {
   isValidTime,
-  timeToMinutes,
-  minutesToTime,
   normalizeTimeZoneInfo,
   normalizeTimeZone,
-  shouldExecute,
-  msUntilNextExecution,
-  getScheduleLabel
+  shouldExecute
 };

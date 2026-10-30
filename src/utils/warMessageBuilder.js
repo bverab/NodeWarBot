@@ -2,6 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { getWarTotals } = require('./warState');
 const { getEventTypeMeta } = require('../constants/eventTypes');
 const { createParticipantDisplayFormatter } = require('./participantDisplayFormatter');
+const { isSingleUnicodeEmoji } = require('./emojiHelper');
 const {
   sanitizeDisplayText,
   safeEmbedTitle,
@@ -136,7 +137,7 @@ function toButtonEmoji(emojiText, emojiSource) {
   const customMatch = String(emojiText).match(/^<(a?):([A-Za-z0-9_]+):(\d+)>$/);
 
   if (emojiSource === 'unicode' || (!emojiSource && !customMatch)) {
-    return String(emojiText);
+    return isSingleUnicodeEmoji(emojiText) ? String(emojiText) : null;
   }
 
   if (customMatch) {
@@ -147,7 +148,8 @@ function toButtonEmoji(emojiText, emojiSource) {
     };
   }
 
-  return String(emojiText);
+  // Respaldo seguro: un texto que no es emoji haria fallar la edicion del mensaje; el llamador usa el circulo blanco.
+  return isSingleUnicodeEmoji(emojiText) ? String(emojiText) : null;
 }
 
 function formatRoleRestrictions(role) {

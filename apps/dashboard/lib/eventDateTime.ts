@@ -53,6 +53,19 @@ export function normalizeTimezone(input: string | null | undefined) {
   return normalizeTimezoneInfo(input).timezone;
 }
 
+// Message to show next to a timezone field; null when the value is acceptable. normalizeTimezone would silently
+// swap an invalid zone for the default one, so forms must check this first and send what the user typed.
+export function getTimezoneInputError(input: string | null | undefined) {
+  const raw = String(input ?? "").trim();
+  if (!raw) {
+    return "Timezone is required.";
+  }
+
+  return normalizeTimezoneInfo(raw).source === "fallback"
+    ? "Timezone must be a valid IANA timezone, for example America/Santiago."
+    : null;
+}
+
 function parseDateParts(dateValue: string) {
   const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) {

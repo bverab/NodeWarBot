@@ -1,5 +1,6 @@
 const {
   getWarByMessageId,
+  resolveWarByMessageId,
   updateWarByMessageId,
   deleteWarByMessageId
 } = require('../services/warService');
@@ -10,6 +11,7 @@ const {
   deleteEventDiscordMessage
 } = require('../services/discordEventSyncService');
 const pveService = require('../services/pveService');
+const { getMemberRoleIds } = require('../services/pveAccessRules');
 const {
   getRoleByName,
   findParticipantRole,
@@ -95,7 +97,7 @@ module.exports = async interaction => {
 };
 
 async function handleToggleClose(interaction) {
-  const currentWar = getWarByMessageId(interaction.message.id);
+  const currentWar = await resolveWarByMessageId(interaction.message.id);
   if (!currentWar) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -120,7 +122,7 @@ async function handleToggleClose(interaction) {
 }
 
 async function handleDeleteWar(interaction) {
-  const war = getWarByMessageId(interaction.message.id);
+  const war = await resolveWarByMessageId(interaction.message.id);
   if (!war) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -135,7 +137,7 @@ async function handleDeleteWar(interaction) {
 }
 
 async function handleViewList(interaction) {
-  const war = getWarByMessageId(interaction.message.id);
+  const war = await resolveWarByMessageId(interaction.message.id);
   if (!war) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -151,7 +153,7 @@ async function handleJoinRole(interaction) {
   // 1) valida rol y permisos del usuario
   // 2) aplica join/switch/leave en estado persistente
   // 3) refresca embed y notifica promociones de waitlist
-  const currentWar = getWarByMessageId(interaction.message.id);
+  const currentWar = await resolveWarByMessageId(interaction.message.id);
   if (!currentWar) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -219,7 +221,9 @@ async function handleJoinRole(interaction) {
       };
     }
 
-    if (state.isClosed) {
+    // Salir siempre se permite (rama anterior); entrar exige inscripciones abiertas y antes de closesAt,
+    // porque el cierre automatico puede tardar hasta el siguiente tick del scheduler.
+    if (state.isClosed || (Number.isFinite(state.closesAt) && Date.now() >= state.closesAt)) {
       return { type: 'closed' };
     }
 
@@ -227,6 +231,19 @@ async function handleJoinRole(interaction) {
 
     if (selectedRole.users.length >= selectedRole.max) {
       const promotedUsers = [];
+
+      // Re-clic en un rol lleno estando ya en su waitlist: conserva la posicion.
+      const alreadyWaiting = state.waitlist.some(entry =>
+        entry.userId === participant.userId && entry.roleName === selectedRole.name
+      );
+      if (alreadyWaiting && !currentRole) {
+        return {
+          type: 'waitlist_exists',
+          roleName: selectedRole.name,
+          queueSize: state.waitlist.length,
+          promotedUsers
+        };
+      }
 
       if (currentRole && currentRole.name !== selectedRole.name) {
         const previousRoleName = currentRole.name;
@@ -303,7 +320,7 @@ async function handleJoinRole(interaction) {
 }
 
 async function handleJoinPveSlot(interaction) {
-  const event = getWarByMessageId(interaction.message.id);
+  const event = await resolveWarByMessageId(interaction.message.id);
   if (!event) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -322,7 +339,8 @@ async function handleJoinPveSlot(interaction) {
       maxLength: 64,
       fallback: 'Usuario'
     }),
-    isFake: false
+    isFake: false,
+    userRoleIds: getMemberRoleIds(interaction.member)
   };
 
   const result = await pveService.joinSlot(event.id, optionId, participant);
@@ -331,6 +349,16 @@ async function handleJoinPveSlot(interaction) {
     const refreshed = getWarByMessageId(interaction.message.id);
     if (refreshed) {
       await refreshPublicEventMessage(interaction, refreshed);
+    }
+    // Inscribirse como titular no necesita aviso; quedar como filler si, porque no es evidente.
+    if (result.reason === 'joined_as_filler') {
+      await interaction.followUp({
+        content: safeMessageContent(
+          `Quedaste como **filler** (lista de espera) en **${sanitizeDisplayText(result.optionLabel, { maxLength: 60, fallback: 'ese horario' })}**: este evento esta restringido y no tienes acceso como titular. Si al cierre ningun horario se lleno, los fillers completan el horario mas temprano posible por orden de llegada. Vuelve a marcar el horario para salir.`,
+          'Quedaste como filler en ese horario.'
+        ),
+        flags: 64
+      });
     }
     return;
   }
@@ -352,7 +380,7 @@ async function handleJoinPveSlot(interaction) {
 }
 
 async function handleLeavePveSlot(interaction) {
-  const event = getWarByMessageId(interaction.message.id);
+  const event = await resolveWarByMessageId(interaction.message.id);
   if (!event) {
     return await interaction.followUp({ content: 'No se encontro el evento', flags: 64 });
   }
@@ -382,7 +410,18 @@ async function refreshPublicEventMessage(interaction, event) {
 
   if (result.ok) return true;
 
-  throw new Error(`Failed to refresh public event message: ${result.errorMessage || result.status}`);
+  // El cambio ya esta persistido: un fallo al refrescar el mensaje no debe tapar el resultado al usuario.
+  logWarn('No se pudo refrescar el mensaje publico del evento', {
+    action: 'public_event_button_refresh',
+    guildId: interaction.guildId,
+    userId: interaction.user?.id,
+    eventId: event.id,
+    channelId: event.channelId,
+    messageId: event.messageId,
+    reason: result.errorMessage || result.status,
+    code: result.errorCode
+  });
+  return false;
 }
 
 async function deletePublicEventMessage(interaction, event) {

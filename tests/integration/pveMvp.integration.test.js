@@ -2,6 +2,7 @@ const { setupIntegrationSuite } = require('../helpers/dbTestHarness');
 const warService = require('../../src/services/warService');
 const pveService = require('../../src/services/pveService');
 const { buildWar } = require('../factories/warFactory');
+const { prisma } = require('../../src/db/client');
 const { buildEventMessagePayload } = require('../../src/services/eventRenderService');
 const { addSeriesDay } = require('../../src/services/recurrenceSeriesService');
 
@@ -171,11 +172,11 @@ describe('PvE MVP integration', () => {
     expect(join.reason).toBe('joined');
   });
 
-  it('modo Restricted usa usuarios permitidos: permitido entra normal y no permitido va a filler del horario', async () => {
+  it('modo Por personas usa usuarios permitidos: permitido entra normal y no permitido va a filler del horario', async () => {
     const event = buildWar({
       id: 'pve_event_restricted_1',
       eventType: 'pve',
-      accessMode: 'RESTRICTED',
+      accessMode: 'USERS',
       allowedUserIds: ['allowed_user'],
       roles: [],
       waitlist: []
@@ -202,7 +203,7 @@ describe('PvE MVP integration', () => {
     expect(allowedJoin.reason).toBe('joined');
 
     const view = await pveService.getEventPveView(event);
-    expect(view.accessMode).toBe('RESTRICTED');
+    expect(view.accessMode).toBe('USERS');
     expect(view.allowedUserIds).toEqual(['allowed_user']);
     expect(view.options[0].fillers.length).toBe(1);
     expect(view.options[0].fillers[0].displayName).toBe('Denied User');
@@ -269,11 +270,79 @@ describe('PvE MVP integration', () => {
     });
 
     await warService.createWar(event);
-    await pveService.configureAccess(event.id, 'RESTRICTED', ['u1', 'u2']);
+    await pveService.configureAccess(event.id, { accessMode: 'USERS', allowedUserIds: ['u1', 'u2'] });
 
     const refreshed = warService.loadWars().find(war => war.id === event.id);
-    expect(refreshed.accessMode).toBe('RESTRICTED');
+    expect(refreshed.accessMode).toBe('USERS');
     expect(refreshed.allowedUserIds).toEqual(['u1', 'u2']);
+
+    await pveService.configureAccess(event.id, { accessMode: 'ROLES', allowedRoleIds: ['role_a'] });
+    const row = await prisma.event.findUnique({ where: { id: event.id }, include: { accessRoles: true, accessUsers: true } });
+    expect(row.accessMode).toBe('ROLES');
+    expect(row.accessRoles.map(entry => entry.roleId)).toEqual(['role_a']);
+    // Cambiar de modo no borra la otra lista: se conserva por si se vuelve a ese modo.
+    expect(row.accessUsers.map(entry => entry.userId).sort()).toEqual(['u1', 'u2']);
+  });
+
+  it('modo Por roles: con alguno de los roles entra como titular y sin el rol va a filler del horario', async () => {
+    const event = buildWar({
+      id: 'pve_event_roles_1',
+      eventType: 'pve',
+      accessMode: 'ROLES',
+      allowedRoleIds: ['role_guild'],
+      roles: [],
+      waitlist: []
+    });
+
+    await warService.createWar(event);
+    await pveService.saveEventSlots(event.id, [{ position: 0, label: '20:00', time: '20:00', capacity: 3 }]);
+    const option = (await pveService.getEventSlots(event.id))[0];
+
+    const member = await pveService.joinSlot(event.id, option.id, { userId: 'member', displayName: 'Member', userRoleIds: ['role_x', 'role_guild'] });
+    const guest = await pveService.joinSlot(event.id, option.id, { userId: 'guest', displayName: 'Guest', userRoleIds: ['role_x'] });
+
+    expect(member.reason).toBe('joined');
+    expect(guest.reason).toBe('joined_as_filler');
+    const view = await pveService.getEventPveView(event);
+    expect(view.accessMode).toBe('ROLES');
+    expect(view.allowedRoleIds).toEqual(['role_guild']);
+    expect(view.options[0].enrollments.map(entry => entry.userId)).toEqual(['member']);
+    expect(view.options[0].fillers.map(entry => entry.userId)).toEqual(['guest']);
+  });
+
+  it('al dar acceso, los fillers que ahora califican pasan a titulares por orden de llegada si hay cupo; nadie baja a filler', async () => {
+    const event = buildWar({
+      id: 'pve_event_reclassify_1',
+      eventType: 'pve',
+      accessMode: 'USERS',
+      allowedUserIds: ['titular'],
+      roles: [],
+      waitlist: []
+    });
+
+    await warService.createWar(event);
+    await pveService.saveEventSlots(event.id, [{ position: 0, label: '20:00', time: '20:00', capacity: 3 }]);
+    const option = (await pveService.getEventSlots(event.id))[0];
+    for (const userId of ['titular', 'f1', 'f2', 'f3', 'f4']) {
+      await pveService.joinSlot(event.id, option.id, { userId, displayName: userId });
+    }
+
+    // titular sale de la lista y sigue de titular. f1, f2 y f4 ganan acceso, pero solo caben dos.
+    const result = await pveService.configureAccess(event.id, { accessMode: 'USERS', allowedUserIds: ['f4', 'f2', 'f1'] });
+
+    expect(result.promoted.map(entry => entry.userId)).toEqual(['f1', 'f2']);
+    let view = await pveService.getEventPveView(result.event);
+    expect(view.options[0].enrollments.map(entry => entry.userId)).toEqual(['titular', 'f1', 'f2']);
+    expect(view.options[0].fillers.map(entry => entry.userId)).toEqual(['f3', 'f4']);
+
+    // Por roles se consultan los roles de los fillers por orden de llegada, solo mientras quede cupo.
+    const resolveMemberRoleIds = vi.fn(async userId => (userId === 'f3' ? ['role_ok'] : []));
+    await pveService.removeEnrollment(event.id, option.id, 'f1');
+    const byRoles = await pveService.configureAccess(event.id, { accessMode: 'ROLES', allowedRoleIds: ['role_ok'] }, { resolveMemberRoleIds });
+    expect(byRoles.promoted.map(entry => entry.userId)).toEqual(['f3']);
+    expect(resolveMemberRoleIds.mock.calls.map(call => call[0])).toEqual(['f3']);
+    view = await pveService.getEventPveView(byRoles.event);
+    expect(view.options[0].fillers.map(entry => entry.userId)).toEqual(['f4']);
   });
 
   it('permite editar horarios PvE (agregar, editar, reordenar, eliminar)', async () => {

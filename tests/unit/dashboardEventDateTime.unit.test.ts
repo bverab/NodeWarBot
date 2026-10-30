@@ -4,6 +4,7 @@ import {
   calculateEventLifecycleDates,
   calculateScheduledPublishAt,
   formatDateTimeInTimezone,
+  getTimezoneInputError,
   isValidTimeZone,
   normalizeTimezone
 } from "../../apps/dashboard/lib/eventDateTime";
@@ -17,6 +18,20 @@ describe("dashboard event date/time timezone helpers", () => {
     expect(normalizeTimezone("America/Chile")).toBe("America/Santiago");
     expect(isValidTimeZone("America/Santiago")).toBe(true);
     expect(isValidTimeZone("America/Chile")).toBe(false);
+  });
+
+  it("reports a visible error for timezones that are empty or not valid, instead of silently replacing them", () => {
+    expect(getTimezoneInputError("America/Bogota")).toBeNull();
+    expect(getTimezoneInputError("  America/Bogota  ")).toBeNull();
+    expect(getTimezoneInputError("America/Santiago")).toBeNull();
+    expect(getTimezoneInputError("America/Chile")).toBeNull();
+    expect(getTimezoneInputError("UTC")).toBeNull();
+
+    expect(getTimezoneInputError("")).toBe("Timezone is required.");
+    expect(getTimezoneInputError("   ")).toBe("Timezone is required.");
+    expect(getTimezoneInputError(null)).toBe("Timezone is required.");
+    expect(getTimezoneInputError("Mars/Olympus")).toBe("Timezone must be a valid IANA timezone, for example America/Santiago.");
+    expect(getTimezoneInputError("Bogota")).toBe("Timezone must be a valid IANA timezone, for example America/Santiago.");
   });
 
   it("keeps America/Santiago date and time stable", () => {

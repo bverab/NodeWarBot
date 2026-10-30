@@ -224,3 +224,14 @@
     transform: translateY(0);
   }
 }
+
+.roleOptionsList button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.roleOptionsList button small {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}

@@ -149,6 +149,11 @@
   line-height: 1.55;
 }
 
+.fieldError {
+  color: #fca5a5;
+  line-height: 1.4;
+}
+
 .createFieldsWide,
 .basicsGrid,
 .scheduleGrid,

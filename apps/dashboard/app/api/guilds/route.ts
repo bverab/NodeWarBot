@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerAuthSession } from "@/lib/auth";
-import { requireSession } from "@/lib/apiGuards";
-import { getDashboardGuildsDetailed } from "@/lib/dashboardGuilds";
+import { getSessionUserId, requireSession } from "@/lib/apiGuards";
+import { getDashboardGuildsForSession } from "@/lib/server/dashboardGuildsForSession";
 import { createVerifiedGuildsCookie, readVerifiedGuildsCookie } from "@/lib/server/dashboardGuildVerificationCookie";
 
 export async function GET() {
@@ -14,7 +14,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const cachedGuilds = await readVerifiedGuildsCookie();
+  const userId = getSessionUserId(session);
+  const cachedGuilds = await readVerifiedGuildsCookie(userId);
   if (cachedGuilds.length) {
     return NextResponse.json(
       {
@@ -27,7 +28,7 @@ export async function GET() {
     );
   }
 
-  const result = await getDashboardGuildsDetailed(session);
+  const result = await getDashboardGuildsForSession(session);
   if (result.error && !result.guilds.length) {
     if (result.error.code === "missing_access_token") {
       return NextResponse.json({ error: result.error.message, code: result.error.code }, { status: 401 });
@@ -64,8 +65,10 @@ export async function GET() {
     { status: 200 }
   );
   if (result.guilds.length && !result.stale) {
-    const cookie = createVerifiedGuildsCookie(result.guilds);
-    response.cookies.set(cookie.name, cookie.value, cookie.options);
+    const cookie = createVerifiedGuildsCookie(result.guilds, userId);
+    if (cookie) {
+      response.cookies.set(cookie.name, cookie.value, cookie.options);
+    }
   }
 
   return response;

@@ -355,4 +355,38 @@ describe('scheduler weekly recurrence integration', () => {
     expect(persisted.publishError).toBeTruthy();
     expect(persisted.lastPublishAttemptAt).toBe(dueAt.getTime());
   });
+
+  it('un PvE web programado por roles menciona los roles permitidos y uno por personas a las personas', async () => {
+    vi.useFakeTimers();
+    const dueAt = new Date('2026-05-05T22:00:00.000Z');
+    vi.setSystemTime(dueAt);
+
+    const base = {
+      eventType: 'pve',
+      roles: [],
+      waitlist: [],
+      messageId: null,
+      isClosed: false,
+      autoPublishEnabled: true,
+      scheduledPublishAt: dueAt.getTime() - 60_000,
+      notifyRoles: ['role_notify_unused'],
+      schedule: { enabled: false, mode: 'once', lastCreatedAt: null, lastMessageIdDeleted: null }
+    };
+    await warService.createWar(buildWar({ ...base, id: 'web_scheduled_pve_roles', accessMode: 'ROLES', allowedRoleIds: ['role_pve'] }));
+    await warService.createWar(buildWar({ ...base, id: 'web_scheduled_pve_users', accessMode: 'USERS', allowedUserIds: ['user_pve'] }));
+
+    const mocks = createSchedulerMocks();
+    const sent = [];
+    const originalSend = mocks.channel.send;
+    mocks.channel.send = async payload => {
+      sent.push(payload);
+      return originalSend(payload);
+    };
+    initScheduler(mocks.client);
+    await checkAndExecuteEvents();
+
+    expect(sent.map(payload => payload.content).sort()).toEqual(['<@&role_pve>', '<@user_pve>']);
+    expect(sent.find(payload => payload.content === '<@&role_pve>').allowedMentions).toEqual({ parse: [], roles: ['role_pve'] });
+    expect(sent.find(payload => payload.content === '<@user_pve>').allowedMentions).toEqual({ parse: [], users: ['user_pve'] });
+  });
 });

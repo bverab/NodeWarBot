@@ -1,8 +1,9 @@
 import "server-only";
+import { isDiscordSnowflake } from "../discordSnowflake";
 
 const DISCORD_API_BASE_URL = "https://discord.com/api/v10";
 
-const PERMISSIONS = {
+export const PERMISSIONS = {
   Administrator: 0x8n,
   ViewChannel: 0x400n,
   SendMessages: 0x800n,
@@ -10,7 +11,7 @@ const PERMISSIONS = {
   ReadMessageHistory: 0x10000n
 };
 
-type DiscordChannelPayload = {
+export type DiscordChannelPayload = {
   id: string;
   guild_id?: string;
   type: number;
@@ -22,12 +23,12 @@ type DiscordChannelPayload = {
   }>;
 };
 
-type DiscordRolePayload = {
+export type DiscordRolePayload = {
   id: string;
   permissions: string;
 };
 
-type DiscordMemberPayload = {
+export type DiscordMemberPayload = {
   user?: { id: string };
   roles: string[];
 };
@@ -43,14 +44,34 @@ type DiscordRestError = Error & {
 };
 
 export type DiscordPermissionCheckResult =
-  | { ok: true; channel: DiscordChannelPayload }
+  | { ok: true; channel: DiscordChannelPayload; botUserId: string }
   | { ok: false; status: number; error: string; errorCode?: string };
+
+export type DiscordMessageCheckResult =
+  | { ok: true }
+  | { ok: false; status: number; error: string; errorCode?: string };
+
+function createInvalidIdError(label: string) {
+  const message = `Invalid Discord ${label} ID.`;
+  const error = new Error(message) as DiscordRestError;
+  error.status = 400;
+  error.code = 400;
+  error.rawError = { code: 400, message };
+  return error;
+}
+
+// Every id interpolated into a REST path must be a snowflake: anything else (e.g. "../users/@me") could redirect the bot's request.
+function assertSnowflake(value: unknown, label: string): asserts value is string {
+  if (!isDiscordSnowflake(value)) {
+    throw createInvalidIdError(label);
+  }
+}
 
 function getBotToken() {
   return (process.env.DISCORD_BOT_TOKEN || process.env.TOKEN)?.replace(/^Bot\s+/i, "");
 }
 
-async function discordFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function discordFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getBotToken();
   if (!token) {
     throw Object.assign(new Error("Missing Discord bot token."), { code: "MISSING_BOT_TOKEN" });
@@ -90,7 +111,7 @@ function toPermissionBits(value: string | number | bigint | null | undefined) {
   }
 }
 
-function hasAllPermissions(permissions: bigint, required: bigint[]) {
+export function hasAllPermissions(permissions: bigint, required: bigint[]) {
   if ((permissions & PERMISSIONS.Administrator) === PERMISSIONS.Administrator) {
     return true;
   }
@@ -101,7 +122,7 @@ function applyOverwrite(base: bigint, allow: bigint, deny: bigint) {
   return (base & ~deny) | allow;
 }
 
-function computeChannelPermissions(
+export function computeChannelPermissions(
   guildId: string,
   roles: DiscordRolePayload[],
   member: DiscordMemberPayload,
@@ -147,6 +168,9 @@ function serializeDiscordPayload(payload: unknown) {
 
 export async function validateBotCanPublishToChannel(guildId: string, channelId: string): Promise<DiscordPermissionCheckResult> {
   try {
+    assertSnowflake(guildId, "guild");
+    assertSnowflake(channelId, "channel");
+
     const [channel, roles, botUser] = await Promise.all([
       discordFetch<DiscordChannelPayload>(`/channels/${channelId}`),
       discordFetch<DiscordRolePayload[]>(`/guilds/${guildId}/roles`),
@@ -178,7 +202,7 @@ export async function validateBotCanPublishToChannel(guildId: string, channelId:
       };
     }
 
-    return { ok: true, channel };
+    return { ok: true, channel, botUserId: botUser.id };
   } catch (error) {
     const restError = error as DiscordRestError;
     const status = restError.status === 404 || restError.code === 10003 ? 404 : restError.status || 502;
@@ -191,23 +215,62 @@ export async function validateBotCanPublishToChannel(guildId: string, channelId:
   }
 }
 
-export function createDiscordRestGuildAdapter(guildId: string) {
+// Used when a draft is linked to an existing Discord message: it must exist in that channel and have been sent by the bot itself.
+export async function validateBotAuthoredMessage(guildId: string, channelId: string, messageId: string): Promise<DiscordMessageCheckResult> {
+  if (!isDiscordSnowflake(messageId)) {
+    return { ok: false, status: 400, error: "Invalid Discord message ID." };
+  }
+
+  const channelCheck = await validateBotCanPublishToChannel(guildId, channelId);
+  if (!channelCheck.ok) {
+    return channelCheck;
+  }
+
+  try {
+    const message = await discordFetch<{ id: string; author?: { id?: string } }>(`/channels/${channelId}/messages/${messageId}`);
+    if (message.author?.id !== channelCheck.botUserId) {
+      return { ok: false, status: 400, error: "That Discord message was not sent by Spectre." };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    const restError = error as DiscordRestError;
+    const notFound = restError.status === 404 || restError.code === 10008;
+    return {
+      ok: false,
+      status: notFound ? 404 : restError.status || 502,
+      error: notFound ? "Discord message was not found in that channel." : restError.rawError?.message || restError.message || "Discord REST request failed.",
+      errorCode: restError.code ? String(restError.code) : undefined
+    };
+  }
+}
+
+// `validatedChannel`: a channel the caller already checked with validateBotCanPublishToChannel, so fetching it
+// does not repeat the four Discord calls of the permission check.
+export function createDiscordRestGuildAdapter(guildId: string, options: { validatedChannel?: Pick<DiscordChannelPayload, "id"> } = {}) {
   return {
     channels: {
       async fetch(channelId: string) {
-        const validation = await validateBotCanPublishToChannel(guildId, channelId);
-        if (!validation.ok) {
-          const error = new Error(validation.error) as DiscordRestError;
-          error.code = validation.errorCode ? Number(validation.errorCode) : validation.status;
-          error.status = validation.status;
-          error.rawError = { code: error.code, message: validation.error };
-          throw error;
+        let resolvedChannelId: string;
+        if (options.validatedChannel && options.validatedChannel.id === channelId) {
+          resolvedChannelId = options.validatedChannel.id;
+        } else {
+          const validation = await validateBotCanPublishToChannel(guildId, channelId);
+          if (!validation.ok) {
+            const error = new Error(validation.error) as DiscordRestError;
+            error.code = validation.errorCode ? Number(validation.errorCode) : validation.status;
+            error.status = validation.status;
+            error.rawError = { code: error.code, message: validation.error };
+            throw error;
+          }
+          resolvedChannelId = validation.channel.id;
         }
 
         return {
-          id: validation.channel.id,
+          id: resolvedChannelId,
           messages: {
             fetch: async (messageId: string) => {
+              assertSnowflake(messageId, "message");
               const message = await discordFetch<{ id: string }>(`/channels/${channelId}/messages/${messageId}`);
               return {
                 id: message.id,
@@ -238,6 +301,8 @@ export function createDiscordRestGuildAdapter(guildId: string) {
 }
 
 export async function deleteDiscordMessageByRest(channelId: string, messageId: string) {
+  assertSnowflake(channelId, "channel");
+  assertSnowflake(messageId, "message");
   await discordFetch<Record<string, never>>(`/channels/${channelId}/messages/${messageId}`, {
     method: "DELETE"
   });

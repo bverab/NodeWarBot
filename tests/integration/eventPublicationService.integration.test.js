@@ -15,7 +15,20 @@ function createInteractionMock(channel) {
   };
 }
 
+// buildWar usa time '20:00' y closesAt = ahora + 60 min (America/Santiago): el ciclo solo es
+// valido si "ahora" cae entre ~19:00 y ~01:00 locales. Se fija el reloj en las 21:00.
+const FIXED_NOW = new Date('2026-05-06T01:00:00.000Z');
+
 describe('eventPublicationService integration', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('publica evento sin messageId, persiste nuevo messageId y conserva roster por defecto', async () => {
     const sentMessages = [];
     const channel = {
@@ -104,5 +117,36 @@ describe('eventPublicationService integration', () => {
     expect(sentMessages[0].content).toContain('<@user_allowed_1>');
     expect(sentMessages[0].content).toContain('<@user_allowed_2>');
     expect(sentMessages[0].content).not.toContain('role_notify_should_not_be_used');
+  });
+
+  it('en pve por roles menciona a los roles permitidos al publicar', async () => {
+    const sentMessages = [];
+    const channel = {
+      send: async payload => {
+        sentMessages.push(payload);
+        return { id: 'msg_pve_roles' };
+      },
+      messages: {
+        fetch: async () => null
+      }
+    };
+    const interaction = createInteractionMock(channel);
+    const event = buildWar({
+      id: 'publish_pve_roles_1',
+      eventType: 'pve',
+      messageId: null,
+      roles: [],
+      waitlist: [],
+      accessMode: 'ROLES',
+      allowedRoleIds: ['role_guild_1', 'role_guild_2'],
+      notifyRoles: ['role_notify_should_not_be_used']
+    });
+    await warService.createWar(event);
+
+    const result = await publishOrRefreshWar(interaction, event);
+
+    expect(result.ok).toBe(true);
+    expect(sentMessages[0].content).toBe('<@&role_guild_1> <@&role_guild_2>');
+    expect(sentMessages[0].allowedMentions).toEqual({ parse: [], roles: ['role_guild_1', 'role_guild_2'] });
   });
 });

@@ -120,6 +120,17 @@ function promoteFromWaitlist(state, roleName) {
   return { ...promoted, roleName: role.name };
 }
 
+// Llena los cupos libres de un rol con su waitlist (p. ej. tras subir los slots).
+function promoteAllFromWaitlist(state, roleName) {
+  const promotedUsers = [];
+  let promoted = promoteFromWaitlist(state, roleName);
+  while (promoted) {
+    promotedUsers.push(promoted);
+    promoted = promoteFromWaitlist(state, roleName);
+  }
+  return promotedUsers;
+}
+
 function isAdminExecutor(interaction) {
   const hasAdminPermission = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
   const adminRoleNames = new Set(['admin', 'administrador']);
@@ -134,5 +145,6 @@ module.exports = {
   resolveTargetWar,
   refreshWarMessage,
   promoteFromWaitlist,
+  promoteAllFromWaitlist,
   isAdminExecutor
 };

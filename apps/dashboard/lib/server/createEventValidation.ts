@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { buildEventDateTime, calculateScheduledPublishAt, normalizeTimezoneInfo } from "@/lib/eventDateTime";
+import { MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE } from "../slotLimits";
+import { MAX_PVE_ACCESS_ENTRIES, PVE_ACCESS_MODES } from "../pveAccessModes";
 
 const timeSchema = z.string().regex(/^\d{1,2}:\d{2}$/).refine((value) => {
   const [hours, minutes] = value.split(":").map(Number);
@@ -25,7 +27,10 @@ export const createEventSchema = z.object({
   channelId: z.string().trim().regex(/^\d{5,32}$/).nullable().optional(),
   autoPublishEnabled: z.boolean().optional().default(false),
   publishBeforeMinutes: z.coerce.number().int().min(0).max(10080).optional().default(60),
-  accessRoleIds: z.array(z.string().trim().regex(/^\d{5,32}$/)).max(25).optional(),
+  // PvE only: who joins as a main signup (everyone else is a filler). See lib/pveAccessModes.ts.
+  accessMode: z.enum(PVE_ACCESS_MODES).optional(),
+  accessRoleIds: z.array(z.string().trim().regex(/^\d{5,32}$/)).max(MAX_PVE_ACCESS_ENTRIES).optional(),
+  accessUserIds: z.array(z.string().trim().regex(/^\d{5,32}$/)).max(MAX_PVE_ACCESS_ENTRIES).optional(),
   notifyRoleIds: z.array(z.string().trim().regex(/^\d{5,32}$/)).max(25).optional(),
   recurrence: z.enum(["single", "weekly"]).optional(),
   recap: z.object({
@@ -48,7 +53,7 @@ export const createEventSchema = z.object({
   slots: z
     .array(
       z.object({
-        name: z.string().trim().min(1).max(80),
+        name: z.string().trim().min(1).max(MAX_SLOT_NAME_LENGTH, SLOT_NAME_TOO_LONG_MESSAGE),
         max: z.coerce.number().int().min(1).max(100),
         position: z.coerce.number().int().min(0).max(999).optional(),
         emoji: z.string().trim().max(128).nullable().optional(),
@@ -79,6 +84,21 @@ export const createEventSchema = z.object({
 
   if (value.eventType !== "pve" && !value.templateId && !value.slots?.length) {
     context.addIssue({ code: "custom", path: ["slots"], message: "Select a template or add at least one manual slot." });
+  }
+
+  if (value.accessMode && value.accessMode !== "OPEN") {
+    if (value.eventType !== "pve") {
+      context.addIssue({ code: "custom", path: ["accessMode"], message: "Access by roles or people applies to PvE events only." });
+    } else if (value.accessMode === "ROLES" && !value.accessRoleIds?.length) {
+      context.addIssue({ code: "custom", path: ["accessRoleIds"], message: "Select at least one role with access." });
+    } else if (value.accessMode === "USERS") {
+      if (!value.accessUserIds?.length) {
+        context.addIssue({ code: "custom", path: ["accessUserIds"], message: "Select at least one person with access." });
+      }
+      if (!value.channelId) {
+        context.addIssue({ code: "custom", path: ["channelId"], message: "Select the target channel: only people who can see it can be chosen." });
+      }
+    }
   }
 
   if (value.closeBeforeMinutes > value.duration) {

@@ -2,6 +2,7 @@ const EMPTY_SLOT = '-';
 const { normalizeEventType } = require('../constants/eventTypes');
 const { normalizeClassIconSource, normalizeParticipantDisplayStyle } = require('./participantDisplayFormatter');
 const { sanitizeDisplayText, sanitizeUserInput } = require('./textSafety');
+const { normalizeAccessMode } = require('../services/pveAccessRules');
 
 // Utilidades de estado del evento:
 // - Normalizacion de datos persistidos
@@ -13,7 +14,8 @@ function toParticipant(entry) {
     return {
       userId: String(entry.userId),
       displayName: sanitizeDisplayText(entry.displayName || entry.userName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
-      isFake: Boolean(entry.isFake) || String(entry.userId).startsWith('fake_')
+      isFake: Boolean(entry.isFake) || String(entry.userId).startsWith('fake_'),
+      joinedAt: toJoinedAt(entry.joinedAt)
     };
   }
 
@@ -26,7 +28,8 @@ function toParticipant(entry) {
     return {
       userId: userId.trim(),
       displayName: sanitizeDisplayText(displayName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
-      isFake: userId.trim().startsWith('fake_')
+      isFake: userId.trim().startsWith('fake_'),
+      joinedAt: toJoinedAt()
     };
   }
 
@@ -38,15 +41,22 @@ function toParticipant(entry) {
     return {
       userId,
       displayName: sanitizeDisplayText(displayName || 'Usuario', { maxLength: 64, fallback: 'Usuario' }),
-      isFake: true
+      isFake: true,
+      joinedAt: toJoinedAt()
     };
   }
 
   return {
     userId: entry,
     displayName: 'Usuario',
-    isFake: String(entry).startsWith('fake_')
+    isFake: String(entry).startsWith('fake_'),
+    joinedAt: toJoinedAt()
   };
+}
+
+// La hora de inscripcion se conserva entre reescrituras: define el orden de la lista.
+function toJoinedAt(value) {
+  return Number.isFinite(value) ? value : Date.now();
 }
 
 function normalizeRole(role = {}) {
@@ -92,31 +102,38 @@ function normalizeFillerEntry(entry = {}) {
 
 function normalizeWar(war = {}) {
   // Estandariza estructura del evento para evitar estados incompletos al leer JSON.
-  const createdAt = Number.isFinite(war.publishAt)
-    ? war.publishAt
-    : Number.isFinite(war.createdAt)
-      ? war.createdAt
+  // publishAt/signupCloseAt/eventEndAt solo se aceptan como respaldo de JSON antiguo.
+  const createdAt = Number.isFinite(war.createdAt)
+    ? war.createdAt
+    : Number.isFinite(war.publishAt)
+      ? war.publishAt
       : deriveCreatedAt(war.id);
-  const expiresAt = Number.isFinite(war.eventEndAt)
-    ? war.eventEndAt
-    : Number.isFinite(war.expiresAt)
-      ? war.expiresAt
+  const expiresAt = Number.isFinite(war.expiresAt)
+    ? war.expiresAt
+    : Number.isFinite(war.eventEndAt)
+      ? war.eventEndAt
       : createdAt + (Number.isFinite(war.duration) && war.duration > 0 ? war.duration : 70) * 60 * 1000;
-  const closesAtRaw = Number.isFinite(war.signupCloseAt)
-    ? war.signupCloseAt
-    : Number.isFinite(war.closesAt)
-      ? war.closesAt
+  const closesAtRaw = Number.isFinite(war.closesAt)
+    ? war.closesAt
+    : Number.isFinite(war.signupCloseAt)
+      ? war.signupCloseAt
       : expiresAt - (Number.isFinite(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0 ? Math.floor(war.closeBeforeMinutes) : 0) * 60 * 1000;
   const closesAt = Math.max(createdAt, Math.min(closesAtRaw, expiresAt));
-  const duration = Math.max(1, Math.round((expiresAt - createdAt) / 60_000));
-  const closeBeforeMinutes = Math.max(0, Math.round((expiresAt - closesAt) / 60_000));
+  // duration/closeBeforeMinutes validos de entrada se respetan: en eventos del dashboard createdAt
+  // es la hora de creacion y no la de inicio, asi que no se pueden derivar de el.
+  const duration = Number.isInteger(war.duration) && war.duration > 0
+    ? war.duration
+    : Math.max(1, Math.round((expiresAt - createdAt) / 60_000));
+  const closeBeforeMinutes = Number.isInteger(war.closeBeforeMinutes) && war.closeBeforeMinutes >= 0 && war.closeBeforeMinutes <= duration
+    ? war.closeBeforeMinutes
+    : Math.max(0, Math.round((expiresAt - closesAt) / 60_000));
 
   return {
     // Identificación básica
     id: String(war.id || Date.now()),
     groupId: war.groupId || null,                    // NUEVO: grupo de eventos relacionados
     eventType: normalizeEventType(war.eventType || 'war'),
-    name: sanitizeDisplayText(war.name || 'Node War', { maxLength: 90, fallback: 'Node War' }),
+    name: sanitizeDisplayText(war.name || 'Node War', { maxLength: 120, fallback: 'Node War' }),
     type: sanitizeDisplayText(war.type || 'Sin descripcion', { maxLength: 120, fallback: 'Sin descripcion' }),
     classIconSource: normalizeClassIconSource(war.classIconSource),
     participantDisplayStyle: normalizeParticipantDisplayStyle(war.participantDisplayStyle),
@@ -132,21 +149,17 @@ function normalizeWar(war = {}) {
     messageId: war.messageId || null,
     
     // Scheduling (NUEVO)
-    dayOfWeek: war.dayOfWeek !== undefined ? Number(war.dayOfWeek) : null,  // 0-6
+    dayOfWeek: normalizeDayOfWeek(war.dayOfWeek),  // 0-6
     time: war.time || null,                         // "HH:mm"
     timezone: war.timezone || 'America/Bogota',
     duration,                                       // minutos
     closeBeforeMinutes,
     autoPublishEnabled: Boolean(war.autoPublishEnabled),
-    scheduledPublishAt: Number.isFinite(war.publishAt)
-      ? war.publishAt
-      : Number.isFinite(war.scheduledPublishAt)
-        ? war.scheduledPublishAt
-        : null,
+    scheduledPublishAt: Number.isFinite(war.scheduledPublishAt) ? war.scheduledPublishAt : null,
     publishError: war.publishError || null,
     lastPublishAttemptAt: Number.isFinite(war.lastPublishAttemptAt) ? war.lastPublishAttemptAt : null,
     notifyRoles: Array.isArray(war.notifyRoles) ? war.notifyRoles : [],  // Array de role IDs o user IDs
-    accessMode: String(war.accessMode || 'OPEN').toUpperCase() === 'RESTRICTED' ? 'RESTRICTED' : 'OPEN',
+    accessMode: normalizeAccessMode(war.accessMode),
     allowedUserIds: Array.isArray(war.allowedUserIds) ? war.allowedUserIds.map(String).filter(Boolean) : [],
     allowedRoleIds: Array.isArray(war.allowedRoleIds) ? war.allowedRoleIds.map(String).filter(Boolean) : [],
     fillers: Array.isArray(war.fillers) ? war.fillers.map(normalizeFillerEntry).filter(Boolean) : [],
@@ -159,11 +172,15 @@ function normalizeWar(war = {}) {
     createdAt,
     expiresAt,
     closesAt,
-    publishAt: createdAt,
-    signupCloseAt: closesAt,
-    eventEndAt: expiresAt,
-    isClosed: Boolean(war.isClosed)
+    isClosed: Boolean(war.isClosed),
+    // Version de la fila en SQLite (Event.updatedAt): la cache la usa para detectar escrituras externas.
+    updatedAt: Number.isFinite(war.updatedAt) ? war.updatedAt : null
   };
+}
+
+function normalizeDayOfWeek(value) {
+  const day = typeof value === 'string' && /^[0-6]$/.test(value.trim()) ? Number(value.trim()) : value;
+  return Number.isInteger(day) && day >= 0 && day <= 6 ? day : null;
 }
 
 /**
@@ -180,7 +197,7 @@ function normalizeSchedule(schedule = {}) {
 
 function normalizeRecap(recap = {}) {
   const messageText = sanitizeUserInput(recap.messageText, {
-    maxLength: 250,
+    maxLength: 1000,
     allowEmpty: true
   }).value;
   return {

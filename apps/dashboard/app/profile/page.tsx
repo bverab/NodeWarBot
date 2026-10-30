@@ -3,7 +3,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card } from "@/components/ui/Card";
 import { routes } from "@/constants/routes";
 import { getServerAuthSession } from "@/lib/auth";
-import { getDashboardGuilds } from "@/lib/dashboardGuilds";
+import { getDashboardGuildSummariesForSession } from "@/lib/server/dashboardGuildsForSession";
 import styles from "./profile.module.css";
 
 export default async function ProfilePage() {
@@ -13,7 +13,7 @@ export default async function ProfilePage() {
     redirect(routes.login);
   }
 
-  const availableGuilds = await getDashboardGuilds(session);
+  const availableGuilds = await getDashboardGuildSummariesForSession(session);
   const displayName = session.user?.name ?? session.user?.email ?? "Discord user";
   const initial = displayName.slice(0, 1).toUpperCase();
 

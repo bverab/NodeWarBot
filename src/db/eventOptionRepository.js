@@ -46,7 +46,8 @@ async function listEventOptionsWithEnrollments(eventId) {
     where: { eventId: String(eventId) },
     include: {
       enrollments: {
-        orderBy: { joinedAt: 'asc' }
+        // Mismo milisegundo: el id (cuid) conserva el orden de creacion. Los fillers avanzan en este orden.
+        orderBy: [{ joinedAt: 'asc' }, { id: 'asc' }]
       }
     },
     orderBy: [
@@ -102,6 +103,10 @@ async function joinEventOption({ eventId, optionId, userId, displayName, isFake 
     const event = await tx.event.findUnique({ where: { id: eventIdValue } });
     if (!event) return { ok: false, reason: 'event_missing' };
     if (event.isClosed) return { ok: false, reason: 'closed' };
+    // Entre closesAt y el tick del scheduler el evento aun no esta marcado como cerrado.
+    if (event.closesAt instanceof Date && event.closesAt.getTime() <= Date.now()) {
+      return { ok: false, reason: 'closed' };
+    }
 
     const option = await tx.eventOption.findUnique({ where: { id: optionIdValue } });
     if (!option || option.eventId !== eventIdValue) {
@@ -442,6 +447,34 @@ async function promoteFillerToPrimary(eventId, optionId, userId) {
   });
 }
 
+// Pasa fillers a titulares en el orden dado mientras haya cupo; devuelve los userId promovidos.
+async function promoteFillersToPrimary(eventId, optionId, userIds = []) {
+  const eventIdValue = String(eventId);
+  const optionIdValue = String(optionId);
+
+  return await prisma.$transaction(async tx => {
+    const option = await tx.eventOption.findUnique({ where: { id: optionIdValue } });
+    if (!option || option.eventId !== eventIdValue) return { ok: false, reason: 'option_missing', promoted: [] };
+
+    let signedCount = await tx.eventEnrollment.count({
+      where: { optionId: optionIdValue, enrollmentType: 'PRIMARY' }
+    });
+    const promoted = [];
+    for (const userId of Array.from(new Set(userIds.map(String)))) {
+      if (signedCount >= option.capacity) break;
+      const changed = await tx.eventEnrollment.updateMany({
+        where: { optionId: optionIdValue, userId, enrollmentType: 'FILLER' },
+        data: { enrollmentType: 'PRIMARY' }
+      });
+      if (changed.count > 0) {
+        signedCount += 1;
+        promoted.push(userId);
+      }
+    }
+    return { ok: true, reason: 'promoted', promoted };
+  });
+}
+
 async function moveEventEnrollment(eventId, fromOptionId, toOptionId, userId) {
   const eventIdValue = String(eventId);
   const fromOptionIdValue = String(fromOptionId);
@@ -520,5 +553,6 @@ module.exports = {
   moveEventOption,
   removeEventEnrollment,
   promoteFillerToPrimary,
+  promoteFillersToPrimary,
   moveEventEnrollment
 };

@@ -5,12 +5,21 @@ import { useRouter } from "next/navigation";
 import { Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { SortableSlotGrid } from "@/components/dashboard/slots/SortableSlotGrid";
 import { Button } from "@/components/ui/Button";
+import { MAX_SLOT_NAME_LENGTH } from "@/lib/slotLimits";
 import { Card } from "@/components/ui/Card";
 import { sortSlotsByOrder } from "@/lib/slotOrdering";
+import {
+  clearPermissionDraft,
+  createPermissionDraftState,
+  getPermissionDraft,
+  getPermissionPayload,
+  openPermissionDraft,
+  updatePermissionDraft
+} from "@/lib/slotPermissionDrafts";
 import { EmojiPicker } from "@/app/guilds/[guildId]/_components/emoji/EmojiPicker";
 import { ParticipantChip, type ParticipantChipData } from "@/app/guilds/[guildId]/_components/shared/ParticipantChip";
 import { SlotEmoji } from "@/app/guilds/[guildId]/_components/shared/SlotEmoji";
-import { RoleMultiSelect, type RoleOption } from "@/app/guilds/[guildId]/events/new/NewEventForm";
+import { RoleMultiSelect, type RoleOption } from "@/components/dashboard/selectors/GuildSelectors";
 import styles from "@/app/guilds/[guildId]/_styles/overview.module.css";
 
 type EventSlot = {
@@ -87,8 +96,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [permissionDrafts, setPermissionDrafts] = useState<Record<string, string[]>>({});
-  const [permissionTouched, setPermissionTouched] = useState<Record<string, boolean>>({});
+  const [permissionState, setPermissionState] = useState(createPermissionDraftState);
   const [recurrenceConfirmOpen, setRecurrenceConfirmOpen] = useState(false);
   const [pendingSlotSave, setPendingSlotSave] = useState<{ slotId: string; payload: Record<string, unknown> } | null>(null);
   const [deleteSlotId, setDeleteSlotId] = useState<string | null>(null);
@@ -107,19 +115,23 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
     setLocalSlots(sortSlotsByOrder(slots));
   }, [slots]);
 
+  // Opening a slot starts a fresh roles draft from the slot as it is now; closing the editor (cancel, save, or opening
+  // another slot) discards it, so stale roles are never resent by a later edit.
   const setEditingSlot = (slot: EventSlot | null) => {
+    setPermissionState((current) => {
+      const previous = editingSlotId && editingSlotId !== slot?.id ? clearPermissionDraft(current, editingSlotId) : current;
+      return slot ? openPermissionDraft(previous, slot) : previous;
+    });
     setEditingSlotId(slot?.id ?? null);
-    if (slot) {
-      setPermissionDrafts((current) => ({
-        ...current,
-        [slot.id]: current[slot.id] ?? slot.allowedRoleIds
-      }));
-    }
+  };
+
+  const closeSlotEditor = (slotId: string) => {
+    setPermissionState((current) => clearPermissionDraft(current, slotId));
+    setEditingSlotId(null);
   };
 
   const updateSlotPermissions = (slotId: string, roleIds: string[]) => {
-    setPermissionDrafts((current) => ({ ...current, [slotId]: roleIds }));
-    setPermissionTouched((current) => ({ ...current, [slotId]: true }));
+    setPermissionState((current) => updatePermissionDraft(current, slotId, roleIds));
   };
 
   const saveSlotPayload = async (slotId: string, payload: Record<string, unknown>, recurrenceScope: "single" | "series" = "single") => {
@@ -142,7 +154,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
       setPendingSlotSave(null);
       setRecurrenceConfirmOpen(false);
       setMessage("Slot updated. Discord message sync pending.");
-      setEditingSlot(null);
+      closeSlotEditor(slotId);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Slot update failed.");
@@ -153,7 +165,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
 
   const saveSlot = async (slotId: string, formEvent: FormEvent<HTMLFormElement>) => {
     formEvent.preventDefault();
-    const payload = formToSlotPayload(formEvent.currentTarget, permissionTouched[slotId] ? permissionDrafts[slotId] ?? [] : undefined);
+    const payload = formToSlotPayload(formEvent.currentTarget, getPermissionPayload(permissionState, slotId));
     if (isRecurring) {
       setPendingSlotSave({ slotId, payload });
       setRecurrenceConfirmOpen(true);
@@ -259,7 +271,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
           <Card className={`${styles.slotCardCompact} ${editingSlotId === slot.id ? styles.slotCardEditing : ""}`} key={slot.id}>
             {editingSlotId === slot.id ? (
               <form className={styles.compactForm} onSubmit={(event) => void saveSlot(slot.id, event)}>
-                <label>Name<input defaultValue={slot.name} name="name" required maxLength={80} /></label>
+                <label>Name<input defaultValue={slot.name} name="name" required maxLength={MAX_SLOT_NAME_LENGTH} /></label>
                 <label>Capacity<input defaultValue={String(slot.max)} name="max" type="text" inputMode="numeric" pattern="[0-9]*" /></label>
                 <label>Display order<input className={styles.orderInput} defaultValue={String(slot.position)} name="position" type="text" inputMode="numeric" pattern="[0-9]*" /><small>Slots are rendered left to right by order.</small></label>
                 <EmojiPicker guildId={guildId} defaultValue={slot.emoji} defaultSource={slot.emojiSource} />
@@ -270,7 +282,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
                     loadError={roleLoadError}
                     onChange={(ids) => updateSlotPermissions(slot.id, ids)}
                     roles={roles}
-                    selected={permissionDrafts[slot.id] ?? slot.allowedRoleIds}
+                    selected={getPermissionDraft(permissionState, slot)}
                   />
                   <p className={styles.fieldHint}>
                     Only members with at least one of these roles can sign up for this slot. Leave empty to allow any eligible member.
@@ -278,7 +290,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
                 </div>
                 <div className={`${styles.quickActions} ${styles.editorActions}`}>
                   <Button disabled={busy} type="submit">Save</Button>
-                  <Button disabled={busy} onClick={() => setEditingSlot(null)} type="button" variant="ghost">Cancel</Button>
+                  <Button disabled={busy} onClick={() => closeSlotEditor(slot.id)} type="button" variant="ghost">Cancel</Button>
                 </div>
               </form>
             ) : (
@@ -335,7 +347,7 @@ export function EventSlotGrid({ guildId, eventId, isRecurring, manageable, roles
         {adding ? (
           <Card className={`${styles.slotCardCompact} ${styles.slotCardEditing}`}>
             <form className={styles.compactForm} onSubmit={(event) => void createSlot(event)}>
-              <label>Name<input name="name" required maxLength={80} placeholder="Flame" /></label>
+              <label>Name<input name="name" required maxLength={MAX_SLOT_NAME_LENGTH} placeholder="Flame" /></label>
               <label>Capacity<input name="max" type="text" inputMode="numeric" pattern="[0-9]*" defaultValue="1" /></label>
               <label>Display order<input className={styles.orderInput} name="position" type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={String(sortedSlots.length)} /><small>Slots are rendered left to right by order.</small></label>
               <EmojiPicker guildId={guildId} />

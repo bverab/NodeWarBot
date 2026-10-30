@@ -5,6 +5,7 @@ const {
   ActionRowBuilder
 } = require('discord.js');
 const { getEventTypeMeta, normalizeEventType } = require('../constants/eventTypes');
+const { clampInputValue } = require('./modalLimits');
 
 function getCreateEventModalCustomId(eventType, templateId = null) {
   const normalized = normalizeEventType(eventType);
@@ -15,7 +16,7 @@ function getCreateEventModalCustomId(eventType, templateId = null) {
 function setOptionalValue(input, value) {
   const text = String(value || '').trim();
   if (text) {
-    input.setValue(text);
+    input.setValue(clampInputValue(text, input.data.max_length ?? 4000));
   }
 }
 

@@ -3,7 +3,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card } from "@/components/ui/Card";
 import { routes } from "@/constants/routes";
 import { getServerAuthSession } from "@/lib/auth";
-import { getDashboardGuilds } from "@/lib/dashboardGuilds";
+import { getDashboardGuildSummariesForSession } from "@/lib/server/dashboardGuildsForSession";
 import styles from "../profile/profile.module.css";
 
 export default async function SettingsPage() {
@@ -13,7 +13,7 @@ export default async function SettingsPage() {
     redirect(routes.login);
   }
 
-  const availableGuilds = await getDashboardGuilds(session);
+  const availableGuilds = await getDashboardGuildSummariesForSession(session);
 
   return (
     <DashboardLayout

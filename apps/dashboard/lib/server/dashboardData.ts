@@ -1,9 +1,13 @@
 import "server-only";
 import crypto from "node:crypto";
-import type { Event, EventEnrollment, EventFillerEntry, EventParticipant, EventRoleSlot, EventSchedule, EventWaitlistEntry } from "@prisma/client";
+import type { Prisma, Event, EventEnrollment, EventFillerEntry, EventParticipant, EventRoleSlot, EventSchedule, EventWaitlistEntry } from "@prisma/client";
 import { calculateEventLifecycleDates, calculateScheduledPublishAt, normalizeTimezone } from "@/lib/eventDateTime";
 import { fetchDiscordGuildMembers } from "@/lib/server/discordMembers";
 import { prisma } from "@/lib/server/prisma";
+import { InputError } from "./apiErrors";
+import { promoteQualifiedFillers } from "./nodeWarBotServices";
+import { MAX_SLOT_NAME_LENGTH } from "../slotLimits";
+import { normalizePveAccessMode, type PveAccessMode } from "../pveAccessModes";
 
 export type EventListItem = {
   id: string;
@@ -12,6 +16,8 @@ export type EventListItem = {
   type: string;
   status: "draft" | "open" | "closed" | "expired";
   published: boolean;
+  // False for published events and for ended ones (see isEventEnded): only real drafts can be deleted permanently.
+  canDelete: boolean;
   groupId: string | null;
   dayOfWeek: number | null;
   recurrenceMode: "once" | "recurring";
@@ -106,7 +112,19 @@ export type EventDetail = EventListItem & {
     isFake: boolean;
     joinedAt: string;
   }>;
+  // PvE: who joins as a main signup. Both lists are kept whatever the mode, so switching back restores them.
+  access: {
+    mode: PveAccessMode;
+    roleIds: string[];
+    users: Array<{ userId: string; displayName: string; avatarUrl: string | null }>;
+  };
   discordUrl: string | null;
+};
+
+export type PveAccessInput = {
+  accessMode: PveAccessMode;
+  roleIds: string[];
+  userIds: string[];
 };
 
 export type EventMutationInput = {
@@ -138,7 +156,9 @@ export type CreateGuildEventInput = {
   duration: number;
   closeBeforeMinutes: number;
   channelId?: string | null;
+  accessMode?: PveAccessMode;
   accessRoleIds?: string[];
+  accessUserIds?: string[];
   notifyRoleIds?: string[];
   recurrence?: "single" | "weekly";
   autoPublishEnabled?: boolean;
@@ -216,24 +236,35 @@ function toIso(value: Date) {
   return value.toISOString();
 }
 
-function getEventStatus(event: Pick<Event, "isClosed" | "expiresAt" | "closesAt" | "channelId" | "messageId">): EventListItem["status"] {
+// An event without a Discord message is normally a draft. It is not one when it is closed and past its end: that is what
+// is left after the bot expires an event (it deletes the message, sets messageId = null and isClosed = true). Such an
+// event has history (roster, waitlist) and must not look like, or be deletable as, a never-published draft.
+export function isEventEnded(event: Pick<Event, "isClosed" | "expiresAt">, now = Date.now()) {
+  return event.isClosed && event.expiresAt.getTime() <= now;
+}
+
+export function getEventStatus(
+  event: Pick<Event, "isClosed" | "expiresAt" | "closesAt" | "messageId">,
+  now = Date.now()
+): EventListItem["status"] {
   if (!event.messageId) {
-    return "draft";
+    return isEventEnded(event, now) ? "closed" : "draft";
   }
 
   if (event.isClosed) {
     return "closed";
   }
 
-  return event.expiresAt.getTime() < Date.now() || event.closesAt.getTime() < Date.now() ? "expired" : "open";
+  return event.expiresAt.getTime() < now || event.closesAt.getTime() < now ? "expired" : "open";
 }
 
 export function isEventPublishedForDashboard(event: Pick<Event, "messageId">) {
   return Boolean(event.messageId);
 }
 
-export function canDeleteEventPermanently(event: Pick<Event, "messageId">) {
-  return !isEventPublishedForDashboard(event);
+// Only real drafts can be deleted permanently: not published events and not ended ones.
+export function canDeleteEventPermanently(event: Pick<Event, "messageId" | "isClosed" | "expiresAt">, now = Date.now()) {
+  return !isEventPublishedForDashboard(event) && !isEventEnded(event, now);
 }
 
 function isFillerEnrollment(enrollment: Pick<EventEnrollment, "enrollmentType">) {
@@ -254,14 +285,70 @@ function countFillers(event: {
   return (event.fillers?.length ?? 0) + (event.enrollments?.filter(isFillerEnrollment).length ?? 0);
 }
 
-function toEventListItem(
-  event: Event & {
-    schedule?: EventSchedule | null;
-    participants?: EventParticipant[];
-    enrollments?: EventEnrollment[];
-    waitlist?: EventWaitlistEntry[];
-    fillers?: EventFillerEntry[];
+type EventListCounts = Pick<EventListItem, "participantCount" | "waitlistCount" | "fillerCount">;
+
+// Counts from relations that were loaded in full (event detail).
+function countsFromRelations(event: {
+  participants?: EventParticipant[];
+  enrollments?: EventEnrollment[];
+  waitlist?: EventWaitlistEntry[];
+  fillers?: EventFillerEntry[];
+}): EventListCounts {
+  return {
+    participantCount: countParticipants(event),
+    waitlistCount: event.waitlist?.length ?? 0,
+    fillerCount: countFillers(event)
+  };
+}
+
+type EventAggregateCounts = { _count: { participants: number; waitlist: number; fillers: number } };
+type EnrollmentCounts = { primary: number; filler: number };
+
+// Counts from COUNT queries, so lists never load every participant row just to show a number.
+function countsFromAggregates(event: EventAggregateCounts, enrollments: EnrollmentCounts | undefined): EventListCounts {
+  return {
+    participantCount: event._count.participants + (enrollments?.primary ?? 0),
+    waitlistCount: event._count.waitlist,
+    fillerCount: event._count.fillers + (enrollments?.filler ?? 0)
+  };
+}
+
+// _count cannot split one relation by type, so enrollments (PRIMARY vs FILLER) are counted with one grouped query.
+async function getEnrollmentCountsByEvent(eventIds: string[]) {
+  const counts = new Map<string, EnrollmentCounts>();
+  if (!eventIds.length) {
+    return counts;
   }
+
+  const rows = await prisma.eventEnrollment.groupBy({
+    by: ["eventId", "enrollmentType"],
+    where: { eventId: { in: eventIds } },
+    _count: { _all: true }
+  });
+
+  for (const row of rows) {
+    const entry = counts.get(row.eventId) ?? { primary: 0, filler: 0 };
+    if (isFillerEnrollment(row)) {
+      entry.filler += row._count._all;
+    } else {
+      entry.primary += row._count._all;
+    }
+    counts.set(row.eventId, entry);
+  }
+
+  return counts;
+}
+
+async function toEventListItems(events: Array<Event & EventAggregateCounts & { schedule?: EventSchedule | null }>) {
+  const enrollmentCounts = await getEnrollmentCountsByEvent(events.map((event) => event.id));
+  return events.map((event) => toEventListItem(event, countsFromAggregates(event, enrollmentCounts.get(event.id))));
+}
+
+const EVENT_COUNTS_SELECT = { participants: true, waitlist: true, fillers: true } as const;
+
+function toEventListItem(
+  event: Event & { schedule?: EventSchedule | null },
+  counts: EventListCounts
 ): EventListItem {
   return {
     id: event.id,
@@ -270,6 +357,7 @@ function toEventListItem(
     type: event.type,
     status: getEventStatus(event),
     published: isEventPublishedForDashboard(event),
+    canDelete: canDeleteEventPermanently(event),
     groupId: event.groupId,
     dayOfWeek: event.dayOfWeek,
     recurrenceMode: event.schedule?.mode === "recurring" ? "recurring" : "once",
@@ -283,9 +371,9 @@ function toEventListItem(
     createdAt: toIso(event.createdAt),
     closesAt: toIso(event.closesAt),
     expiresAt: toIso(event.expiresAt),
-    participantCount: countParticipants(event),
-    waitlistCount: event.waitlist?.length ?? 0,
-    fillerCount: countFillers(event),
+    participantCount: counts.participantCount,
+    waitlistCount: counts.waitlistCount,
+    fillerCount: counts.fillerCount,
     channelId: event.channelId,
     messageId: event.messageId
   };
@@ -357,55 +445,55 @@ async function getParticipantProfiles(guildId: string, participants: Participant
   };
 }
 
-export async function getGuildEvents(guildId: string): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where: { guildId },
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
-    },
-    take: 100
+const EVENT_LIST_LIMIT = 100;
+
+// Open events come first, closing soonest first (what is about to happen). Closed events follow, most recent first,
+// so that the `take` limit never hides the latest ones behind years of old history.
+async function findEventsOpenFirst<Include extends Prisma.EventInclude>(
+  where: Prisma.EventWhereInput,
+  include: Include,
+  take: number
+) {
+  const open = await prisma.event.findMany({
+    where: { AND: [where, { isClosed: false }] },
+    orderBy: [{ closesAt: "asc" }, { createdAt: "desc" }],
+    include,
+    take
   });
 
-  return events.map(toEventListItem);
+  const remaining = take - open.length;
+  const closed = remaining > 0
+    ? await prisma.event.findMany({
+        where: { AND: [where, { isClosed: true }] },
+        orderBy: [{ closesAt: "desc" }, { createdAt: "desc" }],
+        include,
+        take: remaining
+      })
+    : [];
+
+  return [...open, ...closed];
+}
+
+async function listGuildEvents(where: { guildId: string; eventType?: string | { in: string[] } }): Promise<EventListItem[]> {
+  const events = await findEventsOpenFirst(
+    where,
+    { schedule: true, _count: { select: EVENT_COUNTS_SELECT } },
+    EVENT_LIST_LIMIT
+  );
+
+  return toEventListItems(events);
+}
+
+export async function getGuildEvents(guildId: string): Promise<EventListItem[]> {
+  return listGuildEvents({ guildId });
 }
 
 export async function getGuildEventsByType(guildId: string, eventType: string): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where: { guildId, eventType },
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
-    },
-    take: 100
-  });
-
-  return events.map(toEventListItem);
+  return listGuildEvents({ guildId, eventType });
 }
 
 export async function getGuildEventsByTypes(guildId: string, eventTypes: string[]): Promise<EventListItem[]> {
-  const events = await prisma.event.findMany({
-    where: { guildId, eventType: { in: eventTypes } },
-    orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-    include: {
-      schedule: true,
-      participants: true,
-      enrollments: true,
-      waitlist: true,
-      fillers: true
-    },
-    take: 100
-  });
-
-  return events.map(toEventListItem);
+  return listGuildEvents({ guildId, eventType: { in: eventTypes } });
 }
 
 export async function getGuildEventDetail(guildId: string, eventId: string): Promise<EventDetail | null> {
@@ -436,6 +524,12 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
       },
       fillers: {
         orderBy: { joinedAt: "asc" }
+      },
+      accessRoles: {
+        orderBy: { position: "asc" }
+      },
+      accessUsers: {
+        orderBy: { position: "asc" }
       }
     }
   });
@@ -444,12 +538,13 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
     return null;
   }
 
-  const base = toEventListItem(event);
+  const base = toEventListItem(event, countsFromRelations(event));
   const enrichParticipant = await getParticipantProfiles(guildId, [
     ...event.roleSlots.flatMap((slot) => slot.users),
     ...event.enrollments,
     ...event.waitlist.map((entry) => ({ userId: entry.userId, userName: entry.userName })),
-    ...event.fillers
+    ...event.fillers,
+    ...event.accessUsers.map((entry) => ({ userId: entry.userId }))
   ]);
 
   return {
@@ -543,6 +638,14 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
         joinedAt: toIso(entry.joinedAt)
       };
     }),
+    access: {
+      mode: normalizePveAccessMode(event.accessMode),
+      roleIds: event.accessRoles.map((entry) => entry.roleId),
+      users: event.accessUsers.map((entry) => {
+        const enriched = enrichParticipant({ userId: entry.userId });
+        return { userId: entry.userId, displayName: enriched.displayName, avatarUrl: enriched.avatarUrl };
+      })
+    },
     discordUrl:
       event.guildId && event.channelId && event.messageId
         ? `https://discord.com/channels/${event.guildId}/${event.channelId}/${event.messageId}`
@@ -552,18 +655,18 @@ export async function getGuildEventDetail(guildId: string, eventId: string): Pro
 
 export async function getGuildOverview(guildId: string): Promise<OverviewData> {
   const now = new Date();
-  const [events, scheduledEvents, templates, garmothProfiles] = await Promise.all([
-    prisma.event.findMany({
-      where: { guildId },
-      orderBy: [{ isClosed: "asc" }, { closesAt: "asc" }, { createdAt: "desc" }],
-      include: {
-        participants: true,
-        enrollments: true,
-        waitlist: true,
-        fillers: true
-      },
-      take: 12
-    }),
+  const [
+    events,
+    scheduledEvents,
+    templates,
+    garmothProfiles,
+    activeEvents,
+    upcomingEvents,
+    totalEvents,
+    participantRows,
+    enrollmentRows
+  ] = await Promise.all([
+    findEventsOpenFirst({ guildId }, { _count: { select: EVENT_COUNTS_SELECT } }, 12),
     prisma.eventSchedule.count({
       where: {
         enabled: true,
@@ -575,29 +678,33 @@ export async function getGuildOverview(guildId: string): Promise<OverviewData> {
     }),
     prisma.garmothProfile.count({
       where: { guildId }
+    }),
+    prisma.event.count({
+      where: { guildId, isClosed: false, closesAt: { gte: now }, expiresAt: { gte: now } }
+    }),
+    prisma.event.count({
+      where: { guildId, expiresAt: { gte: now } }
+    }),
+    prisma.event.count({
+      where: { guildId }
+    }),
+    prisma.eventParticipant.count({
+      where: { event: { guildId } }
+    }),
+    prisma.eventEnrollment.count({
+      where: { event: { guildId } }
     })
   ]);
 
-  const allCounts = await prisma.event.findMany({
-    where: { guildId },
-    select: {
-      isClosed: true,
-      closesAt: true,
-      expiresAt: true,
-      participants: { select: { id: true } },
-      enrollments: { select: { id: true } }
-    }
-  });
-
   return {
-    activeEvents: allCounts.filter((event) => !event.isClosed && event.closesAt >= now && event.expiresAt >= now).length,
-    upcomingEvents: allCounts.filter((event) => event.expiresAt >= now).length,
-    totalEvents: allCounts.length,
-    totalParticipants: allCounts.reduce((total, event) => total + event.participants.length + event.enrollments.length, 0),
+    activeEvents,
+    upcomingEvents,
+    totalEvents,
+    totalParticipants: participantRows + enrollmentRows,
     scheduledEvents,
     templates,
     garmothProfiles,
-    recentEvents: events.map(toEventListItem)
+    recentEvents: await toEventListItems(events)
   };
 }
 
@@ -636,15 +743,20 @@ export async function deleteGuildDraftEvent(guildId: string, eventId: string) {
   return prisma.$transaction(async (tx) => {
     const event = await tx.event.findFirst({
       where: { id: eventId, guildId },
-      select: { id: true, messageId: true }
+      select: { id: true, messageId: true, isClosed: true, expiresAt: true }
     });
 
     if (!event) {
       return { status: "not_found" as const };
     }
 
-    if (!canDeleteEventPermanently(event)) {
+    if (isEventPublishedForDashboard(event)) {
       return { status: "not_draft" as const };
+    }
+
+    // The bot leaves expired events without a message: they keep their roster and are not drafts.
+    if (!canDeleteEventPermanently(event)) {
+      return { status: "ended" as const };
     }
 
     await tx.event.delete({ where: { id: event.id } });
@@ -655,26 +767,39 @@ export async function deleteGuildDraftEvent(guildId: string, eventId: string) {
 export async function archiveGuildEvent(guildId: string, eventId: string) {
   const event = await prisma.event.findFirst({
     where: { id: eventId, guildId },
-    select: { id: true, isClosed: true, channelId: true, messageId: true }
+    select: { id: true, eventType: true, isClosed: true, channelId: true, messageId: true }
   });
 
   if (!event) {
     return null;
   }
 
-  if (event.isClosed) {
-    return event;
-  }
-
   const now = new Date();
-  return prisma.event.update({
-    where: { id: event.id },
-    data: {
-      isClosed: true,
-      closesAt: now,
-      expiresAt: now
-    },
-    select: { id: true, isClosed: true, channelId: true, messageId: true }
+  // Together, so the bot never sees a cancelled review on an event that still looks open.
+  return prisma.$transaction(async (tx) => {
+    // To the bot an archived event looks like a normal close, so it is recorded: no filler promotion or extension vote.
+    if (event.eventType === "pve" && event.messageId) {
+      const cancelled = { messageId: event.messageId, status: "cancelled", finalizedAt: now };
+      await tx.eventPveCloseReview.upsert({
+        where: { eventId: event.id },
+        update: cancelled,
+        create: { eventId: event.id, ...cancelled }
+      });
+    }
+
+    if (event.isClosed) {
+      return { id: event.id, isClosed: event.isClosed, channelId: event.channelId, messageId: event.messageId };
+    }
+
+    return tx.event.update({
+      where: { id: event.id },
+      data: {
+        isClosed: true,
+        closesAt: now,
+        expiresAt: now
+      },
+      select: { id: true, isClosed: true, channelId: true, messageId: true }
+    });
   });
 }
 
@@ -782,7 +907,7 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
     closeBeforeMinutes: input.closeBeforeMinutes
   });
   if (!lifecycleDates) {
-    throw new Error("Invalid event date, time, timezone, duration, or close-before setting.");
+    throw new InputError("Invalid event date, time, timezone, duration, or close-before setting.");
   }
   const { startsAt, expiresAt, closesAt } = lifecycleDates;
   const autoPublishEnabled = Boolean(input.autoPublishEnabled);
@@ -790,7 +915,7 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
     ? calculateScheduledPublishAt({ startsAt, publishBeforeMinutes: input.publishBeforeMinutes ?? 60 })
     : null;
   if (autoPublishEnabled && !scheduledPublishAt) {
-    throw new Error("Invalid scheduled publish configuration.");
+    throw new InputError("Invalid scheduled publish configuration.");
   }
   const dayOfWeek = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" })
     .formatToParts(startsAt)
@@ -831,7 +956,16 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
       });
 
       if (!template) {
-        throw new Error("Template not found for this guild and event type.");
+        throw new InputError("Template not found for this guild and event type.");
+      }
+
+      // Templates saved before the 60 character limit may hold longer names. They are not cut silently (two of them could
+      // collapse into the same name): the template has to be fixed first.
+      const tooLongSlot = template.roleSlots.find((slot) => slot.name.length > MAX_SLOT_NAME_LENGTH);
+      if (tooLongSlot) {
+        throw new InputError(
+          `Template slot "${tooLongSlot.name.slice(0, 30)}..." is longer than ${MAX_SLOT_NAME_LENGTH} characters. Shorten it in the template before creating events from it.`
+        );
       }
 
       templateDefaults = {
@@ -853,11 +987,11 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
       : [];
 
     if (!isPve && !slots.length) {
-      throw new Error("At least one slot is required to create a draft event.");
+      throw new InputError("At least one slot is required to create a draft event.");
     }
 
     if (isPve && !pveOptions.length && !slots.length) {
-      throw new Error("At least one PvE time option is required to create a draft event.");
+      throw new InputError("At least one PvE time option is required to create a draft event.");
     }
 
     const eventId = `web_${crypto.randomUUID()}`;
@@ -868,7 +1002,8 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
         id: eventId,
         groupId,
         eventType: input.eventType,
-        accessMode: "OPEN",
+        // Access modes are a PvE rule; War events keep slot-level role permissions only.
+        accessMode: isPve ? normalizePveAccessMode(input.accessMode) : "OPEN",
         name: input.name,
         type: input.type,
         classIconSource: templateDefaults?.classIconSource ?? "bot",
@@ -955,6 +1090,17 @@ export async function createGuildEventDraft(guildId: string, creatorId: string |
       });
     }
 
+    const accessUserIds = isPve ? Array.from(new Set((input.accessUserIds ?? []).map(String).filter(Boolean))) : [];
+    for (let index = 0; index < accessUserIds.length; index += 1) {
+      await tx.eventAccessUser.create({
+        data: {
+          eventId: event.id,
+          userId: accessUserIds[index],
+          position: index
+        }
+      });
+    }
+
     const notifyRoleIds = Array.from(new Set((input.notifyRoleIds ?? []).map(String).filter(Boolean)));
     for (let index = 0; index < notifyRoleIds.length; index += 1) {
       await tx.eventNotifyTarget.create({
@@ -1033,6 +1179,30 @@ export async function getGuildClassStats(guildId: string) {
   };
 }
 
+// The bot syncs its in-memory cache by comparing Event.updatedAt, and Prisma only bumps that column when the Event row
+// itself is written. A write that only touches child rows (slots, slot permissions...) must therefore bump the parent in
+// the same transaction; otherwise the bot keeps serving the old data (and may write it back) until it restarts.
+async function touchEvents(tx: Prisma.TransactionClient, eventIds: string[]) {
+  const ids = Array.from(new Set(eventIds));
+  if (!ids.length) {
+    return;
+  }
+
+  await tx.event.updateMany({ where: { id: { in: ids } }, data: { updatedAt: new Date() } });
+}
+
+// An event published from the web must leave the trace the bot leaves when it publishes: schedule.lastCreatedAt. The
+// bot's weekly recurrence skips an event whose lastCreatedAt is today; without it, it could delete a same-day web
+// publication to post its own. A missing schedule row is created the way the bot reads a missing one (disabled, once).
+function publishedScheduleWrite(publishedAt: Date) {
+  return {
+    upsert: {
+      create: { enabled: false, mode: "once", lastCreatedAt: publishedAt },
+      update: { lastCreatedAt: publishedAt }
+    }
+  };
+}
+
 export async function updateGuildEvent(guildId: string, eventId: string, input: EventMutationInput) {
   const event = await prisma.event.findFirst({
     where: { id: eventId, guildId },
@@ -1045,10 +1215,40 @@ export async function updateGuildEvent(guildId: string, eventId: string, input: 
 
   await prisma.event.update({
     where: { id: event.id },
-    data: input
+    // Linking an existing Discord message makes the event published, so it is recorded like a publication.
+    data: typeof input.messageId === "string" ? { ...input, schedule: publishedScheduleWrite(new Date()) } : input
   });
 
   return getGuildEventDetail(guildId, event.id);
+}
+
+// Stores the result of a web publication: message, channel and publish time, in one transaction. Returns false when the
+// event is not a draft of that guild any more (another request published it first), without changing anything.
+export async function markEventPublished(
+  guildId: string,
+  eventId: string,
+  input: { channelId: string; messageId: string; publishedAt?: Date }
+) {
+  const publishedAt = input.publishedAt ?? new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.event.updateMany({
+      where: { id: eventId, guildId, messageId: null },
+      data: { channelId: input.channelId, messageId: input.messageId }
+    });
+
+    if (updated.count !== 1) {
+      return false;
+    }
+
+    await tx.eventSchedule.upsert({
+      where: { eventId },
+      create: { eventId, enabled: false, mode: "once", lastCreatedAt: publishedAt },
+      update: { lastCreatedAt: publishedAt }
+    });
+
+    return true;
+  });
 }
 
 export async function setGuildEventClosed(guildId: string, eventId: string, isClosed: boolean) {
@@ -1072,18 +1272,60 @@ export async function createGuildEventRoleSlot(guildId: string, eventId: string,
     return null;
   }
 
-  await prisma.eventRoleSlot.create({
-    data: {
-      eventId: event.id,
-      name: input.name,
-      max: input.max,
-      position: input.position ?? ((event.roleSlots[0]?.position ?? -1) + 1),
-      emoji: input.emoji ?? null,
-      emojiSource: input.emojiSource ?? null
-    }
+  await prisma.$transaction(async (tx) => {
+    await tx.eventRoleSlot.create({
+      data: {
+        eventId: event.id,
+        name: input.name,
+        max: input.max,
+        position: input.position ?? ((event.roleSlots[0]?.position ?? -1) + 1),
+        emoji: input.emoji ?? null,
+        emojiSource: input.emojiSource ?? null
+      }
+    });
+    await touchEvents(tx, [event.id]);
   });
 
   return getGuildEventDetail(guildId, event.id);
+}
+
+// Replaces the PvE access (mode and both lists) and then, like the bot, moves up fillers who now qualify while their
+// time option has room. Nobody is moved down. null when the event is not in this guild.
+export async function updatePveEventAccess(
+  guildId: string,
+  eventId: string,
+  input: PveAccessInput,
+  options: { resolveMemberRoleIds?: (userId: string) => Promise<string[]> } = {}
+) {
+  const event = await prisma.event.findFirst({ where: { id: eventId, guildId }, select: { id: true, eventType: true } });
+  if (!event) {
+    return null;
+  }
+  if (event.eventType !== "pve") {
+    throw new InputError("Access by roles or people applies to PvE events only.");
+  }
+
+  const accessMode = normalizePveAccessMode(input.accessMode);
+  const roleIds = Array.from(new Set(input.roleIds.map(String).filter(Boolean)));
+  const userIds = Array.from(new Set(input.userIds.map(String).filter(Boolean)));
+  await prisma.$transaction(async (tx) => {
+    await tx.eventAccessRole.deleteMany({ where: { eventId: event.id } });
+    await tx.eventAccessUser.deleteMany({ where: { eventId: event.id } });
+    for (let index = 0; index < roleIds.length; index += 1) {
+      await tx.eventAccessRole.create({ data: { eventId: event.id, roleId: roleIds[index], position: index } });
+    }
+    for (let index = 0; index < userIds.length; index += 1) {
+      await tx.eventAccessUser.create({ data: { eventId: event.id, userId: userIds[index], position: index } });
+    }
+    // Also bumps updatedAt, which is how the bot notices the change on its next tick.
+    await tx.event.update({ where: { id: event.id }, data: { accessMode } });
+  });
+
+  const promoted = await promoteQualifiedFillers(
+    { id: event.id, eventType: "pve", accessMode, allowedRoleIds: roleIds, allowedUserIds: userIds },
+    { resolveMemberRoleIds: options.resolveMemberRoleIds }
+  );
+  return { promoted };
 }
 
 export async function updateGuildEventRoleSlot(guildId: string, eventId: string, slotId: string, input: RoleSlotMutationInput) {
@@ -1097,9 +1339,10 @@ export async function updateGuildEventRoleSlot(guildId: string, eventId: string,
   }
 
   const { allowedRoleIds, ...slotPatch } = input;
+  const hasSlotPatch = Object.keys(slotPatch).length > 0;
 
   await prisma.$transaction(async (tx) => {
-    if (Object.keys(slotPatch).length) {
+    if (hasSlotPatch) {
       await tx.eventRoleSlot.update({
         where: { id: slot.id },
         data: slotPatch
@@ -1120,6 +1363,10 @@ export async function updateGuildEventRoleSlot(guildId: string, eventId: string,
           }))
         });
       }
+    }
+
+    if (hasSlotPatch || Array.isArray(allowedRoleIds)) {
+      await touchEvents(tx, [slot.eventId]);
     }
   });
 
@@ -1158,13 +1405,14 @@ export async function updateGuildEventRoleSlotSeries(guildId: string, eventId: s
         groupId: slot.event.groupId
       }
     },
-    select: { id: true }
+    select: { id: true, eventId: true }
   });
   const { allowedRoleIds, ...slotPatch } = input;
+  const hasSlotPatch = Object.keys(slotPatch).length > 0;
 
   await prisma.$transaction(async (tx) => {
     for (const target of targetSlots) {
-      if (Object.keys(slotPatch).length) {
+      if (hasSlotPatch) {
         await tx.eventRoleSlot.update({
           where: { id: target.id },
           data: slotPatch
@@ -1187,6 +1435,11 @@ export async function updateGuildEventRoleSlotSeries(guildId: string, eventId: s
         }
       }
     }
+
+    // Every occurrence of the series that was edited, not just the one the request came from.
+    if (hasSlotPatch || Array.isArray(allowedRoleIds)) {
+      await touchEvents(tx, targetSlots.map((target) => target.eventId));
+    }
   });
 
   return getGuildEventDetail(guildId, eventId);
@@ -1206,7 +1459,10 @@ export async function deleteGuildEventRoleSlot(guildId: string, eventId: string,
     return { blocked: "Slot has participants and cannot be deleted safely." } as const;
   }
 
-  await prisma.eventRoleSlot.delete({ where: { id: slot.id } });
+  await prisma.$transaction(async (tx) => {
+    await tx.eventRoleSlot.delete({ where: { id: slot.id } });
+    await touchEvents(tx, [slot.eventId]);
+  });
   return getGuildEventDetail(guildId, slot.eventId);
 }
 
@@ -1247,6 +1503,8 @@ export async function reorderGuildEventRoleSlots(
         })
       )
     );
+
+    await touchEvents(tx, [eventId]);
   });
 
   return getGuildEventDetail(guildId, eventId);
@@ -1311,9 +1569,32 @@ export async function updateGuildTemplateRoleSlot(guildId: string, templateId: s
     return null;
   }
 
-  await prisma.eventTemplateRoleSlot.update({
-    where: { id: slot.id },
-    data: input
+  // allowedRoleIds is not a column of the slot: it lives in its own permissions table (same split as event slots).
+  const { allowedRoleIds, ...slotPatch } = input;
+
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(slotPatch).length) {
+      await tx.eventTemplateRoleSlot.update({
+        where: { id: slot.id },
+        data: slotPatch
+      });
+    }
+
+    if (Array.isArray(allowedRoleIds)) {
+      const uniqueRoleIds = Array.from(new Set(allowedRoleIds.map(String).filter(Boolean)));
+      await tx.eventTemplateRolePermission.deleteMany({
+        where: { roleSlotId: slot.id }
+      });
+      if (uniqueRoleIds.length) {
+        await tx.eventTemplateRolePermission.createMany({
+          data: uniqueRoleIds.map((roleId) => ({
+            roleSlotId: slot.id,
+            discordRoleId: roleId,
+            discordRoleName: null
+          }))
+        });
+      }
+    }
   });
 
   return getGuildTemplateDetail(guildId, slot.templateId);
