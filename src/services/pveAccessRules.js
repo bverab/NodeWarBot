@@ -21,6 +21,11 @@ function isPveEvent(event) {
   return String(event?.eventType || '').toLowerCase() === 'pve';
 }
 
+// @everyone es el rol con el id del servidor: no da acceso ni se menciona, aunque haya quedado guardado.
+function withoutEveryone(event, roleIds) {
+  return normalizeIds(roleIds).filter(roleId => roleId !== String(event?.guildId));
+}
+
 // GuildMember de discord.js (roles.cache) o miembro crudo de la interaccion (roles: string[]).
 function getMemberRoleIds(member) {
   if (Array.isArray(member?.roles)) return normalizeIds(member.roles);
@@ -32,7 +37,7 @@ function hasPveAccess(event, { userId, userRoleIds = [] } = {}) {
   const mode = normalizeAccessMode(event?.accessMode);
   if (mode === 'USERS') return normalizeIds(event?.allowedUserIds).includes(String(userId));
   if (mode === 'ROLES') {
-    const allowed = new Set(normalizeIds(event?.allowedRoleIds));
+    const allowed = new Set(withoutEveryone(event, event?.allowedRoleIds));
     return normalizeIds(userRoleIds).some(roleId => allowed.has(roleId));
   }
   return true;
@@ -42,8 +47,8 @@ function hasPveAccess(event, { userId, userRoleIds = [] } = {}) {
 function getPublicationTargets(event) {
   const mode = isPveEvent(event) ? normalizeAccessMode(event?.accessMode) : 'OPEN';
   if (mode === 'USERS') return { type: 'users', ids: normalizeIds(event?.allowedUserIds) };
-  if (mode === 'ROLES') return { type: 'roles', ids: normalizeIds(event?.allowedRoleIds) };
-  return { type: 'roles', ids: normalizeIds(event?.notifyRoles) };
+  if (mode === 'ROLES') return { type: 'roles', ids: withoutEveryone(event, event?.allowedRoleIds) };
+  return { type: 'roles', ids: withoutEveryone(event, event?.notifyRoles) };
 }
 
 function formatMentions(type, ids) {
@@ -83,7 +88,7 @@ function describePveAccess(event) {
   const text = MODE_TEXT[mode];
   let targets = 'Sin restriccion';
   if (mode === 'ROLES') {
-    const ids = normalizeIds(event?.allowedRoleIds);
+    const ids = withoutEveryone(event, event?.allowedRoleIds);
     targets = ids.length ? formatMentions('roles', ids) : 'Ningun rol seleccionado: todos quedaran como fillers';
   } else if (mode === 'USERS') {
     const ids = normalizeIds(event?.allowedUserIds);

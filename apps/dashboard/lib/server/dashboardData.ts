@@ -775,28 +775,31 @@ export async function archiveGuildEvent(guildId: string, eventId: string) {
   }
 
   const now = new Date();
-  // To the bot an archived event looks like a normal close, so it is recorded: no filler promotion or extension vote.
-  if (event.eventType === "pve" && event.messageId) {
-    const cancelled = { messageId: event.messageId, status: "cancelled", finalizedAt: now };
-    await prisma.eventPveCloseReview.upsert({
-      where: { eventId: event.id },
-      update: cancelled,
-      create: { eventId: event.id, ...cancelled }
+  // Together, so the bot never sees a cancelled review on an event that still looks open.
+  return prisma.$transaction(async (tx) => {
+    // To the bot an archived event looks like a normal close, so it is recorded: no filler promotion or extension vote.
+    if (event.eventType === "pve" && event.messageId) {
+      const cancelled = { messageId: event.messageId, status: "cancelled", finalizedAt: now };
+      await tx.eventPveCloseReview.upsert({
+        where: { eventId: event.id },
+        update: cancelled,
+        create: { eventId: event.id, ...cancelled }
+      });
+    }
+
+    if (event.isClosed) {
+      return { id: event.id, isClosed: event.isClosed, channelId: event.channelId, messageId: event.messageId };
+    }
+
+    return tx.event.update({
+      where: { id: event.id },
+      data: {
+        isClosed: true,
+        closesAt: now,
+        expiresAt: now
+      },
+      select: { id: true, isClosed: true, channelId: true, messageId: true }
     });
-  }
-
-  if (event.isClosed) {
-    return { id: event.id, isClosed: event.isClosed, channelId: event.channelId, messageId: event.messageId };
-  }
-
-  return prisma.event.update({
-    where: { id: event.id },
-    data: {
-      isClosed: true,
-      closesAt: now,
-      expiresAt: now
-    },
-    select: { id: true, isClosed: true, channelId: true, messageId: true }
   });
 }
 

@@ -108,6 +108,19 @@ describe("dashboard PvE access", () => {
     await expect(prisma.eventPveCloseReview.findUnique({ where: { eventId: draft.id } })).resolves.toBeNull();
   });
 
+  it("archives the event and records it in one transaction, so the bot never sees one without the other", async () => {
+    const { archiveGuildEvent, createGuildEventDraft } = await import("../../apps/dashboard/lib/server/dashboardData");
+    const open = await createGuildEventDraft(GUILD_ID, "creator_1", { ...pveInput });
+    await prisma.event.update({ where: { id: open.id }, data: { messageId: "archive_atomic_msg" } });
+    const transaction = vi.spyOn(prisma, "$transaction");
+
+    await archiveGuildEvent(GUILD_ID, open.id);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    transaction.mockRestore();
+    await expect(prisma.event.findUnique({ where: { id: open.id } })).resolves.toMatchObject({ isClosed: true });
+  });
+
   it("refuses to set an access mode on a War event and returns null for another guild", async () => {
     const { createGuildEventDraft, updatePveEventAccess } = await import("../../apps/dashboard/lib/server/dashboardData");
     const war = await createGuildEventDraft(GUILD_ID, "creator_1", {

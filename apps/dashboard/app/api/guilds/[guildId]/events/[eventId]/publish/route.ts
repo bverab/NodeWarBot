@@ -15,6 +15,7 @@ type RouteContext = {
 
 // Same rules as the bot: PvE by people mentions the people, PvE by roles the roles with access, the rest the notify roles.
 function buildPublishContent(event: {
+  guildId: string | null;
   eventType: string;
   accessMode: string;
   notifyTargets: Array<{ targetId: string }>;
@@ -23,6 +24,7 @@ function buildPublishContent(event: {
 }) {
   const { content, allowedMentions } = buildPublicationMentions(
     {
+      guildId: event.guildId,
       eventType: event.eventType,
       accessMode: event.accessMode,
       allowedUserIds: event.accessUsers.map((user) => user.userId),

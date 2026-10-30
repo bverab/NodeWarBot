@@ -69,6 +69,22 @@ describe('core: acceso PvE — menciones al publicar', () => {
     expect(buildPublicationMentions(war, 'x').content).toBe('<@&n2>');
   });
 
+  it('@everyone (el rol con el id del servidor) nunca se menciona ni da acceso, aunque este guardado', () => {
+    const event = pve({ guildId: 'guild_1', accessMode: 'ROLES', allowedRoleIds: ['guild_1', 'r1'] });
+    const mentions = buildPublicationMentions(event, 'x');
+    expect(mentions.content).toBe('<@&r1>');
+    expect(mentions.allowedMentions).toEqual({ parse: [], roles: ['r1'] });
+    expect(hasPveAccess(event, { userId: 'u1', userRoleIds: ['guild_1'] })).toBe(false);
+    expect(describePveAccess(event).targets).toBe('<@&r1>');
+
+    const onlyEveryone = pve({ guildId: 'guild_1', accessMode: 'ROLES', allowedRoleIds: ['guild_1'] });
+    expect(buildPublicationMentions(onlyEveryone, 'x')).toMatchObject({ content: 'x', allowedMentions: { parse: [] } });
+    expect(describePveAccess(onlyEveryone).targets).toBe('Ningun rol seleccionado: todos quedaran como fillers');
+
+    const notify = buildPublicationMentions({ eventType: 'war', guildId: 'guild_1', notifyRoles: ['guild_1', 'n1'] }, 'x');
+    expect(notify.allowedMentions).toEqual({ parse: [], roles: ['n1'] });
+  });
+
   it('sin destinatarios usa el texto de respaldo y no menciona a nadie', () => {
     const mentions = buildPublicationMentions(pve({ accessMode: 'USERS' }), 'Evento publicado automaticamente');
     expect(mentions).toMatchObject({ content: 'Evento publicado automaticamente', allowedMentions: { parse: [] } });

@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 const requireNodeWarBot = createRequire(import.meta.url);
 
 type AccessEvent = {
+  guildId?: string | null;
   eventType?: string | null;
   accessMode?: string | null;
   allowedUserIds?: string[];

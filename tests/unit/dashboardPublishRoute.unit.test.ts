@@ -178,6 +178,12 @@ describe("POST /api/guilds/[guildId]/events/[eventId]/publish: PvE access mentio
     await expect(mentionsFor({ accessMode: "ROLES" })).resolves.toEqual({ content: `<@&${ROLE_ID}>`, allowedMentions: { parse: [], roles: [ROLE_ID] } });
   });
 
+  it("never mentions @everyone, even if the role list has the guild id", async () => {
+    const mentions = await mentionsFor({ accessMode: "ROLES", accessRoles: [{ roleId: GUILD_ID }, { roleId: ROLE_ID }] });
+
+    expect(mentions).toEqual({ content: `<@&${ROLE_ID}>`, allowedMentions: { parse: [], roles: [ROLE_ID] } });
+  });
+
   it("by people (and the former RESTRICTED mode) mentions the people with access", async () => {
     const expected = { content: `<@${USER_ID}>`, allowedMentions: { parse: [], users: [USER_ID] } };
     await expect(mentionsFor({ accessMode: "USERS" })).resolves.toEqual(expected);

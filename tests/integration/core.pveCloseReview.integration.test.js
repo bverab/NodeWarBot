@@ -559,6 +559,41 @@ describe('core: revision de cierre PvE', () => {
     expect(await review('pve_cancel_reopen')).toMatchObject({ status: 'confirmed' });
   });
 
+  it('(23) si la web archivo el evento y la cache aun lo ve abierto, la cancelacion no se pierde', async () => {
+    await createPveEvent('pve_archive_race', { ...FILLERS_COMPLETE, recapEnabled: false, closesAt: NOW.getTime() + 30 * MIN, expiresAt: NOW.getTime() + 90 * MIN });
+    const { discord } = setup('pve_archive_race');
+    const staleCopy = warService.getWarById('pve_archive_race');
+    await prisma.event.update({ where: { id: 'pve_archive_race' }, data: { isClosed: true, closesAt: NOW, expiresAt: NOW } });
+    await prisma.eventPveCloseReview.create({
+      data: { eventId: 'pve_archive_race', messageId: 'pve_archive_race_msg', status: 'cancelled', finalizedAt: NOW }
+    });
+
+    await pveCloseReviewService.processCloseReview(discord.client, staleCopy, NOW.getTime());
+
+    expect(await review('pve_archive_race')).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('(24) reactivar con el cierre ya vencido no repite la decision', async () => {
+    await createPveEvent('pve_late_reopen', {
+      options: [{ time: '20:00', capacity: 1 }],
+      enrollments: [{ option: 0, userId: 'u1' }]
+    });
+    const { discord, eventMessage } = setup('pve_late_reopen');
+    await checkAndExecuteEvents();
+    const thread = threadOf(eventMessage);
+    expect(thread.sent).toHaveLength(2);
+
+    // "Reactivar" despues de la foto del tick: la cache lo ve abierto, con closesAt en el pasado.
+    await warService.updateWarById('pve_late_reopen', fresh => {
+      fresh.isClosed = false;
+    });
+    await pveCloseReviewService.processCloseReview(discord.client, warService.getWarById('pve_late_reopen'), NOW.getTime());
+    await checkAndExecuteEvents();
+
+    expect(await review('pve_late_reopen')).toMatchObject({ status: 'confirmed' });
+    expect(thread.sent).toHaveLength(2);
+  });
+
   it('(22) apagar el recap durante la votacion no deja el evento detenido: la votacion vence y el mensaje expira', async () => {
     await createPveEvent('pve_recap_off', { ...NONE_FULL, expiresAt: NOW.getTime() + 5 * MIN });
     const { eventMessage } = setup('pve_recap_off');

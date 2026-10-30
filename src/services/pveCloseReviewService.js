@@ -14,8 +14,6 @@ const { notifyFillerPromotions } = require('../utils/promotionNotifier');
 const { logInfo, logWarn, logError } = require('../utils/appLogger');
 
 const reviewLocks = new Map();
-// Decision tomada para este cierre: no se repite salvo que el evento se reabra.
-const DECIDED_STATUSES = new Set(['confirmed', 'randoms', 'unfilled', 'cancelled']);
 
 function withReviewLock(eventId, task) {
   const key = String(eventId);
@@ -311,8 +309,8 @@ async function processCloseReview(client, war, nowMs = Date.now()) {
       // Otra ocurrencia (republicacion semanal): se empieza de cero.
       if (review && review.messageId !== current.messageId) review = null;
       // Reabierto tras decidir (desde Discord o la web): el proximo cierre se revisa de cero.
-      if (review && !current.isClosed && DECIDED_STATUSES.has(review.status)) {
-        review = await reviewRepository.startReview(current.id, current.messageId);
+      if (review && !current.isClosed && reviewRepository.DECIDED_STATUSES.includes(review.status)) {
+        review = await reviewRepository.restartReopenedReview(current.id, current.messageId, nowMs) || review;
       }
 
       // La votacion abierta se resuelve aunque hayan apagado el recap mientras tanto.
